@@ -361,10 +361,7 @@ const initCharts = () => {
 // --- 3. VIEW UPDATING LOGIC ---
 
 const updateTaskTableUI = () => {
-    let filteredData = taskMatrixData;
-    if (currentFeatureFilter !== 'all') {
-        filteredData = filteredData.filter(task => task.feature === currentFeatureFilter);
-    }
+    const filteredData = taskMatrixData;
 
     const totalItems = filteredData.length;
     const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
@@ -392,7 +389,6 @@ const updateTaskTableUI = () => {
     let headerHTML = `
         <tr>
             <th scope="col" class="py-4 pl-6 pr-3 text-left text-xs font-medium text-google-textSecondary uppercase tracking-wider">Task Definition</th>
-            <th scope="col" class="px-3 py-4 text-left text-xs font-medium text-google-textSecondary uppercase tracking-wider">Feature</th>
             <th scope="col" class="px-3 py-4 text-center text-xs font-medium text-google-textSecondary uppercase tracking-wider border-r border-google-border">Total Runs</th>
     `;
 
@@ -420,11 +416,6 @@ const updateTaskTableUI = () => {
                 <td class="py-3 pl-6 pr-3 whitespace-nowrap">
                     <div class="text-[10px] font-bold text-google-textSecondary uppercase tracking-wider mb-0.5">${task.id}</div>
                     <div class="font-medium text-google-textPrimary text-sm">${task.name}</div>
-                </td>
-                <td class="px-3 py-3 whitespace-nowrap">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-white border border-google-border text-google-textSecondary shadow-sm">
-                        ${task.feature}
-                    </span>
                 </td>
                 <td class="px-3 py-3 whitespace-nowrap text-center text-sm text-google-textSecondary border-r border-google-border">${task.runs}</td>
             `;
@@ -521,11 +512,7 @@ const setupEventListeners = () => {
         });
     });
 
-    document.getElementById('featureFilter').addEventListener('change', (e) => {
-        currentFeatureFilter = e.target.value;
-        currentPage = 1;
-        updateTaskTableUI();
-    });
+
 
     document.getElementById('prevPage').addEventListener('click', () => {
         if (currentPage > 1) {
@@ -583,10 +570,18 @@ async function initializeDashboard() {
         const tasks = {};
         allData.forEach(row => {
             const taskNum = row["Task"];
+            const taskNames = [
+                "",
+                "Summarize existing app architecture",
+                "Generate a manifest for deploying fine-tuned local mode to GKE cluster",
+                "Deploy a local vLLM inference stack to GKE cluster",
+                "Generate a manifest to migrate app from using Gemini API to local model",
+                "Apply local model configuration to GKE cluster"
+            ];
             if (!tasks[taskNum]) {
                 tasks[taskNum] = {
                     id: `Task ${taskNum}`,
-                    name: `Run for task ${taskNum}`,
+                    name: taskNames[taskNum] || `Run for task ${taskNum}`,
                     feature: "N/A",
                     runs: 0,
                     agent_gca: { sum: 0, count: 0 },
