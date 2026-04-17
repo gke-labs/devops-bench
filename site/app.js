@@ -29,7 +29,10 @@ const processEvalData = (evalDataArray) => {
 
     const agentTaskCounters = {}; // Map agentId_taskNum to current run counter
 
-    const accumulation = {}; 
+    const accumulation = {
+        agent_gca: {},
+        agent_no_agent: {}
+    }; 
     let maxRunNumAllAgents = 0;
 
     // Accumulate data with task-specific run counters
@@ -44,16 +47,14 @@ const processEvalData = (evalDataArray) => {
             agentTaskCounters[counterKey] = 0;
         }
         agentTaskCounters[counterKey]++;
-        
         const adjustedRunNum = agentTaskCounters[counterKey];
-        const key = `${agentId}_${adjustedRunNum}`;
 
         if (adjustedRunNum > maxRunNumAllAgents) {
             maxRunNumAllAgents = adjustedRunNum;
         }
 
-        if (!accumulation[key]) {
-            accumulation[key] = {
+        if (!accumulation[agentId][adjustedRunNum]) {
+            accumulation[agentId][adjustedRunNum] = {
                 accuracySum: 0,
                 latencySum: 0,
                 toolSum: 0,
@@ -63,22 +64,23 @@ const processEvalData = (evalDataArray) => {
                 count: 0
             };
         }
+        const target = accumulation[agentId][adjustedRunNum];
 
         const acc = (parseFloat(row["Outcome Validity"]) / 5) * 100;
-        accumulation[key].accuracySum += acc;
-        accumulation[key].latencySum += parseFloat(row["Latency"]) || 0;
-        accumulation[key].inTokensSum += parseInt(row["Input Token"]) || 0;
-        accumulation[key].outTokensSum += parseInt(row["Output Token"]) || 0;
+        target.accuracySum += acc;
+        target.latencySum += parseFloat(row["Latency"]) || 0;
+        target.inTokensSum += parseInt(row["Input Token"]) || 0;
+        target.outTokensSum += parseInt(row["Output Token"]) || 0;
 
         const toolInv = row["Tool Invocation"];
         let toolScore = 0;
         if (toolInv !== "N/A" && !isNaN(parseFloat(toolInv))) {
             toolScore = (parseFloat(toolInv) / 5) * 100;
         }
-        accumulation[key].toolSum += toolScore;
-        accumulation[key].manifestSum += acc; 
+        target.toolSum += toolScore;
+        target.manifestSum += acc; 
 
-        accumulation[key].count++;
+        target.count++;
     });
 
     // Generate run labels dynamically
@@ -102,21 +104,21 @@ const processEvalData = (evalDataArray) => {
     });
 
     // Populate resultData
-    for (const key in accumulation) {
-        const lastUnderscore = key.lastIndexOf('_');
-        const agentId = key.substring(0, lastUnderscore);
-        const runNum = key.substring(lastUnderscore + 1);
-        const accData = accumulation[key];
-        const runIdx = parseInt(runNum) - 1; 
+    for (const agentId in accumulation) {
+        for (const runNumStr in accumulation[agentId]) {
+            const runNum = parseInt(runNumStr);
+            const accData = accumulation[agentId][runNum];
+            const runIdx = runNum - 1; 
 
-        if (runIdx >= 0 && runIdx < maxRunNumAllAgents && resultData[agentId]) {
-            const agentData = resultData[agentId][runIdx];
-            agentData.accuracy = accData.accuracySum / accData.count;
-            agentData.latency = accData.latencySum / accData.count;
-            agentData.toolScore = accData.toolSum / accData.count;
-            agentData.manifestScore = accData.manifestSum / accData.count;
-            agentData.inputTokens = accData.inTokensSum / accData.count;
-            agentData.outputTokens = accData.outTokensSum / accData.count;
+            if (runIdx >= 0 && runIdx < maxRunNumAllAgents && resultData[agentId]) {
+                const agentData = resultData[agentId][runIdx];
+                agentData.accuracy = accData.accuracySum / accData.count;
+                agentData.latency = accData.latencySum / accData.count;
+                agentData.toolScore = accData.toolSum / accData.count;
+                agentData.manifestScore = accData.manifestSum / accData.count;
+                agentData.inputTokens = accData.inTokensSum / accData.count;
+                agentData.outputTokens = accData.outTokensSum / accData.count;
+            }
         }
     }
 
