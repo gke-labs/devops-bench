@@ -15,7 +15,7 @@ Antigravity agent operates using the default configurations and prompts without 
 **Antigravity Agent with GCA and GKE special skills and tools**
 The augmented agent integrates layers of optimization to improve reliability and architectural soundness:
 
-* **GCA (Gemini Cloud Assist)**: Leverages specialized cloud knowledge tools.
+* **[GCA (Gemini Cloud Assist)](https://github.com/GoogleCloudPlatform/gemini-cloud-assist-mcp/tree/main)**: Leverages specialized cloud knowledge tools.
 * **Rules & Custom Instructions**: Instructions that help the agent to adhere to best practices.
 
 ## Task Selection
@@ -28,7 +28,7 @@ While our initial results are centered on the scale and sophistication of **Goog
 
 * **Proactive Troubleshooting**: Can an agent move from detecting a pod failure to diagnosing the root cause and executing a fix?
 
-The benchmark currently consists of 5 tasks simulating realistic deployment scenarios, which we plan to expand further.  You can learn more about the tasks here.
+The benchmark currently consists of 5 tasks simulating realistic deployment scenarios, which we plan to expand further.  You can learn more about the tasks [here](https://github.com/gke-labs/devops-bench/tree/main/tasks).
 
 ## Evaluation Metrics
 We evaluate the 2 agentic setups on the following key metrics, moving beyond simple pass/fail criteria to understand how the agent achieved the result:
@@ -76,7 +76,7 @@ This metric assesses the agent's execution path, ensuring it doesn't get stuck i
 * Score 2: Major inefficiencies, loops, or multiple failed calls.
 * Score 1: Complete failure, stuck in loop, misunderstood tools.
 
-You can look at the actual Skill based rubrics here.
+You can look at the actual rubrics [here](https://github.com/gke-labs/devops-bench/tree/main/skills).
 
 ## Running Benchmarks locally
 Evaluations can be performed by running the benchmark tasks against your agent and manually or programmatically applying the LLM-as-a-judge method using the Skill based rubrics provided in this repository.
@@ -86,13 +86,13 @@ You can configure the agent in two ways depending on the capabilities you want t
 * **Option 1**: Using only the core Antigravity agent
 This configuration uses the core agent capabilities without external cloud assistance.
 * **Option 2**: Antigravity + Gemini Cloud Assist via the Model Context Protocol (MCP) with agent rules.
-This configuration connects your agent to Gemini Cloud Assist for broader cloud management capabilities.
+This [configuration](https://github.com/GoogleCloudPlatform/gemini-cloud-assist-mcp/tree/main) connects your agent to Gemini Cloud Assist for broader cloud management capabilities.
 
 ### Step 2: Run tasks with your agent
 Feed each task to your configured agent and capture the agent's final response for each task, and ideally a trace of the execution steps (tools called, reasoning steps).
 
 ### Step 3: Evaluate Responses with LLM-as-a-Judge
-To evaluate the results, use a capable LLM to score the agent's responses against the specific criteria defined in the repository's skills directory.
+To evaluate the results, use a capable LLM to score the agent's responses against the specific criteria defined in the repository's [skills](https://github.com/gke-labs/devops-bench/tree/main/skills) directory.
 
 * **Choose a Judge Model**: Select a powerful LLM to act as your judge (e.g., Gemini 2.5 Pro or similar).
 **Note**: The results in this repository use gemini-3-flash-preview for outcome evaluation.
