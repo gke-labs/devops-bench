@@ -1,0 +1,1 @@
+prompt: "Generate Kubernetes manifest for deploying our finetuned Gemma 3 12b model to our GKE {{cluster_name}} cluster. I think the models are stored in GCS in bucket {{bucket_name}}. Ensure that it can scale up and down with traffic."
