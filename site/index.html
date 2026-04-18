@@ -1,0 +1,265 @@
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Devops Bench for Autonomous Operations</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Google Fonts: Roboto for General Google Style -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Roboto"', 'sans-serif'],
+                    },
+                    colors: {
+                        google: {
+                            bg: '#F8F9FA',        // Workspace Background
+                            surface: '#FFFFFF',   // White Card Background
+                            textPrimary: '#202124', // Dark Gray Primary Text
+                            textSecondary: '#5F6368', // Medium Gray Secondary Text
+                            border: '#DADCE0',    // Standard Google Border
+                            blue: '#4285F4',      // Google Blue
+                            red: '#EA4335',       // Google Red
+                            yellow: '#FBBC04',    // Google Yellow
+                            green: '#34A853',     // Google Green
+                            blueLight: '#E8F0FE',
+                            greenLight: '#CEEAD6',
+                            yellowLight: '#FEF7E0'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="font-sans antialiased min-h-screen pb-16 selection:bg-google-blueLight selection:text-google-blue">
+
+    <!-- Header / Masthead -->
+    <header class="bg-white border-b border-google-border sticky top-0 z-20 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="flex items-center space-x-3">
+                    <!-- Google-style colored dots icon -->
+                    <div class="flex space-x-1">
+                        <div class="w-2.5 h-2.5 rounded-full bg-google-blue"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-google-red"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-google-yellow"></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-google-green"></div>
+                    </div>
+                    <h1 class="text-xl font-normal text-google-textPrimary tracking-tight">Devops Bench for Autonomous Operations</h1>
+                </div>
+
+                <div class="flex flex-wrap gap-2" id="viewSelector">
+                    <button class="view-pill active px-4 py-1.5 rounded-full text-sm flex items-center gap-1.5"
+                        data-agent="all">
+                        Competitive View (All)
+                    </button>
+                    <button class="view-pill px-4 py-1.5 rounded-full text-sm flex items-center gap-1.5"
+                        data-agent="agent_gca">
+                        <div class="w-2 h-2 rounded-full bg-google-blue"></div>
+                        Antigravity with GCA
+                    </button>
+                    <button class="view-pill px-4 py-1.5 rounded-full text-sm flex items-center gap-1.5"
+                        data-agent="agent_no_agent">
+                        <div class="w-2 h-2 rounded-full bg-google-red"></div>
+                        Antigravity with no agent
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+
+        <!-- Top Row: Leaderboard Bar & Trend Line -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+
+            <!-- Leaderboard Bar Chart -->
+            <section class="bg-white p-6 shadow-sm border border-google-border rounded-xl lg:col-span-1 flex flex-col">
+                <div class="mb-4">
+                    <h2 class="text-lg font-medium text-google-textPrimary">Current Standings</h2>
+                    <p class="text-xs text-google-textSecondary mt-0.5">Weighted average overall accuracy (30d). Calculated from Outcome Validity (score 0-5) across runs, with later runs weighted more heavily.</p>
+                </div>
+                <div class="chart-container flex-grow">
+                    <canvas id="leaderboardChart"></canvas>
+                </div>
+            </section>
+
+            <!-- 30-Day Trend Line Chart -->
+            <section class="bg-white p-6 shadow-sm border border-google-border rounded-xl lg:col-span-2 flex flex-col">
+                <div class="mb-4 flex justify-between items-start">
+                    <div>
+                        <h2 class="text-lg font-medium text-google-textPrimary">Overall Accuracy Comparison</h2>
+                        <p class="text-xs text-google-textSecondary mt-0.5">Performance comparison across runs.</p>
+                    </div>
+                </div>
+                <div class="chart-container flex-grow">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </section>
+        </div>
+
+        <!-- Middle Row: Secondary Metrics Breakdown -->
+        <section class="mb-8">
+            <h2 class="text-lg font-medium text-google-textPrimary mb-4">Metric Comparisons</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Latency -->
+                <div class="bg-white p-5 shadow-sm border border-google-border rounded-xl flex flex-col">
+                    <h3 class="font-medium text-sm text-google-textPrimary mb-1">Mean Latency (Seconds)</h3>
+                    <p class="text-xs text-google-textSecondary mb-4">Lower is better.</p>
+                    <div class="mini-chart-container">
+                        <canvas id="latencyChart"></canvas>
+                    </div>
+                </div>
+
+
+
+                <!-- Manifest Score -->
+                <div class="bg-white p-5 shadow-sm border border-google-border rounded-xl flex flex-col">
+                    <h3 class="font-medium text-sm text-google-textPrimary mb-1">Outcome Validity</h3>
+                    <p class="text-xs text-google-textSecondary mb-4">Fulfillment of task requirements.</p>
+                    <div class="mini-chart-container">
+                        <canvas id="manifestScoreChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Input Tokens -->
+                <div class="bg-white p-5 shadow-sm border border-google-border rounded-xl flex flex-col">
+                    <h3 class="font-medium text-sm text-google-textPrimary mb-1">Input Tokens</h3>
+                    <p class="text-xs text-google-textSecondary mb-4">Volume of data sent to the model.</p>
+                    <div class="mini-chart-container">
+                        <canvas id="inputTokensChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Output Tokens -->
+                <div class="bg-white p-5 shadow-sm border border-google-border rounded-xl flex flex-col">
+                    <h3 class="font-medium text-sm text-google-textPrimary mb-1">Output Tokens</h3>
+                    <p class="text-xs text-google-textSecondary mb-4">Volume of data generated by the model.</p>
+                    <div class="mini-chart-container">
+                        <canvas id="outputTokensChart"></canvas>
+                    </div>
+                </div>
+
+
+            </div>
+        </section>
+
+        <!-- Agent Configuration Grid -->
+        <div class="grid grid-cols-1 gap-6 mb-8">
+
+            <!-- Configuration Table -->
+            <section class="bg-white shadow-sm border border-google-border rounded-xl flex flex-col overflow-hidden">
+                <div class="p-6 border-b border-google-border">
+                    <h2 class="text-lg font-medium text-google-textPrimary">Agent Configurations</h2>
+                    <p class="text-xs text-google-textSecondary mt-0.5">Comparing key metrics across active agent
+                        variants.</p>
+                </div>
+                <div class="table-container overflow-x-auto flex-grow">
+                    <table class="min-w-full divide-y divide-google-border">
+                        <thead class="bg-google-bg">
+                            <tr>
+                                <th scope="col"
+                                    class="py-4 pl-6 pr-3 text-left text-xs font-medium text-google-textSecondary uppercase">
+                                    Name</th>
+                                <th scope="col"
+                                    class="px-3 py-4 text-right text-xs font-medium text-google-textSecondary uppercase">
+                                    Latency</th>
+                                <th scope="col"
+                                    class="px-3 py-4 text-right text-xs font-medium text-google-textSecondary uppercase">
+                                    Overall Accuracy</th>
+                                <th scope="col"
+                                    class="px-3 py-4 text-right text-xs font-medium text-google-textSecondary uppercase">
+                                    Avg Input Tokens</th>
+                                <th scope="col"
+                                    class="py-4 pl-3 pr-6 text-right text-xs font-medium text-google-textSecondary uppercase">
+                                    Avg Output Tokens</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-google-border bg-white" id="configTableBody">
+                            <!-- Populated via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- Bottom Row: Specific Task Matrix -->
+        <section class="mb-12">
+            <div class="bg-white shadow-sm border border-google-border rounded-xl overflow-hidden flex flex-col">
+                <div
+                    class="p-6 border-b border-google-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-medium text-google-textPrimary">Specific Task Performance Matrix</h2>
+                        <p class="text-sm text-google-textSecondary mt-1">Comparing agent pass rates and stability
+                            across core evaluation tasks.</p>
+                        <div class="flex gap-4 mt-2 text-xs text-google-textSecondary">
+                            <div class="flex items-center gap-1"><span class="w-2.5 h-2.5 bg-google-green rounded-full"></span> >= 90% Success</div>
+                            <div class="flex items-center gap-1"><span class="w-2.5 h-2.5 bg-google-red rounded-full"></span> < 80% Success</div>
+                            <div class="flex items-center gap-1"><span class="w-2.5 h-2.5 bg-google-textPrimary rounded-full"></span> 80-89% Success</div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="table-container overflow-x-auto min-h-[500px]">
+                    <table class="min-w-full divide-y divide-google-border">
+                        <thead class="bg-google-bg" id="taskTableHeader">
+                            <!-- Populated via JS based on selected view -->
+                        </thead>
+                        <tbody class="divide-y divide-google-border bg-white" id="taskTableBody">
+                            <!-- Populated via JS based on selected view -->
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Pagination Controls -->
+                <div class="p-4 border-t border-google-border flex items-center justify-between bg-google-bg">
+                    <span class="text-sm text-google-textSecondary" id="paginationInfo">Showing 1 to 10 of 100
+                        entries</span>
+                    <div class="flex gap-2">
+                        <button id="prevPage"
+                            class="px-4 py-1.5 text-sm font-medium text-google-textSecondary bg-white border border-google-border rounded hover:bg-gray-50 hover:text-google-textPrimary disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Previous</button>
+                        <button id="nextPage"
+                            class="px-4 py-1.5 text-sm font-medium text-google-textSecondary bg-white border border-google-border rounded hover:bg-gray-50 hover:text-google-textPrimary disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Next</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
