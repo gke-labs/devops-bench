@@ -7,7 +7,7 @@ The goal is to measure and compare the capability of different agents in complet
 
 ## Live Benchmark Results
 
-See live leaderboard for the latest benchmark results. The data evaluates the following two distinct agent configurations (more to come later) to measure the value-add of domain-specific enhancements.
+See [live leaderboard](https://gke-labs.github.io/devops-bench/) for the latest benchmark results. The data evaluates the following two distinct agent configurations (more to come later) to measure the value-add of domain-specific enhancements.
 
 **Antigravity Agent**
 Antigravity agent operates using the default configurations and prompts without advanced cloud-specific auxiliary intelligence or specialized guardrails. It serves as the baseline for performance, focusing on the agent's ability to execute raw Kubernetes tasks.
