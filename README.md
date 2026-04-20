@@ -10,10 +10,10 @@ The goal is to measure and compare the capability of different agents in complet
 See [live leaderboard](https://gke-labs.github.io/devops-bench/) for the latest benchmark results. The data evaluates the following two distinct agent configurations (more to come later) to measure the value-add of domain-specific enhancements.
 
 **Antigravity Agent**
-Antigravity agent operates using the default configurations and prompts without advanced cloud-specific auxiliary intelligence or specialized guardrails. It serves as the baseline for performance, focusing on the agent's ability to execute raw Kubernetes tasks.
+operates using the default configurations and prompts without advanced cloud-specific auxiliary intelligence or specialized guardrails. It serves as the baseline for performance, focusing on the agent's ability to execute raw Kubernetes tasks.
 
 **Antigravity Agent with GCA and GKE special skills and tools**
-The augmented agent integrates layers of optimization to improve reliability and architectural soundness:
+is an augmented agent integrating layers of optimization to improve reliability and architectural soundness:
 
 * **[GCA (Gemini Cloud Assist)](https://github.com/GoogleCloudPlatform/gemini-cloud-assist-mcp/tree/main)**: Leverages specialized cloud knowledge tools.
 * **Rules & Custom Instructions**: Instructions that help the agent to adhere to best practices.
