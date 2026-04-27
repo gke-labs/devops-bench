@@ -148,3 +148,53 @@
 {"Task": 5, "Agent Setup": "AGY with no agent", "Run #": 3, "Date": "04/17/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 34117, "Output Token": 3026, "Latency": 30.32458925}
 {"Task": 5, "Agent Setup": "AGY with no agent", "Run #": 4, "Date": "04/17/2026", "Outcome Validity": 1.0, "Tool Invocation": "N/A", "Input Token": 36988, "Output Token": 2352, "Latency": 22.56654501}
 {"Task": 5, "Agent Setup": "AGY with no agent", "Run #": 5, "Date": "04/17/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 66785, "Output Token": 3522, "Latency": 38.72126102}
+{"Task": 1, "Agent Setup": "AGY with GCA", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 21226, "Output Token": 1775, "Latency": 47.08}
+{"Task": 1, "Agent Setup": "AGY with GCA", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 4.0, "Tool Invocation": 5.0, "Input Token": 23304, "Output Token": 2045, "Latency":44.6}
+{"Task": 1, "Agent Setup": "AGY with GCA", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 27288, "Output Token": 2176, "Latency": 49.5}
+{"Task": 1, "Agent Setup": "AGY with GCA", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 4.0, "Tool Invocation": 5.0, "Input Token": 12365, "Output Token": 1055, "Latency": 39.26}
+{"Task": 1, "Agent Setup": "AGY with GCA", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 4.0, "Tool Invocation": 5.0, "Input Token": 22824, "Output Token": 2061, "Latency": 45.53}
+{"Task": 2, "Agent Setup": "AGY with GCA", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 35942, "Output Token": 7866, "Latency": 78.6}
+{"Task": 2, "Agent Setup": "AGY with GCA", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 4.0, "Tool Invocation": 5.0, "Input Token": 39195, "Output Token": 6519, "Latency": 49.38}
+{"Task": 2, "Agent Setup": "AGY with GCA", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 53550, "Output Token": 3609, "Latency": 60.88}
+{"Task": 2, "Agent Setup": "AGY with GCA", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 32257, "Output Token": 4009, "Latency": 54.9}
+{"Task": 2, "Agent Setup": "AGY with GCA", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 4.0, "Tool Invocation": 5.0, "Input Token": 90201, "Output Token": 6628, "Latency": 85.32715154}
+{"Task": 3, "Agent Setup": "AGY with GCA", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 4.0, "Input Token": 22596, "Output Token": 4083, "Latency": 41.53}
+{"Task": 3, "Agent Setup": "AGY with GCA", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 47978, "Output Token": 4883, "Latency":44.19}
+{"Task": 3, "Agent Setup": "AGY with GCA", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 4.0, "Input Token": 49650, "Output Token": 2297, "Latency": 48.29}
+{"Task": 3, "Agent Setup": "AGY with GCA", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 21388, "Output Token": 2099, "Latency": 33.36}
+{"Task": 3, "Agent Setup": "AGY with GCA", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 20703, "Output Token": 3945, "Latency": 44.82}
+{"Task": 4, "Agent Setup": "AGY with GCA", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 25177, "Output Token": 3291, "Latency": 39.58}
+{"Task": 4, "Agent Setup": "AGY with GCA", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 4.0, "Tool Invocation": 5.0, "Input Token": 36747, "Output Token": 4727, "Latency":59.78}
+{"Task": 4, "Agent Setup": "AGY with GCA", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 4.0, "Tool Invocation": 5.0, "Input Token": 26036, "Output Token": 4370, "Latency": 50.45}
+{"Task": 4, "Agent Setup": "AGY with GCA", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 4.0, "Tool Invocation": 5.0, "Input Token": 30019, "Output Token": 4098, "Latency": 51.55}
+{"Task": 4, "Agent Setup": "AGY with GCA", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 4.0, "Tool Invocation": 5.0, "Input Token": 41457, "Output Token": 4063, "Latency": 58.1}
+{"Task": 5, "Agent Setup": "AGY with GCA", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 30973, "Output Token": 2772, "Latency": 43.03}
+{"Task": 5, "Agent Setup": "AGY with GCA", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 4.0, "Input Token": 38106, "Output Token": 4124, "Latency": 51.62}
+{"Task": 5, "Agent Setup": "AGY with GCA", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 20131, "Output Token": 4129, "Latency":40.83}
+{"Task": 5, "Agent Setup": "AGY with GCA", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 5.0, "Input Token": 33776, "Output Token": 2544, "Latency": 34.15}
+{"Task": 5, "Agent Setup": "AGY with GCA", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": 4.0, "Input Token": 45912, "Output Token": 2587, "Latency": 33.54}
+{"Task": 1, "Agent Setup": "AGY with no agent", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 307641, "Output Token": 12449, "Latency": 186.54}
+{"Task": 1, "Agent Setup": "AGY with no agent", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 205038, "Output Token": 8453, "Latency": 139.17}
+{"Task": 1, "Agent Setup": "AGY with no agent", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 1.0, "Tool Invocation": "N/A", "Input Token": 151737, "Output Token": 12711, "Latency": 134.72}
+{"Task": 1, "Agent Setup": "AGY with no agent", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 113088, "Output Token": 14973, "Latency": 148.24}
+{"Task": 1, "Agent Setup": "AGY with no agent", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 1.0, "Tool Invocation": "N/A", "Input Token": 67473, "Output Token": 15100, "Latency": 126.57}
+{"Task": 2, "Agent Setup": "AGY with no agent", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 42173, "Output Token": 8359, "Latency": 57.23}
+{"Task": 2, "Agent Setup": "AGY with no agent", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 38224, "Output Token": 8764, "Latency": 54.51}
+{"Task": 2, "Agent Setup": "AGY with no agent", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 26765, "Output Token": 7738, "Latency": 52.52}
+{"Task": 2, "Agent Setup": "AGY with no agent", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 24170, "Output Token": 7513, "Latency": 52.22}
+{"Task": 2, "Agent Setup": "AGY with no agent", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 40479, "Output Token": 6598, "Latency": 48.12}
+{"Task": 3, "Agent Setup": "AGY with no agent", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 53801, "Output Token": 3921, "Latency": 38.73}
+{"Task": 3, "Agent Setup": "AGY with no agent", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 1.0, "Tool Invocation": "N/A", "Input Token": 84310, "Output Token": 3843, "Latency": 52.34}
+{"Task": 3, "Agent Setup": "AGY with no agent", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 210334, "Output Token": 9542, "Latency": 132.31}
+{"Task": 3, "Agent Setup": "AGY with no agent", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 69165, "Output Token": 3823, "Latency": 42.47}
+{"Task": 3, "Agent Setup": "AGY with no agent", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 89720, "Output Token": 4355, "Latency": 53.72}
+{"Task": 4, "Agent Setup": "AGY with no agent", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 1816, "Output Token": 2104, "Latency": 12.06}
+{"Task": 4, "Agent Setup": "AGY with no agent", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 1814, "Output Token": 1980, "Latency": 10.57}
+{"Task": 4, "Agent Setup": "AGY with no agent", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 1814, "Output Token": 1804, "Latency": 10}
+{"Task": 4, "Agent Setup": "AGY with no agent", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 1816, "Output Token": 1115, "Latency": 16.25}
+{"Task": 4, "Agent Setup": "AGY with no agent", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 3.0, "Tool Invocation": "N/A", "Input Token": 1814, "Output Token": 1507, "Latency": 18.13}
+{"Task": 5, "Agent Setup": "AGY with no agent", "Run #": 1, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 35967, "Output Token": 2286, "Latency": 27.13}
+{"Task": 5, "Agent Setup": "AGY with no agent", "Run #": 2, "Date": "04/20/2026", "Outcome Validity": 5.0, "Tool Invocation": "N/A", "Input Token": 30910, "Output Token": 2501, "Latency": 27.31}
+{"Task": 5, "Agent Setup": "AGY with no agent", "Run #": 3, "Date": "04/20/2026", "Outcome Validity": 1.0, "Tool Invocation": "N/A", "Input Token": 40133, "Output Token": 2030, "Latency": 29.85}
+{"Task": 5, "Agent Setup": "AGY with no agent", "Run #": 4, "Date": "04/20/2026", "Outcome Validity": 1.0, "Tool Invocation": "N/A", "Input Token": 109371, "Output Token": 3246, "Latency": 39.06}
+{"Task": 5, "Agent Setup": "AGY with no agent", "Run #": 5, "Date": "04/20/2026", "Outcome Validity": 1.0, "Tool Invocation": "N/A", "Input Token": 71240, "Output Token": 3429, "Latency": 36.27}
