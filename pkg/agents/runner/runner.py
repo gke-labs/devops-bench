@@ -6,7 +6,7 @@ def run_gcli_agent(prompt, gemini_path="gemini"):
     try:
         # Using 'gemini run' as suggested by user
         result = subprocess.run(
-            [gemini_path, "run", prompt],
+            [gemini_path, "-p", prompt],
             text=True,
             capture_output=True,
             check=True,
