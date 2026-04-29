@@ -1,0 +1,3 @@
+deepeval
+pytest
+google-genai
