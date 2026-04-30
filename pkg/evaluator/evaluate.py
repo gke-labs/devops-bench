@@ -87,7 +87,7 @@ def create_evaluation_metrics(model):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 evaluate.py <eval_data_json_file_OR_tasks_directory>")
+        print("Usage: python3 evaluate.py <tasks_directory>")
         sys.exit(1)
 
     input_path = sys.argv[1]
