@@ -1,1 +1,84 @@
-prompt: "Modify this given Kubernetes manifest for the {{application_name}} app in {{project_name}} project from using the Gemini API to a locally hosted model ```\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  labels:\n    app: hypercomputer-d1-frontend\n  name: hypercomputer-d1-frontend\n  namespace: default\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: hypercomputer-d1-frontend\n  template:\n    metadata:\n      labels:\n        app: hypercomputer-d1-frontend\n    spec:\n      automountServiceAccountToken: true\n      containers:\n      - env:\n        - name: APP_VERSION\n          value: v1.10\n        - name: VLLM_API_URL\n          value: http://hypercomputer-d1-vllm-service:8000/v1/chat/completions\n        - name: MODEL_NAME\n          value: google-gemma-3-12b-it\n        - name: USE_GEMINI_API\n          value: 'true'\n        image: us-central1-docker.pkg.dev/n26-genkey-aihypercomputer/hypercomputer-d1-images/hc:v1.10\n        name: frontend\n        ports:\n        - containerPort: 8080\n          protocol: TCP\n      serviceAccount: hypercomputer-d1-vllm-sa\n      serviceAccountName: hypercomputer-d1-vllm-sa\n```"
+task_id: 4
+name: "modify-deployment"
+prompt: |
+  Modify this given Kubernetes manifest for the hypercomputer-d1-frontend app in {{PROJECT_ID}} project from using the Gemini API to a locally hosted model ```
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: hypercomputer-d1-frontend
+    name: hypercomputer-d1-frontend
+    namespace: default
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: hypercomputer-d1-frontend
+    template:
+      metadata:
+        labels:
+          app: hypercomputer-d1-frontend
+      spec:
+        automountServiceAccountToken: true
+        containers:
+        - env:
+          - name: APP_VERSION
+            value: v1.10
+          - name: VLLM_API_URL
+            value: http://hypercomputer-d1-vllm-service:8000/v1/chat/completions
+          - name: MODEL_NAME
+            value: google-gemma-3-12b-it
+          - name: USE_GEMINI_API
+            value: 'true'
+          image: gcr.io/gke-e2e-images/hypercomputer:v1.10
+          name: frontend
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+        serviceAccount: hypercomputer-d1-vllm-sa
+        serviceAccountName: hypercomputer-d1-vllm-sa
+  ```
+expected_output: |
+  critical requirements: 
+
+  - Switch the 'hypercomputer-d1-frontend' from Gemini API to the local vLLM model hosting.
+  - Set the environment variable 'USE_GEMINI_API' to 'false'.
+  - Configure 'VLLM_API_URL' to point to 'http://hypercomputer-d1-vllm-service:8000/v1/chat/completions'.
+  - Set 'MODEL_NAME' to 'google-gemma-3-12b-it'.
+  - Verify the removal or disabling of Gemini API endpoints and keys in the deployment configuration.
+
+  Expected Manifest Generated: apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: hypercomputer-d1-frontend
+    name: hypercomputer-d1-frontend
+    namespace: default
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: hypercomputer-d1-frontend
+    template:
+      metadata:
+        labels:
+          app: hypercomputer-d1-frontend
+      spec:
+        automountServiceAccountToken: true
+        containers:
+        - env:
+          - name: APP_VERSION
+            value: v1.10
+          - name: VLLM_API_URL
+            value: http://hypercomputer-d1-vllm-service:8000/v1/chat/completions
+          - name: MODEL_NAME
+            value: google-gemma-3-12b-it
+          - name: USE_GEMINI_API
+            value: 'false'
+          image: gcr.io/gke-e2e-images/hypercomputer:v1.10
+          name: frontend
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+        serviceAccount: hypercomputer-d1-vllm-sa
+        serviceAccountName: hypercomputer-d1-vllm-sa
