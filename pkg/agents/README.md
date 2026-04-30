@@ -34,6 +34,23 @@ export CLUSTER_NAME="your-cluster-name"
 python3 pkg/evaluator/evaluate.py tasks/
 ```
 
+#### Running the LLM Agent mode with MCP
+The MCP-enabled API agent runner supports multiple LLM providers and optional MCP tool usage. You can set the following configurations:
+
+```bash
+# Choose provider: 'gemini' or 'anthropic'
+export PROVIDER="gemini" 
+# Toggle MCP tools: 'true' or 'false'
+export USE_MCP="true" 
+# For Vertex AI support (recommended)
+export VERTEX_PROJECT_ID="your-gcp-project"
+export VERTEX_LOCATION="global"
+# If using Anthropic and need to specify a specific model
+export ANTHROPIC_MODEL="claude-sonnet-4-5@20250929"
+# Path to MCP server binary (if USE_MCP=true)
+export MCP_SERVER_PATH="./gke-mcp/gke-mcp"
+```
+
 ### 2. Running via Pytest
 
 If you prefer to run the tests via Pytest (uses `pkg/evaluator/test_gke_agent.py`):
