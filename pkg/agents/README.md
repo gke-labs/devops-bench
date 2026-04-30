@@ -1,13 +1,14 @@
 # GKE Agent Evaluation Suite
 
-This directory contains the Go wrapper and Python evaluation suite for the GKE Agent, using DeepEval.
+This directory contains evaluation suite logic for the GKE Agent, using DeepEval.
 
 ## Prerequisites
 
 - **Python 3.10 or newer** (Required by DeepEval dependencies).
-- Install dependencies (run from project root):
+- Load dependencies (run from project root):
   ```bash
-  python3.10 -m pip install -r requirements.txt
+  source .venv/bin/activate
+  python3 -m pip install -r requirements.txt
   ```
 - Set up your **Gemini API Key**:
   ```bash
@@ -21,15 +22,16 @@ This directory contains the Go wrapper and Python evaluation suite for the GKE A
 
 ### 1. Running the Dataset Evaluation (Python)
 
-To run evaluation on the full dataset defined in `pkg/evaluator/eval_data.json`:
+To run evaluation on tasks definitions dynamically located in the tasks directory:
 
 ```bash
-export AGENT_TYPE="api" # Options: 'cli', 'api', 'mcp'
+source .venv/bin/activate
+export AGENT_TYPE="api" # Options: 'cli', 'api'
 export AGENT_TARGET="gemini-2.5-flash" # Model name or path to binary
 export PROJECT_ID="your-gcp-project"
 export CLUSTER_NAME="your-cluster-name"
 
-python3.10 pkg/evaluator/evaluate.py pkg/evaluator/eval_data.json
+python3 pkg/evaluator/evaluate.py tasks/
 ```
 
 ### 2. Running via Pytest
@@ -37,20 +39,13 @@ python3.10 pkg/evaluator/evaluate.py pkg/evaluator/eval_data.json
 If you prefer to run the tests via Pytest (uses `pkg/evaluator/test_gke_agent.py`):
 
 ```bash
+source .venv/bin/activate
 export PYTHONPATH=$PYTHONPATH:$(pwd)
-python3.10 -m pytest pkg/evaluator/test_gke_agent.py
-```
-
-### 3. Running via Go Integration
-
-To test the Go wrapper (`pkg/agents/eval_agent.go`) calling the Python script:
-
-Run the test file from the project root:
-```bash
-go run test_eval.go
+python3 -m pytest pkg/evaluator/test_gke_agent.py
 ```
 
 ## Metrics Used
 
 - **OutcomeValidity**: Evaluates if the agent achieved the goal based on the rubric.
 - **ToolInvocation**: Verifies if the agent used relevant tools.
+

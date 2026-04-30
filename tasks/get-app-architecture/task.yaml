@@ -1,1 +1,11 @@
-prompt: "summarize the {{application_name}} app in project {{project_name}}"
+task_id: 1
+name: "get-app-architecture"
+prompt: "summarize the hypercomputer d1 app in project {{PROJECT_ID}}"
+expected_output: |
+  critical requirements: 
+
+  - Identify the app as 'hypercomputer d1' in project '{{PROJECT_ID}}'.
+  - List core Kubernetes components (e.g., frontend-deployment, vllm-service).
+  - Mention the integration with the Gemini API (e.g., for fallback/orchestration).
+
+  Expected Manifest Generated: N/A, not a manifest generation request.
