@@ -1,3 +1,5 @@
 deepeval
 pytest
 google-genai
+mcp
+anthropic
