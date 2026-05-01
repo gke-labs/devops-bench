@@ -1,10 +1,8 @@
 import os
 from google import genai
 from google.genai import types
-from llm_client import LLMClient
-from utils import filter_schema_for_gemini
-from anthropic import AsyncAnthropicVertex
-
+from .llm_client import LLMClient
+from .utils import filter_schema_for_gemini
 class GeminiClientAdapter(LLMClient):
   """Adapter for Gemini SDK."""
 
@@ -99,6 +97,8 @@ class AnthropicClientAdapter(LLMClient):
   """Adapter for Anthropic SDK."""
 
   def __init__(self, model_name=None):
+    from anthropic import AsyncAnthropicVertex
+
     project_id = os.environ.get("VERTEX_PROJECT_ID")
     location = os.environ.get("VERTEX_LOCATION", "us-central1")
     

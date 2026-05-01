@@ -9,13 +9,13 @@ You are an expert GKE assistant evaluator focusing on tool usage efficiency
 and correctness. Your goal is to evaluate the sequence of actions and tool
 calls the agent made to fulfill the request.
 
-User Request:
-**{{ model_prompt }}**
+> [!NOTE]
+> Input details are processed directly by the framework natively.
 
 Agent's Execution Trace:
 {{ execution_trace }}
 
-Golden Tools:
+Golden Tools Target:
 {{ golden_tools }}
 
 NOTE: The execution trace above contains the agent's internal reasoning and

@@ -1,5 +1,7 @@
 import os
 import sys
+import json
+import re
 
 def safe_parse_yaml(content: str) -> dict:
     """Extracts simple structural elements of YAML definitions without library imports."""
@@ -94,3 +96,52 @@ def load_from_tasks_dir(dir_path: str) -> list:
                     
     eval_data.sort(key=lambda k: k["task_id"])
     return eval_data
+
+
+def load_outcome_rubric(prompt: str, response: str, expected_output: str, project_id: str) -> str:
+    try:
+        with open("skills/outcome-validity-skill.md", "r") as f:
+            rubric = f.read()
+    except FileNotFoundError:
+        return f"Evaluate if response satisfies objective '{prompt}'. Validate expectations: {expected_output}"
+
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n", rubric, re.DOTALL)
+    if match:
+        rubric = rubric[match.end():]
+
+    critical_facts = expected_output
+    golden_manifest = "N/A, not specified"
+
+    if "Expected Manifest Generated:" in expected_output:
+        parts = expected_output.split("Expected Manifest Generated:", 1)
+        critical_facts = parts[0].strip()
+        golden_manifest = parts[1].strip()
+
+    rubric = rubric.replace("{{ golden_manifest }}", golden_manifest)
+    rubric = rubric.replace("{{ critical_facts }}", critical_facts)
+
+    print(f"\n[DEBUG] Generated Outcome Validity Rubric: \n{rubric}\n[DEBUG END]")
+    return rubric
+
+
+def load_tool_rubric(prompt: str, trajectory: list, task_item: dict) -> str:
+    try:
+        with open("skills/tool-invocation-skill.md", "r") as f:
+            rubric = f.read()
+    except FileNotFoundError:
+        return f"Evaluate tool execution efficiency against prompt objective: '{prompt}'."
+
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n", rubric, re.DOTALL)
+    if match:
+        rubric = rubric[match.end():]
+
+    execution_trace = json.dumps(trajectory, indent=2) if trajectory else "None (zero tools recorded)"
+    
+    golden_tools_list = task_item.get("golden_tools", [])
+    golden_tools = ", ".join(golden_tools_list) if golden_tools_list else "N/A (no predefined critical tool sequence constraints)"
+
+    rubric = rubric.replace("{{ execution_trace }}", execution_trace)
+    rubric = rubric.replace("{{ golden_tools }}", golden_tools)
+
+    print(f"\n[DEBUG] Generated Tool Invocation Rubric: \n{rubric}\n[DEBUG END]")
+    return rubric

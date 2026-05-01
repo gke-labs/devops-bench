@@ -8,8 +8,8 @@ from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCase
 from deepeval.tracing import observe
 
-from mcp_client import MCPClient
-from llm_client import LLMClient
+from .mcp_client import MCPClient
+from .llm_client import LLMClient
 
 
 @observe(span_type="TOOL")
@@ -94,11 +94,19 @@ async def _run_agent_loop(goal, tools, mcp_client, llm_client):
     if not function_calls:
       print("No more function calls. Agent finished.")
       actual_output = llm_client.get_text_content(response)
-      usage = getattr(response, "usage_metadata", None) or getattr(response, "usage", None)
+      usage = getattr(response, "usage_metadata", None)
+      tokens = {}
+      if usage:
+        tokens = {
+            "input": getattr(usage, "prompt_token_count", 0),
+            "candidates": getattr(usage, "candidates_token_count", 0),
+            "total": getattr(usage, "total_token_count", 0),
+            "cached": getattr(usage, "cached_content_token_count", 0)
+        }
       return {
         "output": actual_output, 
         "latency": 0.0,
-        "tokens": usage.tokens if usage else None, 
+        "tokens": tokens, 
         "tools": []
       }
 

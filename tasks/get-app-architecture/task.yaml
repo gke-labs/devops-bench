@@ -1,6 +1,6 @@
 task_id: 1
 name: "get-app-architecture"
-prompt: "summarize the hypercomputer d1 app in project {{PROJECT_ID}}"
+prompt: "summarize the hypercomputer d1 app in project {{PROJECT_ID}} in cluster {{CLUSTER_NAME}}"
 expected_output: |
   critical requirements: 
 
