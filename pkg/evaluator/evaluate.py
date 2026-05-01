@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import os
@@ -14,10 +15,11 @@ from deepeval.models import DeepEvalBaseLLM
 from deepeval.dataset import EvaluationDataset
 from google import genai
 
-from pkg.agents.runner.api.llm_adapters import AnthropicClientAdapter, GeminiClientAdapter
-
 # Ensure module imports resolve locally
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../pkg/agents/runner/api")))
+
+from pkg.agents.runner.api.llm_adapters import AnthropicClientAdapter, GeminiClientAdapter
 
 from pkg.agents.runner.api.api import run_api_agent
 from pkg.agents.runner.gcli import run_cli_agent
@@ -78,7 +80,7 @@ def execute_agent(agent_type, agent_target, prompt, context):
             print(f"Unknown provider: {provider}")
         use_mcp_env = os.environ.get("USE_MCP", "true").lower()
         use_mcp = use_mcp_env == "true"
-        return run_api_agent(agent_target, prompt, mcp_server_path)
+        return asyncio.run(run_api_agent(prompt, mcp_server_path, llm_client, use_mcp=use_mcp))
     else:
         raise ValueError(f"Unknown agent type: {agent_type}")
 
@@ -224,6 +226,10 @@ def main():
     with open(os.path.join(run_dir, "results.json"), "w") as f:
         json.dump(detailed_results, f, indent=2)
     print(f"Results saved to {run_dir}/results.json")
+    
+    print("\n=== Detailed Results ===")
+    print(json.dumps(detailed_results, indent=2))
+    print("=========================")
 
 
 if __name__ == "__main__":
