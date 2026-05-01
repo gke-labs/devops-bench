@@ -9,17 +9,7 @@ You are an expert GKE Reliability Engineer evaluating the final outcome of an
 agent's task. Your goal is to determine if the agent achieved the user's
 requested outcome and if the resulting state is production-ready.
 
-User Request:
-**{{ model_prompt }}**
-
-AI Assistant's Response:
-{{ response }}
-
-Golden Manifest (Architectural Intent):
-{{ golden_manifest }}
-
-Critical Facts/Requirements:
-{{ critical_facts }}
+Ensure that you compare the AI assistant's actual output against the user's input prompt, and verify it meets the architectural requirements and manifestations explicitly outlined in the test case Expected Output field.
 
 ## Evaluation Criteria
 

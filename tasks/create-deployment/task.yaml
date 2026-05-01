@@ -4,6 +4,7 @@ prompt: "Generate Kubernetes manifest for deploying our finetuned Gemma 3 12b mo
 expected_output: |
   critical requirements: 
 
+  - Expected Tool Call: generate_manifest
   - Deploy a vLLM server for the Gemma 3 12B model.
   - Configure the deployment to use 1 NVIDIA L4 GPU and the 'nvidia.com/gpu' toleration.
   - Mount the model bucket 'hypercomputer-d1-models-{{PROJECT_ID}}' using gcsfuse CSI driver.

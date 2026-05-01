@@ -9,17 +9,9 @@ You are an expert GKE assistant evaluator focusing on tool usage efficiency
 and correctness. Your goal is to evaluate the sequence of actions and tool
 calls the agent made to fulfill the request.
 
-User Request:
-**{{ model_prompt }}**
+NOTE: The test actual output (provided in the test case context) contains the agent's execution trace (internal reasoning and tool calls). Use this execution trace to evaluate efficiency and correctness.
 
-Agent's Execution Trace:
-{{ execution_trace }}
-
-Golden Tools:
-{{ golden_tools }}
-
-NOTE: The execution trace above contains the agent's internal reasoning and
-tool calls. Use this to evaluate efficiency.
+Compare the execution trace tool calls against any required tool calls explicitly mentioned in the test case Expected Output field (e.g., look for 'Expected Tool Call' or similar guidance strings).
 
 ## Evaluation Criteria
 
