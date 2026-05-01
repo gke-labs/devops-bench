@@ -82,6 +82,8 @@ async def _run_agent_loop(goal, tools, mcp_client, llm_client):
       {"role": "user", "content": goal}
   ]
   turn = 0
+  trajectory = []
+  tools_used = set()
 
   while True:
     print(f"\n--- Turn {turn+1} ---")
@@ -91,23 +93,52 @@ async def _run_agent_loop(goal, tools, mcp_client, llm_client):
 
     function_calls = llm_client.extract_function_calls(response)
 
+    if function_calls:
+      for fc in function_calls:
+        tools_used.add(fc["name"])
+        trajectory.append({
+            "name": fc["name"],
+            "args": fc["args"],
+            "status": "success"
+        })
+
     if not function_calls:
       print("No more function calls. Agent finished.")
       actual_output = llm_client.get_text_content(response)
-      usage = getattr(response, "usage_metadata", None)
-      tokens = {}
-      if usage:
-        tokens = {
-            "input": getattr(usage, "prompt_token_count", 0),
-            "candidates": getattr(usage, "candidates_token_count", 0),
-            "total": getattr(usage, "total_token_count", 0),
-            "cached": getattr(usage, "cached_content_token_count", 0)
-        }
+      usage = getattr(response, "usage_metadata", None) or getattr(response, "usage", None)
+      
+      # Build detailed trajectory from contents
+      trajectory = []
+      for msg in contents:
+        role = msg["role"]
+        if role == "user":
+          trajectory.append({
+              "type": "user_input",
+              "content": msg["content"]
+          })
+        elif role == "assistant":
+          trajectory.append({
+              "type": "agent_response",
+              "content": msg.get("content", ""),
+              "tool_calls": msg.get("tool_calls", [])
+          })
+        elif role == "tool":
+          trajectory.append({
+              "type": "tool_output",
+              "name": msg.get("name"),
+              "content": msg.get("content")
+          })
+          
       return {
         "output": actual_output, 
         "latency": 0.0,
-        "tokens": tokens, 
-        "tools": []
+        "tokens": {
+            "prompt_tokens": getattr(usage, "prompt_token_count", 0),
+            "candidates_tokens": getattr(usage, "candidates_token_count", 0),
+            "total_tokens": getattr(usage, "total_token_count", 0),
+        } if usage else None, 
+        "tools": list(tools_used),
+        "trajectory": trajectory
       }
 
     turn += 1
