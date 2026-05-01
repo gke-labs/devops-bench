@@ -14,33 +14,46 @@ from deepeval.models import DeepEvalBaseLLM
 from deepeval.dataset import EvaluationDataset
 from google import genai
 
+from pkg.agents.runner.api.llm_adapters import AnthropicClientAdapter, GeminiClientAdapter
+
 # Ensure module imports resolve locally
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from pkg.agents.runner.api import run_api_agent
+from pkg.agents.runner.api.api import run_api_agent
 from pkg.agents.runner.gcli import run_cli_agent
 from pkg.evaluator.loader import load_from_tasks_dir
 
 
-class GeminiModel(DeepEvalBaseLLM):
-    def __init__(self, model_name="gemini-2.5-flash"):
-        self.model_name = model_name
-        self.client = genai.Client()
+class GeminiDeepEvalModel(DeepEvalBaseLLM):
+  """Wrapper for Gemini SDK to be used with DeepEval."""
 
-    def load_model(self):
-        return self.client
+  def __init__(self, model_name="gemini-2.5-flash"):
+    self.model_name = model_name
+    project_id = os.environ.get("VERTEX_PROJECT_ID")
+    location = os.environ.get("VERTEX_LOCATION", "us-central1")
+    
+    if project_id:
+      self.client = genai.Client(
+          vertexai=True, project=project_id, location=location
+      )
+    else:
+      self.client = genai.Client()
 
-    def generate(self, prompt: str) -> str:
-        response = self.client.models.generate_content(
-            model=self.model_name, contents=prompt
-        )
-        return response.text
+  def load_model(self):
+    return self.client
 
-    async def a_generate(self, prompt: str) -> str:
-        return self.generate(prompt)
+  def generate(self, prompt: str) -> str:
+    response = self.client.models.generate_content(
+        model=self.model_name,
+        contents=prompt,
+    )
+    return response.text
 
-    def get_model_name(self):
-        return self.model_name
+  async def a_generate(self, prompt: str) -> str:
+    return self.generate(prompt)
+
+  def get_model_name(self):
+    return self.model_name
 
 
 def replace_placeholders(text, project_id, cluster_name):
@@ -55,7 +68,17 @@ def execute_agent(agent_type, agent_target, prompt, context):
     if agent_type in ["cli", "binary"]:
         return run_cli_agent(agent_target, prompt, context)
     elif agent_type == "api":
-        return run_api_agent(agent_target, prompt)
+        mcp_server_path = os.environ.get("MCP_SERVER_PATH", "./gke-mcp")
+        provider = os.environ.get("PROVIDER", "gemini")
+        if provider == "gemini":
+            llm_client = GeminiClientAdapter()
+        elif provider == "anthropic":
+            llm_client = AnthropicClientAdapter()
+        else:
+            print(f"Unknown provider: {provider}")
+        use_mcp_env = os.environ.get("USE_MCP", "true").lower()
+        use_mcp = use_mcp_env == "true"
+        return run_api_agent(agent_target, prompt, mcp_server_path)
     else:
         raise ValueError(f"Unknown agent type: {agent_type}")
 
@@ -115,7 +138,7 @@ def main():
 
     agent_type = os.environ.get("AGENT_TYPE", "cli").lower()
     agent_target = os.environ.get("AGENT_TARGET", "./my-agent")
-    gemini_model = GeminiModel()
+    gemini_model = GeminiDeepEvalModel()
     project_id = os.environ.get("PROJECT_ID", "my-project")
     cluster_name = os.environ.get("CLUSTER_NAME", "my-cluster")
 
