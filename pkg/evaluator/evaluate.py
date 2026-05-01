@@ -23,7 +23,7 @@ from pkg.agents.runner.api.llm_adapters import AnthropicClientAdapter, GeminiCli
 
 from pkg.agents.runner.api.api import run_api_agent
 from pkg.agents.runner.gcli import run_cli_agent
-from pkg.evaluator.loader import load_from_tasks_dir
+from pkg.evaluator.loader import load_from_tasks_dir, safe_parse_yaml
 
 
 class GeminiDeepEvalModel(DeepEvalBaseLLM):
@@ -120,6 +120,17 @@ def main():
     if os.path.isdir(input_path):
         print(f"Loading tasks specifications dynamically from {input_path} folder...")
         eval_data = load_from_tasks_dir(input_path)
+    elif input_path.endswith((".yaml", ".yml")):
+        print(f"Loading task specification from {input_path}...")
+        with open(input_path, "r") as f:
+            content = safe_parse_yaml(f.read())
+            eval_data = [{
+                "task_id": content.get("task_id", 1),
+                "name": content.get("name", "Legacy Case"),
+                "input": content.get("prompt", "").strip(),
+                "expected_output": content.get("expected_output", "").strip(),
+                "retrieval_context": content.get("retrieval_context", [])
+            }]
     else:
         with open(input_path, "r") as f:
             eval_data = json.load(f)
