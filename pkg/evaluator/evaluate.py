@@ -86,9 +86,15 @@ def execute_agent(agent_type, agent_target, prompt, context):
 
 
 def create_evaluation_metrics(model):
+    with open("skills/outcome-validity-skill.md", "r") as f:
+        outcome_criteria = f.read()
+
+    with open("skills/tool-invocation-skill.md", "r") as f:
+        tool_criteria = f.read()
+
     outcome_validity = GEval(
         name="OutcomeValidity",
-        criteria="Did the agent successfully achieve the DevOps goal?",
+        criteria=outcome_criteria,
         evaluation_params=[
             SingleTurnParams.INPUT,
             SingleTurnParams.ACTUAL_OUTPUT,
@@ -98,7 +104,7 @@ def create_evaluation_metrics(model):
 
     tool_invocation = GEval(
         name="ToolInvocation",
-        criteria="The agent should only use tools that are relevant to the user's request.",
+        criteria=tool_criteria,
         threshold=0.8,
         evaluation_params=[
             SingleTurnParams.INPUT,
@@ -108,6 +114,85 @@ def create_evaluation_metrics(model):
     )
 
     return [outcome_validity, tool_invocation]
+
+
+def evaluate_metrics_batch(detailed_results, project_id, gemini_model):
+    """Calculates batch metrics for a list of execution results."""
+    print("\nStarting batch post-processing evaluation metrics...")
+    for res in detailed_results:
+        prompt = res["input"]
+        actual_output = res["output"]
+        trajectory = res["trajectory"]
+        expected_output_raw = res["expected_output_raw"]
+        latency = res["latency"]
+        name = res["name"]
+        retrieval_context = res["retrieval_context"]
+
+        metrics = create_evaluation_metrics(gemini_model)
+        outcome_criteria = metrics[0].criteria
+        tool_criteria = metrics[1].criteria
+
+        outcome_validity = GEval(
+            name="OutcomeValidity",
+            criteria=outcome_criteria,
+            evaluation_params=[
+                SingleTurnParams.INPUT,
+                SingleTurnParams.ACTUAL_OUTPUT,
+            ],
+            model=gemini_model,
+        )
+
+        tool_invocation = GEval(
+            name="ToolInvocation",
+            criteria=tool_criteria,
+            threshold=0.8,
+            evaluation_params=[
+                SingleTurnParams.INPUT,
+                SingleTurnParams.ACTUAL_OUTPUT,
+            ],
+            model=gemini_model,
+        )
+
+        outcome_test_case = LLMTestCase(
+            input=prompt,
+            actual_output=actual_output if actual_output else "No response generated",
+            expected_output=expected_output_raw.replace("{{PROJECT_ID}}", project_id),
+            retrieval_context=retrieval_context,
+            latency=latency,
+        )
+
+        combined_actual = {
+            "tools_used": res.get("tools", []),
+            "execution_trace": trajectory
+        }
+        tool_test_case = LLMTestCase(
+            input=prompt,
+            actual_output=json.dumps(combined_actual, indent=2),
+            expected_output=expected_output_raw.replace("{{PROJECT_ID}}", project_id),
+            latency=latency,
+        )
+
+        print(f"Evaluating metrics for: {name}...")
+        outcome_result = evaluate([outcome_test_case], metrics=[outcome_validity])
+        tool_result = evaluate([tool_test_case], metrics=[tool_invocation])
+
+        scores = {}
+        for test_result in outcome_result.test_results:
+            for metric_data in test_result.metrics_data:
+                scores[metric_data.name] = {
+                    "score": metric_data.score,
+                    "success": metric_data.success,
+                    "reason": getattr(metric_data, "reason", None)
+                }
+        for test_result in tool_result.test_results:
+            for metric_data in test_result.metrics_data:
+                scores[metric_data.name] = {
+                    "score": metric_data.score,
+                    "success": metric_data.success,
+                    "reason": getattr(metric_data, "reason", None)
+                }
+
+        res["scores"] = scores
 
 
 def main():
@@ -197,35 +282,22 @@ def main():
 
         print(f"--- Agent Response ---\n{actual_output}\n----------------------")
 
-        test_cases.append(
-            LLMTestCase(
-                input=prompt,
-                actual_output=actual_output,
-                expected_output=item.get("expected_output", "").replace(
-                    "{{PROJECT_ID}}", project_id
-                ),
-                retrieval_context=item.get("retrieval_context", []),
-                latency=latency,
-            )
-        )
-    dataset.test_cases = test_cases
+        detailed_results[-1]["expected_output_raw"] = item.get("expected_output", "")
+        detailed_results[-1]["name"] = item["name"]
+        detailed_results[-1]["retrieval_context"] = item.get("retrieval_context", [])
 
-    metrics = create_evaluation_metrics(gemini_model)
-    evaluation_result = evaluate(dataset.test_cases, metrics=metrics)
-    
-    for i, test_result in enumerate(evaluation_result.test_results):
-        scores = {}
-        for metric_data in test_result.metrics_data:
-            scores[metric_data.name] = {
-                "score": metric_data.score,
-                "success": metric_data.success,
-                "reason": getattr(metric_data, "reason", None)
-            }
-        detailed_results[i]["scores"] = scores
-    
+    # Save tasks execution outputs immediately
     with open(os.path.join(run_dir, "results.json"), "w") as f:
         json.dump(detailed_results, f, indent=2)
-    print(f"Results saved to {run_dir}/results.json")
+    print(f"Execution complete. Results safely saved to {run_dir}/results.json")
+
+    # 2. Loop to EVALUATE metrics for all tasks at the end
+    # 2. Execute batch metrics post-processing turn via helper function
+    evaluate_metrics_batch(detailed_results, project_id, gemini_model)
+
+    with open(os.path.join(run_dir, "results.json"), "w") as f:
+        json.dump(detailed_results, f, indent=2)
+    print(f"Post-processing evaluation complete. Updated results saved to {run_dir}/results.json")
     
     print("\n=== Detailed Results ===")
     print(json.dumps(detailed_results, indent=2))
