@@ -76,6 +76,7 @@ async def process_query(
 
 async def _run_agent_loop(goal, tools, mcp_client, llm_client, system_instruction=None):
   """Internal loop for running the agent with given tools."""
+  start_time = time.time()
   formatted_tools = llm_client.format_tools(tools)
 
   contents = [
@@ -131,7 +132,7 @@ async def _run_agent_loop(goal, tools, mcp_client, llm_client, system_instructio
           
       return {
         "output": actual_output, 
-        "latency": 0.0,
+        "latency": time.time() - start_time,
         "tokens": {
             "prompt_tokens": getattr(usage, "prompt_token_count", 0),
             "candidates_tokens": getattr(usage, "candidates_token_count", 0),

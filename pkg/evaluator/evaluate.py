@@ -249,7 +249,7 @@ def evaluate_metrics_batch(detailed_results, project_id, gemini_model):
           print(f"Error evaluating metric {m.name}: {e}")
 
       passed_checks = sum(
-          1 for m in dynamic_metrics if scores[m.name]["success"]
+          1 for m in dynamic_metrics if m.name in scores and scores[m.name]["success"]
       )
       total_checks = len(dynamic_metrics)
       scores["ChecklistScore"] = {
