@@ -103,3 +103,52 @@ To evaluate the results, use a capable LLM to score the agent's responses agains
     * The relevant Skill Rubric (copy the content from the appropriate SKILL.md file).
 * **Query the Judge**: Send the prompt to the judge LLM.
 * **Extract Scores**: Parse the judge's output to collect the numerical score and the justification.
+
+## Local Container Development
+
+### Building the Image Locally
+
+To build the `devops-bench` container image, run the following command from the project root:
+
+```bash
+docker build -t devops-bench:latest .
+```
+
+### Running the Evaluation
+
+Use the following command to run a task evaluation inside the container. Replace the placeholder values (e.g., `<YOUR_PROJECT_ID>`) with your actual configuration.
+
+```bash
+docker run -it \
+  -v ~/.config/gcloud:/root/.config/gcloud \
+  -v $(pwd)/results:/app/results \
+  -e CLOUD_PROVIDER="gcp" \
+  -e PROJECT_ID="<YOUR_PROJECT_ID>" \
+  -e CLUSTER_NAME="<YOUR_CLUSTER_NAME>" \
+  -e TASK_FILE="tasks/create-deployment/task.yaml" \
+  -e AGENT_TYPE="api" \
+  -e PROVIDER="gemini" \
+  -e USE_MCP="true" \
+  -e GEMINI_API_KEY="<YOUR_GEMINI_API_KEY>" \
+  -e GEMINI_MODEL="gemini-2.5-flash" \
+  devops-bench:latest
+```
+
+#### Flag Descriptions
+
+| Flag | Description |
+| :--- | :--- |
+| `-it` | Runs the container in interactive mode with a TTY, allowing you to see real-time output. |
+| `-v ~/.config/gcloud:/root/.config/gcloud` | Mounts your local Google Cloud configuration into the container so it can use your existing credentials. |
+| `-v $(pwd)/results:/app/results` | Mounts the local `results` directory to the container. This ensures that evaluation outputs generated inside the container are saved to your host machine. |
+| `-e CLOUD_PROVIDER` | Specifies the cloud provider (e.g., `gcp`). |
+| `-e PROJECT_ID` | The ID of the Google Cloud Project to run evaluations against. |
+| `-e CLUSTER_NAME` | The name of the GKE cluster used for the evaluation. |
+| `-e TASK_FILE` | Path to the specific YAML task file you want to evaluate. |
+| `-e AGENT_TYPE` | The type of agent to run (e.g., `api` or `cli`). |
+| `-e PROVIDER` | The LLM provider to use (e.g., `gemini` or `anthropic`). |
+| `-e USE_MCP` | Boolean flag (`true`/`false`) to enable or disable the Model Context Protocol (MCP) server. |
+| `-e GEMINI_API_KEY` | Your API key for the Gemini service. |
+| `-e GEMINI_MODEL` | The specific Gemini model version to use (e.g., `gemini-2.5-flash`). |
+| `devops-bench:latest` | The name and tag of the image to run. |
+
