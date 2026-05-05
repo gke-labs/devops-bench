@@ -148,9 +148,20 @@ def evaluate_metrics_batch(detailed_results, project_id, gemini_model):
     outcome_criteria = metrics[0].criteria
     tool_criteria = metrics[1].criteria
 
+    # Extract checklist items ONLY from the critical requirements section to avoid parsing YAML lists
+    reqs_section = expected_output_raw
+    if "critical requirements:" in reqs_section.lower():
+      parts = re.split(r"(?i)critical requirements\s*:", reqs_section, maxsplit=1)
+      if len(parts) > 1:
+        reqs_section = parts[1]
+    
+    if "expected manifest generated:" in reqs_section.lower():
+      parts = re.split(r"(?i)expected manifest generated\s*:", reqs_section, maxsplit=1)
+      reqs_section = parts[0]
+
     checklist_items = [
         line.strip("- ")
-        for line in expected_output_raw.split("\n")
+        for line in reqs_section.split("\n")
         if line.strip().startswith("-")
     ]
     dynamic_metrics = []
