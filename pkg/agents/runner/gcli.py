@@ -115,6 +115,10 @@ def run_cli_agent(bin_path, prompt, context):
             "mcp_gke_list_clusters",
             "mcp_gke_get_cluster",
             "mcp_gke_generate_manifest",
+            "mcp_gke_giq_generate_manifest",
+            "mcp_gke_query_logs",
+            "mcp_gke_get_log_schema",
+            "mcp_gke_get_kubeconfig",
             "mcp_gke_list_namespaces"
         ]
         for tool in allowed_tools:
