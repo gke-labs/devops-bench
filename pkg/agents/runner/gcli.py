@@ -103,8 +103,10 @@ def extract_trajectory_from_session(session_id: str) -> dict:
 
 
 @observe()
-def run_cli_agent(bin_path, prompt, context):
+def run_cli_agent(bin_path, prompt, context, system_instruction=None):
     """Runs an external binary agent."""
+    if system_instruction:
+        prompt = f"{prompt}\n\nInstructions: {system_instruction}"
     input_data = json.dumps({"goal": prompt, "context": context})
     args = [bin_path]
     use_stdin = True

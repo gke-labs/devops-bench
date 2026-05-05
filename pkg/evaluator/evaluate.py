@@ -76,7 +76,7 @@ def replace_placeholders(text, project_id, cluster_name):
 def execute_agent(agent_type, agent_target, prompt, context):
   """Executes the appropriate agent and returns standardized results."""
   if agent_type in ["cli", "binary"]:
-    return run_cli_agent(agent_target, prompt, context)
+    return run_cli_agent(agent_target, prompt, context, system_instruction=SYSTEM_INSTRUCTION)
   elif agent_type == "api":
     mcp_server_path = os.environ.get("MCP_SERVER_PATH", "third_party/gke-mcp/gke-mcp")
     provider = os.environ.get("PROVIDER", "gemini")
