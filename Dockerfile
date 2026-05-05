@@ -8,8 +8,11 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
-    && npm install -g @google/gemini-cli \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Gemini CLI globally (customizable version)
+ARG GEMINI_CLI_VERSION=latest
+RUN npm install -g @google/gemini-cli@${GEMINI_CLI_VERSION}
 
 # Install Go (required to build kubetest2)
 COPY --from=golang:1.22 /usr/local/go/ /usr/local/go/
@@ -37,8 +40,15 @@ RUN bash ./scripts/setup_kubetest2.sh "$KUBETEST2_VERSION"
 ARG GKE_MCP_VERSION=main
 RUN bash ./scripts/setup_gke_mcp.sh "$GKE_MCP_VERSION"
 
+# Pre-configure Gemini CLI to bypass interactive authentication wizard on startup
+RUN mkdir -p /root/.gemini && \
+    echo '{"security":{"auth":{"selectedType":"gemini-api-key"}},"general":{"sessionRetention":{"enabled":true,"maxAge":"30d","warningAcknowledged":true}}}' > /root/.gemini/settings.json
+
 # Pre-install GKE MCP extension in Gemini CLI
 RUN gemini extensions install https://github.com/GoogleCloudPlatform/gke-mcp.git --consent
+
+# Trust all directories (including /app) for the GKE MCP extension to ensure it loads in the container workdir
+RUN echo '{"gke-mcp":{"overrides":["*"]}}' > /root/.gemini/extensions/extension-enablement.json
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt

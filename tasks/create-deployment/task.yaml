@@ -1,6 +1,6 @@
 task_id: 2
 name: "create-deployment"
-prompt: "Generate Kubernetes manifest for deploying our finetuned Gemma 3 12b model to our GKE {{CLUSTER_NAME}}. I think the models are stored in GCS in bucket hypercomputer-d1-models-{{PROJECT_ID}}. Ensure that it can scale up and down with traffic."
+prompt: "Generate Kubernetes manifest for deploying our finetuned Gemma 3 4b model to our GKE {{CLUSTER_NAME}}. I think the models are stored in GCS in bucket hypercomputer-d1-models-{{PROJECT_ID}}. Ensure that it can scale up and down with traffic. use the gke mcp tool calls."
 expected_output: |
   critical requirements: 
 

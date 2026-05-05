@@ -109,10 +109,27 @@ def run_cli_agent(bin_path, prompt, context):
     args = [bin_path]
     use_stdin = True
     if "gemini" in bin_path:
-        args.extend(["-o", "json", "-p", prompt])
+        args.extend(["-o", "json", "--skip-trust"])
+        # Pre-approve GKE MCP tools to prevent interactive confirmation prompts in headless mode
+        allowed_tools = [
+            "mcp_gke_list_clusters",
+            "mcp_gke_get_cluster",
+            "mcp_gke_generate_manifest",
+            "mcp_gke_list_namespaces"
+        ]
+        for tool in allowed_tools:
+            args.extend(["--allowed-tools", tool])
+        args.extend(["-p", prompt])
         use_stdin = False
-        
     start_time = time.time()
+    
+    # Disable OTLP telemetry exporters to prevent hangs from broken telemetry endpoints
+    env = os.environ.copy()
+    env["OTEL_TRACES_EXPORTER"] = "none"
+    env["OTEL_METRICS_EXPORTER"] = "none"
+    env["OTEL_LOGS_EXPORTER"] = "none"
+    env["OTEL_SDK_DISABLED"] = "true"
+
     try:
         if use_stdin:
             result = subprocess.run(
@@ -121,6 +138,7 @@ def run_cli_agent(bin_path, prompt, context):
                 text=True,
                 capture_output=True,
                 check=True,
+                env=env,
             )
         else:
             result = subprocess.run(
@@ -128,6 +146,7 @@ def run_cli_agent(bin_path, prompt, context):
                 text=True,
                 capture_output=True,
                 check=True,
+                env=env,
             )
         latency = time.time() - start_time
         
