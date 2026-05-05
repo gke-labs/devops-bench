@@ -152,6 +152,26 @@ docker run -it \
 | `-e GEMINI_MODEL` | The specific Gemini model version to use (e.g., `gemini-2.5-flash`). |
 | `devops-bench:latest` | The name and tag of the image to run. |
 
+## DeepEval Integration
+
+DevOps Bench uses **DeepEval** for evaluating agent performance. DeepEval is an open-source LLM evaluation framework.
+
+We use **GEval** (LLM-as-a-judge) metrics to score the agent's output against specific criteria.
+
+### Metrics Collected
+
+- **OutcomeValidity**: Evaluates whether the agent's final output fulfills the requirements specified in the task. It checks for semantic and architectural correctness.
+- **ToolInvocation**: Evaluates whether the agent used tools correctly and effectively to accomplish the task. It inspects the `tools_used` and `execution_trace` in the actual output.
+- **Dynamic Checklist Checks**: For each requirement listed in the `expected_output` of a task, a dynamic GEval metric is created to verify if that specific requirement was met.
+- **Latency**: The total time taken by the agent to execute the task is recorded.
+- **Token Usage**: Input, output, and total token counts are captured (when available from the agent runner) to measure cost and efficiency.
+
+### Configuration
+
+To run evaluations, you must provide a `GEMINI_API_KEY` as DeepEval uses an LLM to grade the outputs.
+
+You can specify the model used for evaluation via the `GEMINI_MODEL` environment variable.
+
 ## Viewing Results
 
 The results of the evaluation are saved in the `results/` directory on your host machine (thanks to the volume mount `-v $(pwd)/results:/app/results`).
