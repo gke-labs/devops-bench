@@ -26,3 +26,20 @@ echo "Building gke-mcp..."
 go build -o gke-mcp .
 
 echo "Setup complete. Binary is at $REPO_DIR/gke-mcp"
+
+# --- Gemini CLI Extension Setup ---
+if command -v gemini &> /dev/null; then
+  echo "Pre-configuring Gemini CLI settings..."
+  mkdir -p "$HOME/.gemini"
+  echo '{"security":{"auth":{"selectedType":"gemini-api-key"}},"general":{"sessionRetention":{"enabled":true,"maxAge":"30d","warningAcknowledged":true}}}' > "$HOME/.gemini/settings.json"
+
+  echo "Installing GKE MCP extension in Gemini CLI..."
+  gemini extensions install https://github.com/GoogleCloudPlatform/gke-mcp.git --consent
+
+  echo "Configuring extension directory trust overrides..."
+  mkdir -p "$HOME/.gemini/extensions"
+  echo '{"gke-mcp":{"overrides":["*"]}}' > "$HOME/.gemini/extensions/extension-enablement.json"
+  echo "Gemini CLI GKE MCP extension configured successfully!"
+else
+  echo "Warning: gemini CLI not found in PATH. Skipping extension setup."
+fi
