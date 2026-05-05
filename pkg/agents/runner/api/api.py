@@ -22,9 +22,11 @@ async def process_query(
     llm_client, contents, tools, system_instruction, mcp_client
 ):
   """Process a single turn of the agent."""
+  start_time = time.time()
   response = await llm_client.generate_content(
       contents, tools, system_instruction
   )
+  duration = time.time() - start_time
 
   text_content = llm_client.get_text_content(response)
   function_calls = llm_client.extract_function_calls(response)
@@ -35,7 +37,7 @@ async def process_query(
   contents.append(assistant_message)
 
   if not function_calls:
-    return response, contents
+    return response, contents, duration
 
   # Handle function calls
   for function_call in function_calls:
@@ -70,13 +72,13 @@ async def process_query(
           "content": f"Error: {e}"
       })
 
-  return response, contents
+  return response, contents, duration
 
 
 
 async def _run_agent_loop(goal, tools, mcp_client, llm_client, system_instruction=None):
   """Internal loop for running the agent with given tools."""
-  start_time = time.time()
+  total_latency = 0.0
   formatted_tools = llm_client.format_tools(tools)
 
   contents = [
@@ -88,9 +90,10 @@ async def _run_agent_loop(goal, tools, mcp_client, llm_client, system_instructio
 
   while True:
     print(f"\n--- Turn {turn+1} ---")
-    response, contents = await process_query(
+    response, contents, duration = await process_query(
         llm_client, contents, formatted_tools, system_instruction, mcp_client
     )
+    total_latency += duration
 
     function_calls = llm_client.extract_function_calls(response)
 
@@ -132,7 +135,7 @@ async def _run_agent_loop(goal, tools, mcp_client, llm_client, system_instructio
           
       return {
         "output": actual_output, 
-        "latency": time.time() - start_time,
+        "latency": total_latency,
         "tokens": {
             "prompt_tokens": getattr(usage, "prompt_token_count", 0),
             "candidates_tokens": getattr(usage, "candidates_token_count", 0),
