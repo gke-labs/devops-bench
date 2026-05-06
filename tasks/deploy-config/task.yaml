@@ -1,7 +1,7 @@
 task_id: 3
 name: "deploy-config"
 prompt: |
-  Deploy the provided manifests to cluster {{CLUSTER_NAME}} in project {{PROJECT_ID}}.
+  Deploy the provided manifests to cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
 
   ```
   apiVersion: apps/v1
@@ -72,7 +72,7 @@ prompt: |
             fsType: ''
             readOnly: false
             volumeAttributes:
-              bucketName: hypercomputer-d1-models-{{PROJECT_ID}}
+              bucketName: hypercomputer-d1-models-{{GCP_PROJECT_ID}}
               mountOptions: implicit-dirs
           name: model-volume
 
@@ -115,7 +115,7 @@ prompt: |
 expected_output: |
   critical requirements: 
 
-  - Execute the deployment of the provided manifests to the '{{CLUSTER_NAME}}' in project '{{PROJECT_ID}}'.
+  - Execute the deployment of the provided manifests to the '{{GKE_CLUSTER_NAME}}' in project '{{GCP_PROJECT_ID}}'.
   - Confirm that the 'hypercomputer-d1-vllm-server' deployment was successfully applied to the cluster.
 
   Expected Manifest Generated: N/A, not a manifest generation request.

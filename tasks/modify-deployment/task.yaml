@@ -1,7 +1,7 @@
 task_id: 4
 name: "modify-deployment"
 prompt: |
-  Modify this given Kubernetes manifest for the hypercomputer-d1-frontend app in {{PROJECT_ID}} project from using the Gemini API to a locally hosted model ```
+  Modify this given Kubernetes manifest for the hypercomputer-d1-frontend app in {{GCP_PROJECT_ID}} project from using the Gemini API to a locally hosted model ```
   apiVersion: apps/v1
   kind: Deployment
   metadata:

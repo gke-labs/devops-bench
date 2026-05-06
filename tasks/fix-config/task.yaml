@@ -1,7 +1,7 @@
 task_id: 5
 name: "fix-config"
 prompt: |
-  Apply the manifest change to cluster {{CLUSTER_NAME}} in project {{PROJECT_ID}}.
+  Apply the manifest change to cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
 
   ```
   apiVersion: apps/v1
@@ -43,7 +43,7 @@ prompt: |
 expected_output: |
   critical requirements: 
 
-  - Identify the intent to update the 'hypercomputer-d1-frontend' deployment in cluster '{{CLUSTER_NAME}}' and project '{{PROJECT_ID}}'.
+  - Identify the intent to update the 'hypercomputer-d1-frontend' deployment in cluster '{{GKE_CLUSTER_NAME}}' and project '{{GCP_PROJECT_ID}}'.
   - Confirm that 'USE_GEMINI_API' is set to 'false' and 'VLLM_API_URL' is correctly pointed to the local service.
   - Validate that the agent actually applied the manifest to the cluster using tools (e.g., kubectl) rather than just showing the YAML.
 

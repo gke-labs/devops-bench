@@ -1,13 +1,13 @@
 task_id: 2
 name: "create-deployment"
-prompt: "Generate Kubernetes manifest for deploying our finetuned Gemma 3 12b model to our GKE {{CLUSTER_NAME}}. I think the models are stored in GCS in bucket hypercomputer-d1-models-{{PROJECT_ID}}. Ensure that it can scale up and down with traffic."
+prompt: "Generate Kubernetes manifest for deploying our finetuned Gemma 3 12b model to our GKE {{GKE_CLUSTER_NAME}}. I think the models are stored in GCS in bucket hypercomputer-d1-models-{{GCP_PROJECT_ID}}. Ensure that it can scale up and down with traffic."
 expected_output: |
   critical requirements: 
 
   - Expected Tool Call: generate_manifest
   - Deploy a vLLM server for the Gemma 3 12B model.
   - Configure the deployment to use 1 NVIDIA L4 GPU and the 'nvidia.com/gpu' toleration.
-  - Mount the model bucket 'hypercomputer-d1-models-{{PROJECT_ID}}' using gcsfuse CSI driver.
+  - Mount the model bucket 'hypercomputer-d1-models-{{GCP_PROJECT_ID}}' using gcsfuse CSI driver.
   - Serve model 'google-gemma-3-12b-it' with '--quantization fp8'.
   - Create a 'ClusterIP' service exposing the vLLM server on a feasible port.
   - Create an HPA for the deployment with feasible scaling parameters (e.g., max replicas, CPU utilization).
@@ -80,7 +80,7 @@ expected_output: |
             fsType: ''
             readOnly: false
             volumeAttributes:
-              bucketName: hypercomputer-d1-models-{{PROJECT_ID}}
+              bucketName: hypercomputer-d1-models-{{GCP_PROJECT_ID}}
               mountOptions: implicit-dirs
           name: model-volume
   ---

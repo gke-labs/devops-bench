@@ -131,6 +131,13 @@ def run_cli_agent(bin_path, prompt, context, system_instruction=None):
     
     # Disable OTLP telemetry exporters to prevent hangs from broken telemetry endpoints
     env = os.environ.copy()
+    
+    # Map benchmark standardized vars to Gemini CLI expected vars
+    if "AGENT_API_KEY" in env:
+        env["GOOGLE_API_KEY"] = env["AGENT_API_KEY"]
+    if "AGENT_MODEL" in env:
+        env["GEMINI_MODEL"] = env["AGENT_MODEL"]
+
     env["OTEL_TRACES_EXPORTER"] = "none"
     env["OTEL_METRICS_EXPORTER"] = "none"
     env["OTEL_LOGS_EXPORTER"] = "none"

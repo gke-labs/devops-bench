@@ -94,8 +94,8 @@ Feed each task to your configured agent and capture the agent's final response f
 ### Step 3: Evaluate Responses with LLM-as-a-Judge
 To evaluate the results, use a capable LLM to score the agent's responses against the specific criteria defined in the repository's [skills](https://github.com/gke-labs/devops-bench/tree/main/skills) directory.
 
-* **Choose a Judge Model**: Select a powerful LLM to act as your judge (e.g., Gemini 2.5 Pro or similar).
-**Note**: The results in this repository use gemini-3-flash-preview for outcome evaluation.
+* **Choose a Judge Model**: Select a powerful LLM to act as your judge (e.g., gemini-3.1-pro-preview or similar).
+**Note**: The results in this repository use gemini-3.1-pro-preview for outcome evaluation.
 
 * **Construct the Judge Prompt**: For each of the 5 tasks, construct a prompt (using the SKILL template) for the judge LLM. The prompt should include:
     * The original User Prompt/Task.
@@ -116,21 +116,49 @@ docker build -t devops-bench:latest .
 
 ### Running the Evaluation
 
-Use the following command to run a task evaluation inside the container. Replace the placeholder values (e.g., `<YOUR_PROJECT_ID>`) with your actual configuration.
+You can run the benchmark in two primary modes: **API Mode** (internal Python loop) or **CLI Mode** (e.g. external Gemini CLI binary).
+
+#### Option 1: Running in API Mode
+This mode uses the internal Python runner.
 
 ```bash
 docker run -it \
   -v ~/.config/gcloud:/root/.config/gcloud \
   -v $(pwd)/results:/app/results \
   -e CLOUD_PROVIDER="gcp" \
-  -e PROJECT_ID="<YOUR_PROJECT_ID>" \
-  -e CLUSTER_NAME="<YOUR_CLUSTER_NAME>" \
-  -e TASK_FILE="tasks/create-deployment/task.yaml" \
-  -e AGENT_TYPE="api" \
-  -e PROVIDER="gemini" \
-  -e USE_MCP="true" \
-  -e GEMINI_API_KEY="<YOUR_GEMINI_API_KEY>" \
-  -e GEMINI_MODEL="gemini-2.5-flash" \
+  -e GCP_PROJECT_ID="<YOUR_PROJECT_ID>" \
+  -e GKE_CLUSTER_NAME="<YOUR_CLUSTER_NAME>" \
+  -e BENCH_TASK_FILE="tasks/create-deployment/task.yaml" \
+  -e BENCH_AGENT_TYPE="api" \
+  -e BENCH_USE_MCP="true" \
+  -e AGENT_PROVIDER="google" \
+  -e AGENT_MODEL="gemini-3.1-pro-preview" \
+  -e AGENT_API_KEY="<YOUR_GEMINI_API_KEY>" \
+  -e JUDGE_PROVIDER="google" \
+  -e JUDGE_MODEL="gemini-3.1-pro-preview" \
+  -e JUDGE_API_KEY="<YOUR_GEMINI_API_KEY>" \
+  devops-bench:latest
+```
+
+#### Option 2: Running in CLI Mode
+This mode executes the CLI binaries installed inside the container (e.g. gemini
+CLI).
+
+```bash
+docker run -it \
+  -v ~/.config/gcloud:/root/.config/gcloud \
+  -v $(pwd)/results:/app/results \
+  -e CLOUD_PROVIDER="gcp" \
+  -e GCP_PROJECT_ID="<YOUR_PROJECT_ID>" \
+  -e GKE_CLUSTER_NAME="<YOUR_CLUSTER_NAME>" \
+  -e BENCH_TASK_FILE="tasks/create-deployment/task.yaml" \
+  -e BENCH_AGENT_TYPE="cli" \
+  -e AGENT_TARGET="gemini" \
+  -e AGENT_API_KEY="<YOUR_GEMINI_API_KEY>" \
+  -e AGENT_MODEL="gemini-3.1-pro-preview" \
+  -e JUDGE_PROVIDER="google" \
+  -e JUDGE_MODEL="gemini-3.1-pro-preview" \
+  -e JUDGE_API_KEY="<YOUR_GEMINI_API_KEY>" \
   devops-bench:latest
 ```
 
@@ -141,15 +169,24 @@ docker run -it \
 | `-it` | Runs the container in interactive mode with a TTY, allowing you to see real-time output. |
 | `-v ~/.config/gcloud:/root/.config/gcloud` | Mounts your local Google Cloud configuration into the container so it can use your existing credentials. |
 | `-v $(pwd)/results:/app/results` | Mounts the local `results` directory to the container. This ensures that evaluation outputs generated inside the container are saved to your host machine. |
+| **Infrastructure** | |
 | `-e CLOUD_PROVIDER` | Specifies the cloud provider (e.g., `gcp`). |
-| `-e PROJECT_ID` | The ID of the Google Cloud Project to run evaluations against. |
-| `-e CLUSTER_NAME` | The name of the GKE cluster used for the evaluation. |
-| `-e TASK_FILE` | Path to the specific YAML task file you want to evaluate. |
-| `-e AGENT_TYPE` | The type of agent to run (e.g., `api` or `cli`). |
-| `-e PROVIDER` | The LLM provider to use (e.g., `gemini` or `anthropic`). |
-| `-e USE_MCP` | Boolean flag (`true`/`false`) to enable or disable the Model Context Protocol (MCP) server. |
-| `-e GEMINI_API_KEY` | Your API key for the Gemini service. |
-| `-e GEMINI_MODEL` | The specific Gemini model version to use (e.g., `gemini-2.5-flash`). |
+| `-e GCP_PROJECT_ID` | The ID of the Google Cloud Project to run evaluations against. |
+| `-e GKE_CLUSTER_NAME` | The name of the GKE cluster used for the evaluation. |
+| **Benchmark Control** | |
+| `-e BENCH_TASK_FILE` | Path to the specific YAML task file you want to evaluate. |
+| `-e BENCH_AGENT_TYPE` | The type of agent to run (`api` or `cli`). |
+| `-e BENCH_USE_MCP` | Boolean flag (`true`/`false`) to enable or disable the Model Context Protocol (MCP) server. |
+| **Agent Configuration** | |
+| `-e AGENT_TARGET` | Path to the agent binary (required for `cli` mode, e.g., `gemini`). |
+| `-e AGENT_PROVIDER` | The LLM provider for the agent (e.g., `google` or `anthropic`). |
+| `-e AGENT_MODEL` | The specific model version to use for the agent (e.g., `gemini-3.1-pro-preview`). |
+| `-e AGENT_API_KEY` | Your API key for the agent's LLM provider. |
+| **Judge Configuration** | |
+| `-e JUDGE_PROVIDER` | The LLM provider for the judge (e.g., `google`). |
+| `-e JUDGE_MODEL` | The specific model version to use for evaluation (e.g., `gemini-3.1-pro-preview`). |
+| `-e JUDGE_API_KEY` | Your API key for the judge's LLM provider. |
+| | |
 | `devops-bench:latest` | The name and tag of the image to run. |
 
 ## DeepEval Integration
@@ -168,9 +205,9 @@ We use **GEval** (LLM-as-a-judge) metrics to score the agent's output against sp
 
 ### Configuration
 
-To run evaluations, you must provide a `GEMINI_API_KEY` as DeepEval uses an LLM to grade the outputs.
+To run evaluations, you must provide a `JUDGE_API_KEY` as DeepEval uses an LLM to grade the outputs.
 
-You can specify the model used for evaluation via the `GEMINI_MODEL` environment variable.
+You can specify the model used for evaluation via the `JUDGE_MODEL` environment variable.
 
 ## Viewing Results
 

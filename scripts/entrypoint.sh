@@ -2,9 +2,9 @@
 set -e
 
 # Verify required environment variables are set
-if [ -z "$CLOUD_PROVIDER" ] || [ -z "$TASK_FILE" ]; then
-    echo "Error: CLOUD_PROVIDER and TASK_FILE environment variables must be set."
-    echo "Usage: docker run -e CLOUD_PROVIDER=<gcp> -e TASK_FILE=<file> ..."
+if [ -z "$CLOUD_PROVIDER" ] || [ -z "$BENCH_TASK_FILE" ]; then
+    echo "Error: CLOUD_PROVIDER and BENCH_TASK_FILE environment variables must be set."
+    echo "Usage: docker run -e CLOUD_PROVIDER=<gcp> -e BENCH_TASK_FILE=<file> ..."
     exit 1
 fi
 
@@ -20,7 +20,7 @@ fi
 export KUBECONFIG=/tmp/kubeconfig
 
 # Step 2: Call the deployer script to bring up the cluster
-# We assume infra.py reads necessary env vars (like PROJECT_ID, CLUSTER_NAME) directly.
+# We assume infra.py reads necessary env vars (like GCP_PROJECT_ID, GKE_CLUSTER_NAME) directly.
 echo "Step 2: Bringing up cluster for $CLOUD_PROVIDER..."
 python3 scripts/infra.py "$CLOUD_PROVIDER" up
 
@@ -42,7 +42,7 @@ if [ -f "$HOME/deepeval_env/bin/activate" ]; then
     source "$HOME/deepeval_env/bin/activate"
 fi
 
-python3 pkg/evaluator/evaluate.py "$TASK_FILE"
+python3 pkg/evaluator/evaluate.py "$BENCH_TASK_FILE"
 
 # Step 3.5: Display results
 echo "Step 3.5: Displaying results..."

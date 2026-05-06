@@ -1,10 +1,10 @@
 task_id: 1
 name: "get-app-architecture"
-prompt: "summarize the hypercomputer d1 app in project {{PROJECT_ID}}"
+prompt: "summarize the hypercomputer d1 app in project {{GCP_PROJECT_ID}}"
 expected_output: |
   critical requirements: 
 
-  - Identify the app as 'hypercomputer d1' in project '{{PROJECT_ID}}'.
+  - Identify the app as 'hypercomputer d1' in project '{{GCP_PROJECT_ID}}'.
   - List core Kubernetes components (e.g., frontend-deployment, vllm-service).
   - Mention the integration with the Gemini API (e.g., for fallback/orchestration).
 

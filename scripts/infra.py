@@ -24,12 +24,12 @@ def main():
     args = parser.parse_args()
     
     if args.provider == "gcp":
-        project = args.project or os.environ.get("PROJECT_ID")
-        cluster_name = args.cluster_name or os.environ.get("CLUSTER_NAME")
-        zone = args.zone or os.environ.get("ZONE", "us-central1-a")
+        project = args.project or os.environ.get("GCP_PROJECT_ID")
+        cluster_name = args.cluster_name or os.environ.get("GKE_CLUSTER_NAME")
+        zone = args.zone or os.environ.get("GCP_ZONE", "us-central1-a")
         
         if not project or not cluster_name:
-            print("Error: Project and Cluster Name must be specified via flags or environment variables (PROJECT_ID, CLUSTER_NAME).", file=sys.stderr)
+            print("Error: Project and Cluster Name must be specified via flags or environment variables (GCP_PROJECT_ID, GKE_CLUSTER_NAME).", file=sys.stderr)
             sys.exit(1)
             
         deployer = GCPDeployer(project=project, zone=zone, cluster_name=cluster_name)

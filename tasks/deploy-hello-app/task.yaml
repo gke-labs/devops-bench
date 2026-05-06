@@ -1,6 +1,6 @@
 task_id: 6
 name: "deploy-hello-app"
-prompt: "Generate a production-ready Kubernetes manifest for the application located at {{APP_LOCATION}} and then deploy it to cluster {{CLUSTER_NAME}} in project {{PROJECT_ID}}. I know the app is just a simple hello world, pretend it is a complex app that needs full productionization."
+prompt: "Generate a production-ready Kubernetes manifest for the application located at {{APP_LOCATION}} and then deploy it to cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}. I know the app is just a simple hello world, pretend it is a complex app that needs full productionization."
 expected_output: |
   critical requirements: 
   - Convert program to HTTP server
