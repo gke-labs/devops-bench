@@ -83,10 +83,98 @@ def replace_placeholders(text, project_id, cluster_name):
   )
 
 
+def print_configuration_context(cloud_provider, project_id, cluster_name, agent_type, agent_target, use_mcp, app_location, agent_provider, agent_model, judge_provider, judge_model):
+  """Prints a formatted summary of the active evaluation configurations."""
+  print("-" * 50)
+  print("Configuration Context:")
+  print(f"  - CLOUD_PROVIDER:       {cloud_provider}")
+  print(f"  - GCP_PROJECT_ID:       {project_id}")
+  print(f"  - GKE_CLUSTER_NAME:     {cluster_name}")
+  print(f"  - BENCH_AGENT_TYPE:     {agent_type}")
+  print(f"  - AGENT_TARGET:         {agent_target}")
+  print(f"  - BENCH_USE_MCP:        {use_mcp}")
+  print(f"  - APP_LOCATION:         {app_location}")
+  print(f"  - AGENT_PROVIDER:       {agent_provider}")
+  print(f"  - AGENT_MODEL:          {agent_model}")
+  print(f"  - JUDGE_PROVIDER:       {judge_provider}")
+  print(f"  - JUDGE_MODEL:          {judge_model}")
+  print("-" * 50)
+
+
+def load_evaluation_data(input_path):
+  """Loads task specifications from a folder, a YAML file, or a JSON file."""
+  if os.path.isdir(input_path):
+      print(f"Loading tasks specifications dynamically from {input_path} folder...")
+      eval_data = load_from_tasks_dir(input_path)
+  elif input_path.endswith((".yaml", ".yml")):
+      print(f"Loading task specification from {input_path}...")
+      with open(input_path, "r") as f:
+          content = safe_parse_yaml(f.read())
+          eval_data = [{
+              "task_id": content.get("task_id", 1),
+              "name": content.get("name", "Legacy Case"),
+              "input": content.get("prompt", "").strip(),
+              "expected_output": content.get("expected_output", "").strip(),
+              "retrieval_context": content.get("retrieval_context", [])
+          }]
+  else:
+      with open(input_path, "r") as f:
+          eval_data = json.load(f)
+
+  if isinstance(eval_data, dict):
+      eval_data = [{
+          "task_id": eval_data.get("task_id", 1),
+          "name": eval_data.get("name", "Legacy Case"),
+          "input": eval_data.get("goal", eval_data.get("input", "")),
+          "expected_output": eval_data.get("expected_output", ""),
+          "retrieval_context": eval_data.get("retrieval_context", [])
+      }]
+  return eval_data
+
+
+def load_configuration_context():
+  """Retrieves, validates, and logs the active benchmark and agent configurations."""
+  agent_type = os.environ.get("BENCH_AGENT_TYPE", "cli").lower()
+  agent_target = os.environ.get("AGENT_TARGET", "./my-agent")
+  gemini_model = GeminiDeepEvalModel()
+  project_id = os.environ.get("GCP_PROJECT_ID")
+  cluster_name = os.environ.get("GKE_CLUSTER_NAME")
+
+  if not project_id or not cluster_name:
+      print("Error: GCP_PROJECT_ID and GKE_CLUSTER_NAME must be set.")
+      sys.exit(1)
+
+  use_mcp = os.environ.get("BENCH_USE_MCP", "true")
+  app_location = os.environ.get("APP_LOCATION", "N/A")
+  agent_provider = os.environ.get("AGENT_PROVIDER", "google")
+  agent_model = os.environ.get("AGENT_MODEL", "gemini-3.1-pro-preview")
+  judge_provider = os.environ.get("JUDGE_PROVIDER", "google")
+  judge_model = os.environ.get("JUDGE_MODEL", "gemini-3.1-pro-preview")
+  cloud_provider = os.environ.get("CLOUD_PROVIDER", "gcp")
+
+  print_configuration_context(
+      cloud_provider,
+      project_id,
+      cluster_name,
+      agent_type,
+      agent_target,
+      use_mcp,
+      app_location,
+      agent_provider,
+      agent_model,
+      judge_provider,
+      judge_model
+  )
+
+  return agent_type, agent_target, gemini_model, project_id, cluster_name
+
+
 def execute_agent(agent_type, agent_target, prompt, context):
   """Executes the appropriate agent and returns standardized results."""
   if agent_type in ["cli", "binary"]:
-    return run_cli_agent(agent_target, prompt, context, system_instruction=SYSTEM_INSTRUCTION)
+    use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
+    use_mcp = use_mcp_env == "true"
+    return run_cli_agent(agent_target, prompt, context, use_mcp=use_mcp, system_instruction=SYSTEM_INSTRUCTION)
   elif agent_type == "api":
     mcp_server_path = os.environ.get("MCP_SERVER_PATH", "third_party/gke-mcp/gke-mcp")
     provider = os.environ.get("AGENT_PROVIDER", "google")
@@ -291,56 +379,14 @@ def main():
         sys.exit(1)
 
     input_path = sys.argv[1]
-    
-    if os.path.isdir(input_path):
-        print(f"Loading tasks specifications dynamically from {input_path} folder...")
-        eval_data = load_from_tasks_dir(input_path)
-    elif input_path.endswith((".yaml", ".yml")):
-        print(f"Loading task specification from {input_path}...")
-        with open(input_path, "r") as f:
-            content = safe_parse_yaml(f.read())
-            eval_data = [{
-                "task_id": content.get("task_id", 1),
-                "name": content.get("name", "Legacy Case"),
-                "input": content.get("prompt", "").strip(),
-                "expected_output": content.get("expected_output", "").strip(),
-                "retrieval_context": content.get("retrieval_context", [])
-            }]
-    else:
-        with open(input_path, "r") as f:
-            eval_data = json.load(f)
-
-    if isinstance(eval_data, dict):
-        eval_data = [{
-            "task_id": eval_data.get("task_id", 1),
-            "name": eval_data.get("name", "Legacy Case"),
-            "input": eval_data.get("goal", eval_data.get("input", "")),
-            "expected_output": eval_data.get("expected_output", ""),
-            "retrieval_context": eval_data.get("retrieval_context", [])
-        }]
+    eval_data = load_evaluation_data(input_path)
 
     limit = os.environ.get("EVAL_LIMIT")
     if limit and isinstance(eval_data, list):
         eval_data = eval_data[:int(limit)]
         print(f"Limiting evaluation to the first {limit} cases.")
 
-    agent_type = os.environ.get("BENCH_AGENT_TYPE", "cli").lower()
-    agent_target = os.environ.get("AGENT_TARGET", "./my-agent")
-    gemini_model = GeminiDeepEvalModel()
-    project_id = os.environ.get("GCP_PROJECT_ID")
-    cluster_name = os.environ.get("GKE_CLUSTER_NAME")
-
-    if not project_id or not cluster_name:
-        print("Error: GCP_PROJECT_ID and GKE_CLUSTER_NAME must be set.")
-        sys.exit(1)
-
-    print("-" * 50)
-    print("Configuration Context:")
-    print(f"  - Agent Type:     {agent_type.upper()}")
-    print(f"  - Agent Target:   {agent_target}")
-    print(f"  - Project ID:     {project_id}")
-    print(f"  - Cluster Name:   {cluster_name}")
-    print("-" * 50)
+    agent_type, agent_target, gemini_model, project_id, cluster_name = load_configuration_context()
 
     print(f"Running dataset evaluation with {len(eval_data)} cases...")
     dataset = EvaluationDataset()
