@@ -5,6 +5,7 @@ import glob
 import time
 import subprocess
 from deepeval.tracing import observe
+from pkg.agents.runner.openclaw import run_openclaw_agent
 
 
 def parse_gemini_cli_output(raw_output: str) -> dict:
@@ -103,14 +104,14 @@ def extract_trajectory_from_session(session_id: str) -> dict:
 
 
 @observe()
-def run_cli_agent(bin_path, prompt, context, bench_use_mcp=True, system_instruction=None):
+def run_cli_agent(agent_target, prompt, context, bench_use_mcp=True, system_instruction=None):
     """Runs an external binary agent."""
     if system_instruction:
         prompt = f"{prompt}\n\nInstructions: {system_instruction}"
     input_data = json.dumps({"goal": prompt, "context": context})
-    args = [bin_path]
+    args = [agent_target]
     use_stdin = True
-    if "gemini" in bin_path:
+    if "gemini" in agent_target:
         args.extend(["-o", "json", "--skip-trust"])
         if bench_use_mcp:
             # Pre-approve GKE MCP tools to prevent interactive confirmation prompts in headless mode
@@ -130,6 +131,9 @@ def run_cli_agent(bin_path, prompt, context, bench_use_mcp=True, system_instruct
             args.extend(["-e", "none"])
         args.extend(["-p", prompt])
         use_stdin = False
+    elif "openclaw" in agent_target:
+        return run_openclaw_agent(prompt, context)
+        
     start_time = time.time()
     
     # Disable OTLP telemetry exporters to prevent hangs from broken telemetry endpoints
