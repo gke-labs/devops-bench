@@ -149,9 +149,9 @@ async def _run_agent_loop(goal, tools, mcp_client, llm_client, system_instructio
 
 
 @observe(span_type="LLM")
-async def run_api_agent(goal, mcp_server_path, llm_client: LLMClient, use_mcp=True, system_instruction=None):
+async def run_api_agent(goal, mcp_server_path, llm_client: LLMClient, bench_use_mcp=True, system_instruction=None):
   """Runs an agent that optionally connects to an MCP server."""
-  if use_mcp:
+  if bench_use_mcp:
     async with MCPClient(mcp_server_path) as mcp_client:
       result = await mcp_client.list_tools()
       tools = result.tools

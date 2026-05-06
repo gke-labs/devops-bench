@@ -103,7 +103,7 @@ def extract_trajectory_from_session(session_id: str) -> dict:
 
 
 @observe()
-def run_cli_agent(bin_path, prompt, context, use_mcp=True, system_instruction=None):
+def run_cli_agent(bin_path, prompt, context, bench_use_mcp=True, system_instruction=None):
     """Runs an external binary agent."""
     if system_instruction:
         prompt = f"{prompt}\n\nInstructions: {system_instruction}"
@@ -112,7 +112,7 @@ def run_cli_agent(bin_path, prompt, context, use_mcp=True, system_instruction=No
     use_stdin = True
     if "gemini" in bin_path:
         args.extend(["-o", "json", "--skip-trust"])
-        if use_mcp:
+        if bench_use_mcp:
             # Pre-approve GKE MCP tools to prevent interactive confirmation prompts in headless mode
             allowed_tools = [
                 "mcp_gke_list_clusters",

@@ -172,9 +172,9 @@ def load_configuration_context():
 def execute_agent(agent_type, agent_target, prompt, context):
   """Executes the appropriate agent and returns standardized results."""
   if agent_type in ["cli", "binary"]:
-    use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
-    use_mcp = use_mcp_env == "true"
-    return run_cli_agent(agent_target, prompt, context, use_mcp=use_mcp, system_instruction=SYSTEM_INSTRUCTION)
+    bench_use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
+    bench_use_mcp = bench_use_mcp_env == "true"
+    return run_cli_agent(agent_target, prompt, context, bench_use_mcp=bench_use_mcp, system_instruction=SYSTEM_INSTRUCTION)
   elif agent_type == "api":
     mcp_server_path = os.environ.get("MCP_SERVER_PATH", "third_party/gke-mcp/gke-mcp")
     provider = os.environ.get("AGENT_PROVIDER", "google")
@@ -184,14 +184,14 @@ def execute_agent(agent_type, agent_target, prompt, context):
       llm_client = AnthropicClientAdapter()
     else:
       print(f"Unknown provider: {provider}")
-    use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
-    use_mcp = use_mcp_env == "true"
+    bench_use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
+    bench_use_mcp = bench_use_mcp_env == "true"
     return asyncio.run(
         run_api_agent(
             prompt,
             mcp_server_path,
             llm_client,
-            use_mcp=use_mcp,
+            bench_use_mcp=bench_use_mcp,
             system_instruction=SYSTEM_INSTRUCTION,
         )
     )
