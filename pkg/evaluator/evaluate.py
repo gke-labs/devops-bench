@@ -83,7 +83,7 @@ def replace_placeholders(text, project_id, cluster_name):
   )
 
 
-def print_configuration_context(cloud_provider, project_id, cluster_name, agent_type, agent_target, use_mcp, app_location, agent_provider, agent_model, judge_provider, judge_model):
+def print_configuration_context(cloud_provider, project_id, cluster_name, agent_type, agent_target, bench_use_mcp, app_location, agent_provider, agent_model, judge_provider, judge_model):
   """Prints a formatted summary of the active evaluation configurations."""
   print("-" * 50)
   print("Configuration Context:")
@@ -92,7 +92,7 @@ def print_configuration_context(cloud_provider, project_id, cluster_name, agent_
   print(f"  - GKE_CLUSTER_NAME:     {cluster_name}")
   print(f"  - BENCH_AGENT_TYPE:     {agent_type}")
   print(f"  - AGENT_TARGET:         {agent_target}")
-  print(f"  - BENCH_USE_MCP:        {use_mcp}")
+  print(f"  - BENCH_USE_MCP:        {bench_use_mcp}")
   print(f"  - APP_LOCATION:         {app_location}")
   print(f"  - AGENT_PROVIDER:       {agent_provider}")
   print(f"  - AGENT_MODEL:          {agent_model}")
@@ -144,7 +144,7 @@ def load_configuration_context():
       print("Error: GCP_PROJECT_ID and GKE_CLUSTER_NAME must be set.")
       sys.exit(1)
 
-  use_mcp = os.environ.get("BENCH_USE_MCP", "true")
+  bench_use_mcp = os.environ.get("BENCH_USE_MCP", "true")
   app_location = os.environ.get("APP_LOCATION", "N/A")
   agent_provider = os.environ.get("AGENT_PROVIDER", "google")
   agent_model = os.environ.get("AGENT_MODEL", "gemini-3.1-pro-preview")
@@ -158,7 +158,7 @@ def load_configuration_context():
       cluster_name,
       agent_type,
       agent_target,
-      use_mcp,
+      bench_use_mcp,
       app_location,
       agent_provider,
       agent_model,
