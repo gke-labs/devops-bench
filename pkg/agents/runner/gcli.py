@@ -104,18 +104,42 @@ def extract_trajectory_from_session(session_id: str) -> dict:
 
 
 @observe()
-def run_cli_agent(agent_target, prompt, context):
+def run_cli_agent(agent_target, prompt, context, system_instruction=None):
     """Runs an external binary agent."""
+    if system_instruction:
+        prompt = f"{prompt}\n\nInstructions: {system_instruction}"
     input_data = json.dumps({"goal": prompt, "context": context})
     args = [agent_target]
     use_stdin = True
     if "gemini" in agent_target:
-        args.extend(["-o", "json", "-p", prompt])
+        args.extend(["-o", "json", "--skip-trust"])
+        # Pre-approve GKE MCP tools to prevent interactive confirmation prompts in headless mode
+        allowed_tools = [
+            "mcp_gke_list_clusters",
+            "mcp_gke_get_cluster",
+            "mcp_gke_generate_manifest",
+            "mcp_gke_giq_generate_manifest",
+            "mcp_gke_query_logs",
+            "mcp_gke_get_log_schema",
+            "mcp_gke_get_kubeconfig",
+            "mcp_gke_list_namespaces"
+        ]
+        for tool in allowed_tools:
+            args.extend(["--allowed-tools", tool])
+        args.extend(["-p", prompt])
         use_stdin = False
     elif "openclaw" in agent_target:
         return run_openclaw_agent(prompt, context)
         
     start_time = time.time()
+    
+    # Disable OTLP telemetry exporters to prevent hangs from broken telemetry endpoints
+    env = os.environ.copy()
+    env["OTEL_TRACES_EXPORTER"] = "none"
+    env["OTEL_METRICS_EXPORTER"] = "none"
+    env["OTEL_LOGS_EXPORTER"] = "none"
+    env["OTEL_SDK_DISABLED"] = "true"
+
     try:
         if use_stdin:
             result = subprocess.run(
@@ -124,6 +148,7 @@ def run_cli_agent(agent_target, prompt, context):
                 text=True,
                 capture_output=True,
                 check=True,
+                env=env,
             )
         else:
             result = subprocess.run(
@@ -131,6 +156,7 @@ def run_cli_agent(agent_target, prompt, context):
                 text=True,
                 capture_output=True,
                 check=True,
+                env=env,
             )
         latency = time.time() - start_time
         

@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Gemini CLI globally (customizable version)
+ARG GEMINI_CLI_VERSION=latest
+RUN npm install -g @google/gemini-cli@${GEMINI_CLI_VERSION}
+
 # Install Go (required to build kubetest2)
 COPY --from=golang:1.22 /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:${PATH}"
@@ -32,7 +36,7 @@ COPY . .
 ARG KUBETEST2_VERSION=master
 RUN bash ./scripts/setup_kubetest2.sh "$KUBETEST2_VERSION"
 
-# Build gke-mcp
+# Build gke-mcp and configure Gemini CLI extension
 ARG GKE_MCP_VERSION=main
 RUN bash ./scripts/setup_gke_mcp.sh "$GKE_MCP_VERSION"
 
