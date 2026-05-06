@@ -83,11 +83,99 @@ def replace_placeholders(text, project_id, cluster_name):
   )
 
 
-def execute_agent(agent_type, agent_target, prompt, context):
+def print_configuration_context(cloud_provider, gcp_project_id, gke_cluster_name, bench_agent_type, agent_target, bench_use_mcp, app_location, agent_provider, agent_model, judge_provider, judge_model):
+  """Prints a formatted summary of the active evaluation configurations."""
+  print("-" * 50)
+  print("Configuration Context:")
+  print(f"  - CLOUD_PROVIDER:       {cloud_provider}")
+  print(f"  - GCP_PROJECT_ID:       {gcp_project_id}")
+  print(f"  - GKE_CLUSTER_NAME:     {gke_cluster_name}")
+  print(f"  - BENCH_AGENT_TYPE:     {bench_agent_type}")
+  print(f"  - AGENT_TARGET:         {agent_target}")
+  print(f"  - BENCH_USE_MCP:        {bench_use_mcp}")
+  print(f"  - APP_LOCATION:         {app_location}")
+  print(f"  - AGENT_PROVIDER:       {agent_provider}")
+  print(f"  - AGENT_MODEL:          {agent_model}")
+  print(f"  - JUDGE_PROVIDER:       {judge_provider}")
+  print(f"  - JUDGE_MODEL:          {judge_model}")
+  print("-" * 50)
+
+
+def load_evaluation_data(input_path):
+  """Loads task specifications from a folder, a YAML file, or a JSON file."""
+  if os.path.isdir(input_path):
+      print(f"Loading tasks specifications dynamically from {input_path} folder...")
+      eval_data = load_from_tasks_dir(input_path)
+  elif input_path.endswith((".yaml", ".yml")):
+      print(f"Loading task specification from {input_path}...")
+      with open(input_path, "r") as f:
+          content = safe_parse_yaml(f.read())
+          eval_data = [{
+              "task_id": content.get("task_id", 1),
+              "name": content.get("name", "Legacy Case"),
+              "input": content.get("prompt", "").strip(),
+              "expected_output": content.get("expected_output", "").strip(),
+              "retrieval_context": content.get("retrieval_context", [])
+          }]
+  else:
+      with open(input_path, "r") as f:
+          eval_data = json.load(f)
+
+  if isinstance(eval_data, dict):
+      eval_data = [{
+          "task_id": eval_data.get("task_id", 1),
+          "name": eval_data.get("name", "Legacy Case"),
+          "input": eval_data.get("goal", eval_data.get("input", "")),
+          "expected_output": eval_data.get("expected_output", ""),
+          "retrieval_context": eval_data.get("retrieval_context", [])
+      }]
+  return eval_data
+
+
+def load_configuration_context():
+  """Retrieves, validates, and logs the active benchmark and agent configurations."""
+  bench_agent_type = os.environ.get("BENCH_AGENT_TYPE", "cli").lower()
+  agent_target = os.environ.get("AGENT_TARGET", "./my-agent")
+  gemini_model = GeminiDeepEvalModel()
+  gcp_project_id = os.environ.get("GCP_PROJECT_ID")
+  gke_cluster_name = os.environ.get("GKE_CLUSTER_NAME")
+
+  if not gcp_project_id or not gke_cluster_name:
+      print("Error: GCP_PROJECT_ID and GKE_CLUSTER_NAME must be set.")
+      sys.exit(1)
+
+  bench_use_mcp = os.environ.get("BENCH_USE_MCP", "true")
+  app_location = os.environ.get("APP_LOCATION", "N/A")
+  agent_provider = os.environ.get("AGENT_PROVIDER", "google")
+  agent_model = os.environ.get("AGENT_MODEL", "gemini-3.1-pro-preview")
+  judge_provider = os.environ.get("JUDGE_PROVIDER", "google")
+  judge_model = os.environ.get("JUDGE_MODEL", "gemini-3.1-pro-preview")
+  cloud_provider = os.environ.get("CLOUD_PROVIDER", "gcp")
+
+  print_configuration_context(
+      cloud_provider,
+      gcp_project_id,
+      gke_cluster_name,
+      bench_agent_type,
+      agent_target,
+      bench_use_mcp,
+      app_location,
+      agent_provider,
+      agent_model,
+      judge_provider,
+      judge_model
+  )
+
+  return bench_agent_type, agent_target, gemini_model, gcp_project_id, gke_cluster_name
+
+
+def execute_agent(bench_agent_type, agent_target, prompt, context):
   """Executes the appropriate agent and returns standardized results."""
-  if agent_type == "cli":
-    return run_cli_agent(agent_target, prompt, context, system_instruction=SYSTEM_INSTRUCTION)
-  elif agent_type == "api":
+  if bench_agent_type in ["cli", "binary"]:
+    bench_use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
+    bench_use_mcp = bench_use_mcp_env == "true"
+    return run_cli_agent(agent_target, prompt, context, bench_use_mcp=bench_use_mcp, system_instruction=SYSTEM_INSTRUCTION)
+  elif bench_agent_type == "api":
     mcp_server_path = os.environ.get("MCP_SERVER_PATH", "third_party/gke-mcp/gke-mcp")
     provider = os.environ.get("AGENT_PROVIDER", "google")
     if provider == "gemini" or provider == "google":
@@ -96,19 +184,19 @@ def execute_agent(agent_type, agent_target, prompt, context):
       llm_client = AnthropicClientAdapter()
     else:
       print(f"Unknown provider: {provider}")
-    use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
-    use_mcp = use_mcp_env == "true"
+    bench_use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
+    bench_use_mcp = bench_use_mcp_env == "true"
     return asyncio.run(
         run_api_agent(
             prompt,
             mcp_server_path,
             llm_client,
-            use_mcp=use_mcp,
+            bench_use_mcp=bench_use_mcp,
             system_instruction=SYSTEM_INSTRUCTION,
         )
     )
   else:
-    raise ValueError(f"Unknown agent type: {agent_type}")
+    raise ValueError(f"Unknown agent type: {bench_agent_type}")
 
 
 def create_evaluation_metrics(model):
@@ -142,7 +230,7 @@ def create_evaluation_metrics(model):
   return [outcome_validity, tool_invocation]
 
 
-def evaluate_metrics_batch(detailed_results, project_id, gemini_model):
+def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
   """Calculates batch metrics for a list of execution results."""
   print("\nStarting batch post-processing evaluation metrics...")
   for res in detailed_results:
@@ -212,7 +300,7 @@ def evaluate_metrics_batch(detailed_results, project_id, gemini_model):
     outcome_test_case = LLMTestCase(
             input=prompt,
             actual_output=actual_output if actual_output else "No response generated",
-            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", project_id),
+            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", gcp_project_id),
             retrieval_context=retrieval_context,
             latency=latency,
         )
@@ -224,7 +312,7 @@ def evaluate_metrics_batch(detailed_results, project_id, gemini_model):
     tool_test_case = LLMTestCase(
             input=prompt,
             actual_output=json.dumps(combined_actual, indent=2),
-            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", project_id),
+            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", gcp_project_id),
             latency=latency,
         )
 
@@ -291,56 +379,14 @@ def main():
         sys.exit(1)
 
     input_path = sys.argv[1]
-    
-    if os.path.isdir(input_path):
-        print(f"Loading tasks specifications dynamically from {input_path} folder...")
-        eval_data = load_from_tasks_dir(input_path)
-    elif input_path.endswith((".yaml", ".yml")):
-        print(f"Loading task specification from {input_path}...")
-        with open(input_path, "r") as f:
-            content = safe_parse_yaml(f.read())
-            eval_data = [{
-                "task_id": content.get("task_id", 1),
-                "name": content.get("name", "Legacy Case"),
-                "input": content.get("prompt", "").strip(),
-                "expected_output": content.get("expected_output", "").strip(),
-                "retrieval_context": content.get("retrieval_context", [])
-            }]
-    else:
-        with open(input_path, "r") as f:
-            eval_data = json.load(f)
-
-    if isinstance(eval_data, dict):
-        eval_data = [{
-            "task_id": eval_data.get("task_id", 1),
-            "name": eval_data.get("name", "Legacy Case"),
-            "input": eval_data.get("goal", eval_data.get("input", "")),
-            "expected_output": eval_data.get("expected_output", ""),
-            "retrieval_context": eval_data.get("retrieval_context", [])
-        }]
+    eval_data = load_evaluation_data(input_path)
 
     limit = os.environ.get("EVAL_LIMIT")
     if limit and isinstance(eval_data, list):
         eval_data = eval_data[:int(limit)]
         print(f"Limiting evaluation to the first {limit} cases.")
 
-    agent_type = os.environ.get("BENCH_AGENT_TYPE", "cli").lower()
-    agent_target = os.environ.get("AGENT_TARGET", "./my-agent")
-    gemini_model = GeminiDeepEvalModel()
-    project_id = os.environ.get("GCP_PROJECT_ID")
-    cluster_name = os.environ.get("GKE_CLUSTER_NAME")
-
-    if not project_id or not cluster_name:
-        print("Error: GCP_PROJECT_ID and GKE_CLUSTER_NAME must be set.")
-        sys.exit(1)
-
-    print("-" * 50)
-    print("Configuration Context:")
-    print(f"  - Agent Type:     {agent_type.upper()}")
-    print(f"  - Agent Target:   {agent_target}")
-    print(f"  - Project ID:     {project_id}")
-    print(f"  - Cluster Name:   {cluster_name}")
-    print("-" * 50)
+    bench_agent_type, agent_target, gemini_model, gcp_project_id, gke_cluster_name = load_configuration_context()
 
     print(f"Running dataset evaluation with {len(eval_data)} cases...")
     dataset = EvaluationDataset()
@@ -353,13 +399,13 @@ def main():
 
     for item in eval_data:
         prompt = item["input"]
-        prompt = replace_placeholders(prompt, project_id, cluster_name)
+        prompt = replace_placeholders(prompt, gcp_project_id, gke_cluster_name)
 
         print(f"Executing agent for prompt: {prompt}")
         
         before_files = set(os.listdir("."))
         
-        agent_res = execute_agent(agent_type, agent_target, prompt, {})
+        agent_res = execute_agent(bench_agent_type, agent_target, prompt, {})
             
         after_files = set(os.listdir("."))
         new_files = after_files - before_files
@@ -398,7 +444,7 @@ def main():
 
     # 2. Loop to EVALUATE metrics for all tasks at the end
     # 2. Execute batch metrics post-processing turn via helper function
-    evaluate_metrics_batch(detailed_results, project_id, gemini_model)
+    evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model)
 
     with open(os.path.join(run_dir, "results.json"), "w") as f:
         json.dump(detailed_results, f, indent=2)

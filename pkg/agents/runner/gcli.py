@@ -104,7 +104,7 @@ def extract_trajectory_from_session(session_id: str) -> dict:
 
 
 @observe()
-def run_cli_agent(agent_target, prompt, context, system_instruction=None):
+def run_cli_agent(agent_target, prompt, context, bench_use_mcp=True, system_instruction=None):
     """Runs an external binary agent."""
     if system_instruction:
         prompt = f"{prompt}\n\nInstructions: {system_instruction}"
@@ -113,19 +113,22 @@ def run_cli_agent(agent_target, prompt, context, system_instruction=None):
     use_stdin = True
     if "gemini" in agent_target:
         args.extend(["-o", "json", "--skip-trust"])
-        # Pre-approve GKE MCP tools to prevent interactive confirmation prompts in headless mode
-        allowed_tools = [
-            "mcp_gke_list_clusters",
-            "mcp_gke_get_cluster",
-            "mcp_gke_generate_manifest",
-            "mcp_gke_giq_generate_manifest",
-            "mcp_gke_query_logs",
-            "mcp_gke_get_log_schema",
-            "mcp_gke_get_kubeconfig",
-            "mcp_gke_list_namespaces"
-        ]
-        for tool in allowed_tools:
-            args.extend(["--allowed-tools", tool])
+        if bench_use_mcp:
+            # Pre-approve GKE MCP tools to prevent interactive confirmation prompts in headless mode
+            allowed_tools = [
+                "mcp_gke_list_clusters",
+                "mcp_gke_get_cluster",
+                "mcp_gke_generate_manifest",
+                "mcp_gke_giq_generate_manifest",
+                "mcp_gke_query_logs",
+                "mcp_gke_get_log_schema",
+                "mcp_gke_get_kubeconfig",
+                "mcp_gke_list_namespaces"
+            ]
+            for tool in allowed_tools:
+                args.extend(["--allowed-tools", tool])
+        else:
+            args.extend(["-e", "none"])
         args.extend(["-p", prompt])
         use_stdin = False
     elif "openclaw" in agent_target:
