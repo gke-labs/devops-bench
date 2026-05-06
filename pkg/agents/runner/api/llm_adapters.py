@@ -10,15 +10,16 @@ class GeminiClientAdapter(LLMClient):
 
   def __init__(self, model_name=None):
     if not model_name:
-      model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+      model_name = os.environ.get("AGENT_MODEL", "gemini-3.1-pro-preview")
 
-    project_id = os.environ.get("VERTEX_PROJECT_ID")
-    location = os.environ.get("VERTEX_LOCATION", "us-central1")
+    project_id = os.environ.get("GCP_PROJECT_ID")
+    location = os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
+    api_key = os.environ.get("AGENT_API_KEY")
 
     if project_id:
       self.client = genai.Client(vertexai=True, project=project_id, location=location)
     else:
-      self.client = genai.Client()
+      self.client = genai.Client(api_key=api_key)
 
     self.model_name = model_name
 
@@ -102,14 +103,14 @@ class AnthropicClientAdapter(LLMClient):
   """Adapter for Anthropic SDK."""
 
   def __init__(self, model_name=None):
-    project_id = os.environ.get("VERTEX_PROJECT_ID")
-    location = os.environ.get("VERTEX_LOCATION", "us-central1")
+    project_id = os.environ.get("GCP_PROJECT_ID")
+    location = os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
 
     if not model_name:
-      model_name = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5@20250929")
+      model_name = os.environ.get("AGENT_MODEL", "claude-sonnet-4-5@20250929")
 
     if not project_id:
-      print("Warning: VERTEX_PROJECT_ID not set. AsyncAnthropicVertex may fail if not inferred from environment.")
+      print("Warning: GCP_PROJECT_ID not set. AsyncAnthropicVertex may fail if not inferred from environment.")
 
     self.client = AsyncAnthropicVertex(region=location, project_id=project_id)
     self.model_name = model_name

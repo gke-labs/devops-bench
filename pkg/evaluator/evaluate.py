@@ -28,23 +28,33 @@ from pkg.evaluator.loader import load_from_tasks_dir, safe_parse_yaml
 SYSTEM_INSTRUCTION = """You are an expert DevOps engineer. When asked to make an app production-ready, do not ask for clarification. Assume standard production requirements. Generate the manifest directly instead of asking the user for details."""
 
 
+def validate_config(role, provider, model):
+  """Logs the detected configuration. TODO: Add consistency checks."""
+  print(f"DEBUG: Validating {role} config - Provider: {provider}, Model: {model}")
+  # TODO: Add consistency checks (e.g., google provider expects gemini-* models)
+  pass
+
+
 class GeminiDeepEvalModel(DeepEvalBaseLLM):
   """Wrapper for Gemini SDK to be used with DeepEval."""
 
   def __init__(self, model_name=None):
     if not model_name:
-      model_name = os.environ.get("GEMINI_MODEL", "gemini-3.1-pro")
+      model_name = os.environ.get("JUDGE_MODEL", "gemini-3.1-pro-preview")
 
     self.model_name = model_name
-    project_id = os.environ.get("VERTEX_PROJECT_ID")
-    location = os.environ.get("VERTEX_LOCATION", "us-central1")
+    project_id = os.environ.get("GCP_PROJECT_ID")
+    location = os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
+    api_key = os.environ.get("JUDGE_API_KEY")
+
+    validate_config("judge", os.environ.get("JUDGE_PROVIDER", "google"), self.model_name)
 
     if project_id:
       self.client = genai.Client(
           vertexai=True, project=project_id, location=location
       )
     else:
-      self.client = genai.Client()
+      self.client = genai.Client(api_key=api_key)
 
   def load_model(self):
     return self.client
@@ -67,8 +77,8 @@ def replace_placeholders(text, project_id, cluster_name):
   """Replaces placeholders in the text."""
   app_location = os.environ.get("APP_LOCATION", "")
   return (
-      text.replace("{{PROJECT_ID}}", project_id)
-      .replace("{{CLUSTER_NAME}}", cluster_name)
+      text.replace("{{GCP_PROJECT_ID}}", project_id)
+      .replace("{{GKE_CLUSTER_NAME}}", cluster_name)
       .replace("{{APP_LOCATION}}", app_location)
   )
 
@@ -79,14 +89,14 @@ def execute_agent(agent_type, agent_target, prompt, context):
     return run_cli_agent(agent_target, prompt, context, system_instruction=SYSTEM_INSTRUCTION)
   elif agent_type == "api":
     mcp_server_path = os.environ.get("MCP_SERVER_PATH", "third_party/gke-mcp/gke-mcp")
-    provider = os.environ.get("PROVIDER", "gemini")
-    if provider == "gemini":
+    provider = os.environ.get("AGENT_PROVIDER", "google")
+    if provider == "gemini" or provider == "google":
       llm_client = GeminiClientAdapter()
     elif provider == "anthropic":
       llm_client = AnthropicClientAdapter()
     else:
       print(f"Unknown provider: {provider}")
-    use_mcp_env = os.environ.get("USE_MCP", "true").lower()
+    use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
     use_mcp = use_mcp_env == "true"
     return asyncio.run(
         run_api_agent(
@@ -202,7 +212,7 @@ def evaluate_metrics_batch(detailed_results, project_id, gemini_model):
     outcome_test_case = LLMTestCase(
             input=prompt,
             actual_output=actual_output if actual_output else "No response generated",
-            expected_output=expected_output_raw.replace("{{PROJECT_ID}}", project_id),
+            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", project_id),
             retrieval_context=retrieval_context,
             latency=latency,
         )
@@ -214,9 +224,10 @@ def evaluate_metrics_batch(detailed_results, project_id, gemini_model):
     tool_test_case = LLMTestCase(
             input=prompt,
             actual_output=json.dumps(combined_actual, indent=2),
-            expected_output=expected_output_raw.replace("{{PROJECT_ID}}", project_id),
+            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", project_id),
             latency=latency,
         )
+
 
     print(f"Evaluating metrics for: {name}...")
     outcome_result = evaluate([outcome_test_case], metrics=[outcome_validity])
@@ -313,11 +324,15 @@ def main():
         eval_data = eval_data[:int(limit)]
         print(f"Limiting evaluation to the first {limit} cases.")
 
-    agent_type = os.environ.get("AGENT_TYPE", "cli").lower()
+    agent_type = os.environ.get("BENCH_AGENT_TYPE", "cli").lower()
     agent_target = os.environ.get("AGENT_TARGET", "./my-agent")
     gemini_model = GeminiDeepEvalModel()
-    project_id = os.environ.get("PROJECT_ID", "my-project")
-    cluster_name = os.environ.get("CLUSTER_NAME", "my-cluster")
+    project_id = os.environ.get("GCP_PROJECT_ID")
+    cluster_name = os.environ.get("GKE_CLUSTER_NAME")
+
+    if not project_id or not cluster_name:
+        print("Error: GCP_PROJECT_ID and GKE_CLUSTER_NAME must be set.")
+        sys.exit(1)
 
     print("-" * 50)
     print("Configuration Context:")
