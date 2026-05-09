@@ -22,7 +22,7 @@ is an augmented agent integrating layers of optimization to improve reliability 
 
 While our initial results are centered on the scale and sophistication of **Google Kubernetes Engine (GKE)**, this benchmark is designed for the entire cloud-native ecosystem. Whether you are operating on-premises, across hybrid clouds, or on various managed offerings, the fundamental challenges of agentic operations remain the same:
 
-* **Intent to Infrastructure**: Can an agent translate a high-level requirement into a secure, scalable deployment?
+* **Intent to Infrastructure**: Can an agent translate a high-level requirement into a secure, scalable deployment? In fact, the benchmark now supports **Just-In-Time (JIT) Infrastructure provisioning** using Terraform to test agents in dynamic environments.
 
 * **Autonomous Operations**: How effectively can an agent maintain the "desired state" in an unpredictable environment?
 
@@ -82,7 +82,7 @@ You can look at the actual rubrics [here](https://github.com/gke-labs/devops-ben
 Evaluations can be performed by running the benchmark tasks against your agent and manually or programmatically applying the LLM-as-a-judge method using the Skill based rubrics provided in this repository.
 
 ### Step 1: Set up the agent
-You can configure the agent in two ways depending on the capabilities you want to test: 
+You can configure the agent in two ways depending on the capabilities you want to test:
 * **Option 1**: Using only the core Antigravity agent
 This configuration uses the core agent capabilities without external cloud assistance.
 * **Option 2**: Antigravity + Gemini Cloud Assist via the Model Context Protocol (MCP) with agent rules.
@@ -90,6 +90,8 @@ This [configuration](https://github.com/GoogleCloudPlatform/gemini-cloud-assist-
 
 ### Step 2: Run tasks with your agent
 Feed each task to your configured agent and capture the agent's final response for each task, and ideally a trace of the execution steps (tools called, reasoning steps).
+
+**Note on Infrastructure**: The benchmark now supports automated infrastructure setup via Terraform. If a task includes an `infrastructure` block, the evaluator will automatically provision the required environment before running the agent.
 
 ### Step 3: Evaluate Responses with LLM-as-a-Judge
 To evaluate the results, use a capable LLM to score the agent's responses against the specific criteria defined in the repository's [skills](https://github.com/gke-labs/devops-bench/tree/main/skills) directory.
@@ -137,6 +139,7 @@ docker run -it \
   -e JUDGE_PROVIDER="google" \
   -e JUDGE_MODEL="gemini-3.1-pro-preview" \
   -e JUDGE_API_KEY="<YOUR_GEMINI_API_KEY>" \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
   devops-bench:latest
 ```
 
@@ -168,11 +171,12 @@ docker run -it \
 | :--- | :--- |
 | `-it` | Runs the container in interactive mode with a TTY, allowing you to see real-time output. |
 | `-v ~/.config/gcloud:/root/.config/gcloud` | Mounts your local Google Cloud configuration into the container so it can use your existing credentials. |
+| `-e GOOGLE_APPLICATION_CREDENTIALS` | Path to the credentials file (required for Terraform and some agent tools). |
 | `-v $(pwd)/results:/app/results` | Mounts the local `results` directory to the container. This ensures that evaluation outputs generated inside the container are saved to your host machine. |
 | **Infrastructure** | |
 | `-e CLOUD_PROVIDER` | Specifies the cloud provider (e.g., `gcp`). |
 | `-e GCP_PROJECT_ID` | The ID of the Google Cloud Project to run evaluations against. |
-| `-e GKE_CLUSTER_NAME` | The name of the GKE cluster used for the evaluation. |
+| `-e GKE_CLUSTER_NAME` | The name of the GKE cluster used for the evaluation. If JIT infra is used, this may be overwritten by the JIT-created cluster name. |
 | **Benchmark Control** | |
 | `-e BENCH_TASK_FILE` | Path to the specific YAML task file you want to evaluate. |
 | `-e BENCH_AGENT_TYPE` | The type of agent to run (`api` or `cli`). |

@@ -1,5 +1,12 @@
 task_id: 5
 name: "fix-config"
+infrastructure:
+  deployer: "terraform"
+  stack: "prebuilt/minimum"
+  teardown: true
+  variables:
+    node_count: 3
+    machine_type: "e2-standard-2"
 prompt: |
   Apply the manifest change to cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
 
@@ -41,7 +48,7 @@ prompt: |
         serviceAccountName: hypercomputer-d1-vllm-sa
   ```
 expected_output: |
-  critical requirements: 
+  critical requirements:
 
   - Identify the intent to update the 'hypercomputer-d1-frontend' deployment in cluster '{{GKE_CLUSTER_NAME}}' and project '{{GCP_PROJECT_ID}}'.
   - Confirm that 'USE_GEMINI_API' is set to 'false' and 'VLLM_API_URL' is correctly pointed to the local service.
