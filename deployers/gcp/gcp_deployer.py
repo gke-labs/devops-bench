@@ -1,22 +1,29 @@
-import os
+from pathlib import Path
 import subprocess
+import os
 from typing import Dict, Any
 from deployers.base import Deployer
 
 class GCPDeployer(Deployer):
     """
     GCP implementation of the Deployer interface using kubetest2 gke.
+    
+    Migrated to pathlib for better cross-platform compatibility and readability.
+    Supports both 'location' and 'zone' in initialization for robust API compatibility.
     """
-    def __init__(self, project: str, zone: str, cluster_name: str, **config):
+    def __init__(self, project: str, location: str = None, cluster_name: str = None, zone: str = None, **config):
         self.project = project
-        self.zone = zone
         self.cluster_name = cluster_name
         self.config = config
-        # Derived relative to this file's location
+        
+        # Robust location resolution for backward compatibility
+        self.location = location or zone or os.environ.get("GCP_LOCATION", "us-central1-a")
+        self.zone = self.location 
+        
         # This file is at deployers/gcp/gcp_deployer.py
         # Project root is 2 levels up.
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.bin_dir = os.path.abspath(os.path.join(current_dir, '..', '..', 'third_party', 'kubetest2', 'bin'))
+        current_dir = Path(__file__).resolve().parent
+        self.bin_dir = str((current_dir.parents[1] / "third_party" / "kubetest2" / "bin").resolve())
         
     def _get_env(self) -> Dict[str, str]:
         env = os.environ.copy()
@@ -26,25 +33,33 @@ class GCPDeployer(Deployer):
 
     def up(self) -> None:
         # Check if cluster exists
-        check_cmd = ["gcloud", "container", "clusters", "describe", self.cluster_name, "--project", self.project, "--zone", self.zone]
+        check_cmd = [
+            "gcloud", "container", "clusters", "describe", self.cluster_name, 
+            "--project", self.project, "--location", self.location
+        ]
         print(f"Checking if cluster exists: {' '.join(check_cmd)}")
         result = subprocess.run(check_cmd, capture_output=True, text=True)
         
-        state_file = f"/tmp/{self.project}-{self.zone}-{self.cluster_name}_created"
+        state_file = Path(f"/tmp/{self.project}-{self.location}-{self.cluster_name}_created")
         
         if result.returncode == 0:
             print(f"Cluster {self.cluster_name} already exists. Getting credentials.")
-            get_cred_cmd = ["gcloud", "container", "clusters", "get-credentials", self.cluster_name, "--project", self.project, "--zone", self.zone]
+            get_cred_cmd = [
+                "gcloud", "container", "clusters", "get-credentials", self.cluster_name, 
+                "--project", self.project, "--location", self.location
+            ]
             subprocess.run(get_cred_cmd, check=True)
             # Record that we didn't create it
-            with open(state_file, "w") as f:
-                f.write("false")
+            state_file.write_text("false")
         else:
-            print(f"Cluster {self.cluster_name} does not exist or error checking. Creating it.")
+            print(
+                f"Cluster {self.cluster_name} does not exist or error checking. "
+                "Creating it."
+            )
             cmd = [
                 "kubetest2", "gke",
                 "--project", self.project,
-                "--zone", self.zone,
+                "--zone", self.location, # Passing resolved location to --zone flag in kubetest2
                 "--cluster-name", self.cluster_name,
             ]
             for key, value in self.config.items():
@@ -56,24 +71,24 @@ class GCPDeployer(Deployer):
             print(f"Running: {' '.join(cmd)}")
             subprocess.run(cmd, env=self._get_env(), check=True)
             # Record that we created it
-            with open(state_file, "w") as f:
-                f.write("true")
+            state_file.write_text("true")
 
     def down(self) -> None:
-        state_file = f"/tmp/{self.project}-{self.zone}-{self.cluster_name}_created"
+        state_file = Path(f"/tmp/{self.project}-{self.location}-{self.cluster_name}_created")
         created_by_us = True
-        if os.path.exists(state_file):
-            with open(state_file, "r") as f:
-                created_by_us = f.read().strip() == "true"
+        if state_file.exists():
+            created_by_us = state_file.read_text().strip() == "true"
                 
         if not created_by_us:
-            print(f"Skipping teardown for pre-existing cluster {self.cluster_name}")
+            print(
+                f"Skipping teardown for pre-existing cluster {self.cluster_name}"
+            )
             return
             
         cmd = [
             "kubetest2", "gke",
             "--project", self.project,
-            "--zone", self.zone,
+            "--zone", self.location,
             "--cluster-name", self.cluster_name,
             "--down"
         ]
@@ -81,10 +96,13 @@ class GCPDeployer(Deployer):
         subprocess.run(cmd, env=self._get_env(), check=True)
 
     def get_cluster_info(self) -> Dict[str, Any]:
-        kubeconfig_path = os.path.expanduser("~/.kube/config")
+        kubeconfig_path = os.environ.get(
+            "KUBECONFIG", str(Path.home() / ".kube" / "config")
+        )
         return {
             "name": self.cluster_name,
-            "zone": self.zone,
+            "location": self.location,
+            "zone": self.location, 
             "project": self.project,
             "kubeconfig_path": kubeconfig_path
         }

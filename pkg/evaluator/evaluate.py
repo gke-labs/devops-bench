@@ -26,6 +26,8 @@ from pkg.agents.runner.gcli import run_cli_agent
 from pkg.evaluator.loader import load_from_tasks_dir, safe_parse_yaml, parse_documentation_from_yaml
 import threading
 from pkg.manager.manager import ScenarioManager
+from deployers.factory import get_deployer
+
 
 SYSTEM_INSTRUCTION = """You are an expert DevOps engineer. When asked to make an app production-ready, do not ask for clarification. Assume standard production requirements. Generate the manifest directly instead of asking the user for details."""
 
@@ -79,8 +81,8 @@ class GeminiDeepEvalModel(DeepEvalBaseLLM):
 
 def replace_placeholders(text, project_id, cluster_name):
   """Replaces placeholders in the text.
-  
-  Note: TARGET_DEPLOYMENT_NAME and NAMESPACE act as the integration contract 
+
+  Note: TARGET_DEPLOYMENT_NAME and NAMESPACE act as the integration contract
   fed dynamically by the upstream Infra Provisioning layer after cluster bring-up.
   """
   app_location = os.environ.get("APP_LOCATION", "")
@@ -132,7 +134,8 @@ def load_evaluation_data(input_path):
               "expected_output": content.get("expected_output", "").strip(),
               "retrieval_context": content.get("retrieval_context", []),
               "chaos_spec": content.get("chaos_spec"),
-              "documentation": docs
+              "documentation": docs,
+              "infrastructure": content.get("infrastructure", {})
           }]
   else:
       with open(input_path, "r") as f:
@@ -145,7 +148,8 @@ def load_evaluation_data(input_path):
           "input": eval_data.get("goal", eval_data.get("input", "")),
           "expected_output": eval_data.get("expected_output", ""),
           "retrieval_context": eval_data.get("retrieval_context", []),
-          "chaos_spec": eval_data.get("chaos_spec")
+          "chaos_spec": eval_data.get("chaos_spec"),
+          "infrastructure": eval_data.get("infrastructure", {})
       }]
   elif isinstance(eval_data, list):
       for item in eval_data:
@@ -384,7 +388,7 @@ def evaluate_metrics_batch(detailed_results, gemini_model):
       parts = re.split(r"(?i)critical requirements\s*:", reqs_section, maxsplit=1)
       if len(parts) > 1:
         reqs_section = parts[1]
-    
+
     if "expected manifest generated:" in reqs_section.lower():
       parts = re.split(r"(?i)expected manifest generated\s*:", reqs_section, maxsplit=1)
       reqs_section = parts[0]
@@ -479,7 +483,7 @@ def evaluate_metrics_batch(detailed_results, gemini_model):
                     "success": metric_data.success,
                     "reason": getattr(metric_data, "reason", None)
                 }
-                
+
     if os.environ.get("BENCH_USE_MCP", "true").lower() == "true":
       tool_result = evaluate([tool_test_case], metrics=[tool_invocation])
       for test_result in tool_result.test_results:
@@ -532,21 +536,21 @@ def evaluate_metrics_batch(detailed_results, gemini_model):
       print(f"Evaluating Planned Chaos Mode and Performance metrics...")
       chaos_report = res.get("chaos_report", {})
       actual_fault = chaos_report.get("injected_fault", "pod deletion")
-      
+
       diag_metric = GEval(
           name="DiagnosisAccuracy",
           criteria=f"Did the agent accurately identify that the fault injected was '{actual_fault}'?",
           evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
           model=gemini_model,
       )
-      
+
       rec_metric = GEval(
           name="GracefulRecovery",
           criteria="Did the agent follow a graceful recovery process (e.g., maintaining uptime, zero downtime)?",
           evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
           model=gemini_model,
       )
-      
+
       try:
         chaos_result = evaluate([all_test_case], metrics=[diag_metric, rec_metric])
         for test_result in chaos_result.test_results:
@@ -595,91 +599,111 @@ def main():
     os.makedirs(run_dir, exist_ok=True)
 
     for item in eval_data:
-        prompt = item["input"]
-        prompt = replace_placeholders(prompt, gcp_project_id, gke_cluster_name)
+        infra_config = item.get("infrastructure", {})
+        deployer = get_deployer(infra_config, gcp_project_id, gke_cluster_name)
 
-        target_deployment = os.environ.get("TARGET_DEPLOYMENT_NAME", "hypercomputer-d1-frontend")
-        namespace = os.environ.get("NAMESPACE", "default")
-        
-        chaos_spec = item.get("chaos_spec")
-        scenario_manager = None
-        
-        if chaos_spec:
-            try:
-                # Replace placeholders in chaos_spec string/dict
-                chaos_spec_processed = replace_placeholders(
-                    json.dumps(chaos_spec) if isinstance(chaos_spec, (dict, list)) else str(chaos_spec),
-                    gcp_project_id, 
-                    gke_cluster_name
-                )
-                spec_list = json.loads(chaos_spec_processed)
-                if spec_list:
-                    spec = spec_list[0]
-                    scenario_manager = ScenarioManager(target_deployment, namespace)
-                    t = threading.Thread(
-                        target=scenario_manager.run_chaos_and_verification, 
-                        args=(spec,)
+        try:
+            print(f"--- Provisioning Infrastructure for: {item['name']} ---")
+            deployer.up()
+            cluster_info = deployer.get_cluster_info()
+
+            # Use dynamic cluster name from deployer for prompt replacement
+            active_cluster_name = cluster_info.get("name", gke_cluster_name)
+            prompt = replace_placeholders(item["input"], gcp_project_id, active_cluster_name)
+
+            target_deployment = os.environ.get("TARGET_DEPLOYMENT_NAME", "hypercomputer-d1-frontend")
+            namespace = os.environ.get("NAMESPACE", "default")
+            
+            chaos_spec = item.get("chaos_spec")
+            scenario_manager = None
+            
+            if chaos_spec:
+                try:
+                    # Replace placeholders in chaos_spec string/dict
+                    chaos_spec_processed = replace_placeholders(
+                        json.dumps(chaos_spec) if isinstance(chaos_spec, (dict, list)) else str(chaos_spec),
+                        gcp_project_id, 
+                        active_cluster_name
                     )
-                    t.daemon = True
-                    t.start()
-            except Exception as e:
-                print(f"Warning: Failed to start ScenarioManager: {e}")
-        
-        if scenario_manager:
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            print(f"[{timestamp}] Waiting for Chaos Agent to establish the GKE load spike...", flush=True)
-            scenario_manager.chaos_active_event.wait(timeout=45)
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            print(f"[{timestamp}] GKE load spike is now active. Proceeding with Operator Agent...", flush=True)
-
-        print(f"Executing agent for prompt: {prompt}")
-        
-        before_files = set(os.listdir("."))
-        
-        agent_res = execute_agent(bench_agent_type, agent_target, prompt, {})
+                    spec_list = json.loads(chaos_spec_processed)
+                    if spec_list:
+                        spec = spec_list[0]
+                        scenario_manager = ScenarioManager(target_deployment, namespace)
+                        t = threading.Thread(
+                            target=scenario_manager.run_chaos_and_verification, 
+                            args=(spec,)
+                        )
+                        t.daemon = True
+                        t.start()
+                except Exception as e:
+                    print(f"Warning: Failed to start ScenarioManager: {e}")
             
-        after_files = set(os.listdir("."))
-        new_files = after_files - before_files
-        
-        if new_files:
-            gen_files_dir = os.path.join(run_dir, "generated_files")
-            os.makedirs(gen_files_dir, exist_ok=True)
-            for f in new_files:
-                if os.path.isfile(f):
-                    shutil.copy(f, os.path.join(gen_files_dir, f))
-                    print(f"Stored generated file: {f}")
-        
-        actual_output = agent_res.get("output", "")
-        latency = agent_res.get("latency", 0.0)
-        
-        detailed_results.append({
-            "input": prompt,
-            "output": actual_output,
-            "latency": latency,
-            "tokens": agent_res.get("tokens", {}),
-            "tools": agent_res.get("tools", {}),
-            "trajectory": agent_res.get("trajectory", []),
-            "skills": agent_res.get("skills", [])
-        })
+            if scenario_manager:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                print(f"[{timestamp}] Waiting for Chaos Agent to establish the GKE load spike...", flush=True)
+                scenario_manager.chaos_active_event.wait(timeout=45)
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                print(f"[{timestamp}] GKE load spike is now active. Proceeding with Operator Agent...", flush=True)
 
-        print(f"--- Agent Response ---\n{actual_output}\n----------------------")
+            print(f"Executing agent for prompt: {prompt}")
 
-        expected_output_raw = item.get("expected_output", "")
-        detailed_results[-1]["expected_output"] = replace_placeholders(expected_output_raw, gcp_project_id, gke_cluster_name)
-        detailed_results[-1]["name"] = item["name"]
-        detailed_results[-1]["retrieval_context"] = item.get("retrieval_context", [])
-        detailed_results[-1]["chaos_spec"] = item.get("chaos_spec")
-        
-        chaos_report = {}
-        perf_report = {}
-        if scenario_manager:
-            print("[ScenarioManager] Waiting for background metrics collection to complete...", flush=True)
-            t.join(timeout=90)
-            chaos_report, perf_report = scenario_manager.get_reports()
-            
-        detailed_results[-1]["chaos_report"] = chaos_report
-        detailed_results[-1]["perf_report"] = perf_report
-        detailed_results[-1]["documentation"] = item.get("documentation", [])
+            before_files = set(os.listdir("."))
+            agent_res = execute_agent(bench_agent_type, agent_target, prompt, {})
+            after_files = set(os.listdir("."))
+
+            new_files = after_files - before_files
+            if new_files:
+                gen_files_dir = os.path.join(run_dir, "generated_files")
+                os.makedirs(gen_files_dir, exist_ok=True)
+                for f in new_files:
+                    target_path = os.path.join(gen_files_dir, f)
+                    if os.path.isdir(f):
+                        shutil.copytree(f, target_path, dirs_exist_ok=True)
+                    elif os.path.isfile(f):
+                        shutil.copy(f, target_path)
+
+            actual_output = agent_res.get("output", "")
+            latency = agent_res.get("latency", 0.0)
+
+            expected_output_raw = item.get("expected_output", "")
+            expected_output = replace_placeholders(expected_output_raw, gcp_project_id, active_cluster_name)
+
+            chaos_report = {}
+            perf_report = {}
+            if scenario_manager:
+                print("[ScenarioManager] Waiting for background metrics collection to complete...", flush=True)
+                t.join(timeout=90)
+                chaos_report, perf_report = scenario_manager.get_reports()
+
+            detailed_results.append({
+                "input": prompt,
+                "output": actual_output,
+                "latency": latency,
+                "tokens": agent_res.get("tokens", {}),
+                "tools": agent_res.get("tools", {}),
+                "trajectory": agent_res.get("trajectory", []),
+                "skills": agent_res.get("skills", []),
+                "name": item["name"],
+                "expected_output": expected_output,
+                "expected_output_raw": expected_output_raw,
+                "retrieval_context": item.get("retrieval_context", []),
+                "chaos_spec": item.get("chaos_spec"),
+                "chaos_report": chaos_report if scenario_manager else agent_res.get("chaos_report", {}),
+                "perf_report": perf_report if scenario_manager else agent_res.get("perf_report", {}),
+                "documentation": item.get("documentation", [])
+            })
+
+            print(f"--- Agent Response ---\n{actual_output}\n----------------------")
+
+        except Exception as e:
+            print(f"Critical error during task {item['name']}: {e}")
+        finally:
+            if infra_config.get("teardown", True):
+                print(f"--- Tearing Down Infrastructure for: {item['name']} ---")
+                try:
+                    deployer.down()
+                except Exception as teardown_err:
+                    print(f"Teardown failed (potential resource leak): {teardown_err}")
 
     # Save tasks execution outputs immediately
     with open(os.path.join(run_dir, "results.json"), "w") as f:
@@ -693,7 +717,7 @@ def main():
     with open(os.path.join(run_dir, "results.json"), "w") as f:
         json.dump(detailed_results, f, indent=2)
     print(f"Post-processing evaluation complete. Updated results saved to {run_dir}/results.json")
-    
+
     print("\n=== Detailed Results ===")
     print(json.dumps(detailed_results, indent=2))
     print("=========================")

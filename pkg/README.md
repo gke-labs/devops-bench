@@ -36,15 +36,24 @@ export GKE_CLUSTER_NAME="your-cluster-name"
 python3 pkg/evaluator/evaluate.py tasks/
 ```
 
+#### Infrastructure Configuration
+The evaluator can automatically provision infrastructure via Terraform if defined in the task.
+
+```bash
+# Required for JIT Infra
+export GCP_PROJECT_ID="your-gcp-project"
+export GKE_CLUSTER_NAME="your-cluster-name"
+export GCP_ZONE="us-central1-a"
+```
 
 #### Running the LLM Agent mode with MCP
 The MCP-enabled API agent runner supports multiple LLM providers and optional MCP tool usage. You can set the following configurations:
 
 ```bash
 # Choose provider: 'google' or 'anthropic'
-export AGENT_PROVIDER="google" 
+export AGENT_PROVIDER="google"
 # Toggle MCP tools: 'true' or 'false'
-export BENCH_USE_MCP="true" 
+export BENCH_USE_MCP="true"
 # For Vertex AI support (recommended)
 export GCP_PROJECT_ID="your-gcp-project"
 export GCP_VERTEX_LOCATION="us-central1"
