@@ -1,4 +1,5 @@
 import os
+import base64
 from google import genai
 from google.genai import types
 from llm_client import LLMClient
@@ -55,13 +56,18 @@ class GeminiClientAdapter(LLMClient):
 
   def extract_function_calls(self, response):
     calls = []
-    if response.function_calls:
-      for fc in response.function_calls:
-        calls.append({
-            "name": fc.name,
-            "args": fc.args,
-            "id": None
-        })
+    if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+      for part in response.candidates[0].content.parts:
+        if part.function_call:
+          fc = part.function_call
+          call_info = {
+              "name": fc.name,
+              "args": fc.args,
+              "id": None
+          }
+          if part.thought_signature:
+            call_info["thought_signature"] = base64.b64encode(part.thought_signature).decode('utf-8')
+          calls.append(call_info)
     return calls
 
   def get_text_content(self, response) -> str:
@@ -83,7 +89,13 @@ class GeminiClientAdapter(LLMClient):
           parts.append(types.Part.from_text(text=content))
         if "tool_calls" in msg:
           for tc in msg["tool_calls"]:
-            parts.append(types.Part.from_function_call(name=tc["name"], args=tc["args"]))
+            if "thought_signature" in tc:
+              parts.append(types.Part(
+                  function_call=types.FunctionCall(name=tc["name"], args=tc["args"]),
+                  thought_signature=base64.b64decode(tc["thought_signature"])
+              ))
+            else:
+              parts.append(types.Part.from_function_call(name=tc["name"], args=tc["args"]))
         gemini_contents.append(types.Content(role="model", parts=parts))
       elif role == "tool":
         gemini_contents.append(
