@@ -106,6 +106,7 @@ def extract_trajectory_from_session(session_id: str) -> dict:
 @observe()
 def run_cli_agent(agent_target, prompt, context, bench_use_mcp=True, system_instruction=None):
     """Runs an external binary agent."""
+    agent_target = os.path.expanduser(agent_target)
     if system_instruction:
         prompt = f"{prompt}\n\nInstructions: {system_instruction}"
     input_data = json.dumps({"goal": prompt, "context": context})
@@ -142,6 +143,7 @@ def run_cli_agent(agent_target, prompt, context, bench_use_mcp=True, system_inst
     # Map benchmark standardized vars to Gemini CLI expected vars
     if "AGENT_API_KEY" in env:
         env["GOOGLE_API_KEY"] = env["AGENT_API_KEY"]
+        env["GEMINI_API_KEY"] = env["AGENT_API_KEY"]
     if "AGENT_MODEL" in env:
         env["GEMINI_MODEL"] = env["AGENT_MODEL"]
 
