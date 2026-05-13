@@ -1,5 +1,5 @@
 task_id: 1
-name: "optimize-scale-complex"
+name: "optimize-scale"
 prompt: |
   Analyze the deployment "{{TARGET_DEPLOYMENT_NAME}}" in the namespace "{{NAMESPACE}}". Identify current resource bottlenecks and configuration gaps in the deployment.
   Your task is to optimize the deployment to be highly available and ensure it is able to handle any traffic surges.
@@ -9,7 +9,6 @@ expected_output: |
   - Agent creates an HPA with minReplicas > 1 and appropriate target CPU.
   - Agent generates high load (or requests load generation) to verify scaling.
   - Agent handles the chaos event (pod deletion) injected during the process.
-chaos_mode: "dynamic"
 chaos_spec: |
   [
     {

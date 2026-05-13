@@ -74,7 +74,11 @@ class GeminiDeepEvalModel(DeepEvalBaseLLM):
 
 
 def replace_placeholders(text, project_id, cluster_name):
-  """Replaces placeholders in the text."""
+  """Replaces placeholders in the text.
+  
+  Note: TARGET_DEPLOYMENT_NAME and NAMESPACE act as the integration contract 
+  fed dynamically by the upstream Infra Provisioning layer after cluster bring-up.
+  """
   app_location = os.environ.get("APP_LOCATION", "")
   target_deployment = os.environ.get("TARGET_DEPLOYMENT_NAME", "hello-app")
   namespace = os.environ.get("NAMESPACE", "production")
@@ -120,7 +124,6 @@ def load_evaluation_data(input_path):
               "input": content.get("prompt", "").strip(),
               "expected_output": content.get("expected_output", "").strip(),
               "retrieval_context": content.get("retrieval_context", []),
-              "chaos_mode": content.get("chaos_mode"),
               "chaos_spec": content.get("chaos_spec")
           }]
   else:
@@ -134,7 +137,6 @@ def load_evaluation_data(input_path):
           "input": eval_data.get("goal", eval_data.get("input", "")),
           "expected_output": eval_data.get("expected_output", ""),
           "retrieval_context": eval_data.get("retrieval_context", []),
-          "chaos_mode": eval_data.get("chaos_mode"),
           "chaos_spec": eval_data.get("chaos_spec")
       }]
   elif isinstance(eval_data, list):
@@ -398,8 +400,8 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
           "reason": f"Passed {passed_checks} out of {total_checks} checks.",
       }
 
-    if res.get("chaos_mode"):
-      print(f"Evaluating Chaos Mode and Performance metrics...")
+    if res.get("chaos_spec"):
+      print(f"Evaluating Planned Chaos Mode and Performance metrics...")
       chaos_report = res.get("chaos_report", {})
       actual_fault = chaos_report.get("injected_fault", "pod deletion")
       
@@ -431,15 +433,6 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
             }
       except Exception as e:
         print(f"Error evaluating chaos metrics: {e}")
-
-      fault_injected_at = chaos_report.get("fault_injected_at")
-      fault_detected_at = chaos_report.get("fault_detected_at")
-      recovery_completed_at = chaos_report.get("recovery_completed_at")
-      
-      if fault_injected_at and fault_detected_at:
-        scores["Fault_Detection_Latency_Seconds"] = fault_detected_at - fault_injected_at
-      if fault_injected_at and recovery_completed_at:
-        scores["Mean_Time_To_Recovery_Seconds"] = recovery_completed_at - fault_injected_at
 
       perf_report = res.get("perf_report", {})
       scores["Workload_Deployment_Time_Seconds"] = perf_report.get("deployment_time_seconds")
@@ -512,7 +505,6 @@ def main():
         detailed_results[-1]["expected_output_raw"] = item.get("expected_output", "")
         detailed_results[-1]["name"] = item["name"]
         detailed_results[-1]["retrieval_context"] = item.get("retrieval_context", [])
-        detailed_results[-1]["chaos_mode"] = item.get("chaos_mode")
         detailed_results[-1]["chaos_spec"] = item.get("chaos_spec")
         detailed_results[-1]["chaos_report"] = agent_res.get("chaos_report", {})
         detailed_results[-1]["perf_report"] = agent_res.get("perf_report", {})

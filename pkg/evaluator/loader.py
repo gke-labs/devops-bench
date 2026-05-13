@@ -81,7 +81,6 @@ def load_from_tasks_dir(dir_path: str) -> list:
                             prompt = content.get("prompt", "")
                             expected = content.get("expected_output", "")
                             retrieval = content.get("retrieval_context", [])
-                            chaos_mode = content.get("chaos_mode")
                             chaos_spec = content.get("chaos_spec")
                             
                             eval_data.append({
@@ -90,7 +89,6 @@ def load_from_tasks_dir(dir_path: str) -> list:
                                 "input": prompt.strip() if isinstance(prompt, str) else str(prompt),
                                 "expected_output": expected.strip() if isinstance(expected, str) else str(expected),
                                 "retrieval_context": retrieval if isinstance(retrieval, list) else [],
-                                "chaos_mode": chaos_mode,
                                 "chaos_spec": chaos_spec
                             })
                 except Exception as e:
