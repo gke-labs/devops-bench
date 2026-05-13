@@ -1,4 +1,4 @@
-task_id: 88
+task_id: 1
 name: "optimize-scale-complex"
 prompt: |
   Analyze the deployment "{{TARGET_DEPLOYMENT_NAME}}" in the namespace "{{NAMESPACE}}". Identify current resource bottlenecks and configuration gaps in the deployment.
