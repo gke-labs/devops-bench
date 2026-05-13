@@ -331,7 +331,6 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
 
     print(f"Evaluating metrics for: {name}...")
     outcome_result = evaluate([outcome_test_case], metrics=[outcome_validity])
-    tool_result = evaluate([tool_test_case], metrics=[tool_invocation])
 
     scores = {}
     for test_result in outcome_result.test_results:
@@ -341,13 +340,16 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
                     "success": metric_data.success,
                     "reason": getattr(metric_data, "reason", None)
                 }
-    for test_result in tool_result.test_results:
-      for metric_data in test_result.metrics_data:
-        scores[metric_data.name] = {
-                    "score": metric_data.score,
-                    "success": metric_data.success,
-                    "reason": getattr(metric_data, "reason", None)
-                }
+                
+    if os.environ.get("BENCH_USE_MCP", "true").lower() == "true":
+      tool_result = evaluate([tool_test_case], metrics=[tool_invocation])
+      for test_result in tool_result.test_results:
+        for metric_data in test_result.metrics_data:
+          scores[metric_data.name] = {
+                      "score": metric_data.score,
+                      "success": metric_data.success,
+                      "reason": getattr(metric_data, "reason", None)
+                  }
 
     if dynamic_metrics:
       print(
