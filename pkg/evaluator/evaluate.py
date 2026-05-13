@@ -316,6 +316,18 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
             latency=latency,
         )
 
+    all_context = {
+            "tools_used": res.get("tools", []),
+            "execution_trace": trajectory,
+            "text_output": actual_output if actual_output else "No response generated"
+        }
+    all_test_case = LLMTestCase(
+            input=prompt,
+            actual_output=json.dumps(all_context, indent=2),
+            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", gcp_project_id),
+            latency=latency,
+        )
+
 
     print(f"Evaluating metrics for: {name}...")
     outcome_result = evaluate([outcome_test_case], metrics=[outcome_validity])
@@ -344,7 +356,7 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
       for m in dynamic_metrics:
         try:
           print(f"Evaluating metric: {m.name}...")
-          result = evaluate([tool_test_case], metrics=[m])
+          result = evaluate([all_test_case], metrics=[m])
           for test_result in result.test_results:
             for metric_data in test_result.metrics_data:
               name = metric_data.name
