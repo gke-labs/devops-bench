@@ -30,7 +30,7 @@ class GCPDeployer(Deployer):
         print(f"Checking if cluster exists: {' '.join(check_cmd)}")
         result = subprocess.run(check_cmd, capture_output=True, text=True)
         
-        state_file = "/tmp/cluster_created"
+        state_file = f"/tmp/{self.project}-{self.zone}-{self.cluster_name}_created"
         
         if result.returncode == 0:
             print(f"Cluster {self.cluster_name} already exists. Getting credentials.")
@@ -60,7 +60,7 @@ class GCPDeployer(Deployer):
                 f.write("true")
 
     def down(self) -> None:
-        state_file = "/tmp/cluster_created"
+        state_file = f"/tmp/{self.project}-{self.zone}-{self.cluster_name}_created"
         created_by_us = True
         if os.path.exists(state_file):
             with open(state_file, "r") as f:
