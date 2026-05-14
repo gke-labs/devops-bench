@@ -3,7 +3,7 @@ import subprocess
 import unittest
 from unittest.mock import MagicMock, patch
 
-from pkg.chaos.verifier import VerifierAgent
+from pkg.agents.verifier.verifier import VerifierAgent
 
 
 class TestVerifierAgent(unittest.TestCase):
@@ -112,7 +112,7 @@ class TestVerifierAgent(unittest.TestCase):
         self.assertIn("kubectl wait failed or timed out", result["reason"])
         self.assertIn("items", result["details"])
 
-    @patch("pkg.chaos.verifier.VerifierAgent._check_condition")
+    @patch("pkg.agents.verifier.verifier.VerifierAgent._check_condition")
     @patch("time.sleep")
     def test_wait_polling_backoff_success(self, mock_sleep, mock_check):
         # Mock _check_condition to fail first, then succeed
