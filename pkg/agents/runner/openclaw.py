@@ -81,6 +81,12 @@ def run_openclaw_agent(prompt, context=None, agent_name="main"):
                                             "args": call.get("args"),
                                             "status": "called"
                                         })
+                                    elif part.get("type") == "toolCall":
+                                        trajectory.append({
+                                            "name": part.get("name"),
+                                            "args": part.get("arguments"),
+                                            "status": "called"
+                                        })
                                     elif "functionResponse" in part:
                                         resp = part["functionResponse"]
                                         trajectory.append({
