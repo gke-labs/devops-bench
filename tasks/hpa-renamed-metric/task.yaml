@@ -1,0 +1,42 @@
+task_id: 12
+name: "hpa-renamed-metric"
+prompt: "Configure an HPA to use a metric that has been renamed during export via the exportName field in its AutoscalingMetric definition."
+expected_output: |
+  critical requirements:
+
+  - Expected Tool Call: generate_manifest
+  - Create an GKE AutoscalingMetric resource containing an exportName mapping parameter.
+  - Create a HorizontalPodAutoscaler (HPA) resource.
+  - Reference the exported custom metric in the HPA spec.metrics[] using the exact renamed exportName with the autoscaling.gke.io|... prefix.
+
+  Expected Manifest Generated:
+  apiVersion: autoscaling.gke.io/v1
+  kind: AutoscalingMetric
+  metadata:
+    name: web-metric
+    namespace: default
+  spec:
+    metric:
+      name: original_metric_name
+      exportName: exported-name
+  ---
+  apiVersion: autoscaling/v2
+  kind: HorizontalPodAutoscaler
+  metadata:
+    name: web-hpa
+    namespace: default
+  spec:
+    scaleTargetRef:
+      apiVersion: apps/v1
+      kind: Deployment
+      name: web-app
+    minReplicas: 1
+    maxReplicas: 10
+    metrics:
+    - type: External
+      external:
+        metric:
+          name: autoscaling.gke.io|web-metric|exported-name
+        target:
+          type: Value
+          value: 100

@@ -1,0 +1,24 @@
+task_id: 9
+name: "gateway-cloud-armor"
+prompt: "Apply a Cloud Armor security policy named block-ddos-policy to the external Gateway public-gw using a GCPBackendPolicy."
+expected_output: |
+  critical requirements:
+
+  - Expected Tool Call: generate_manifest
+  - Create a GKE-specific GCPBackendPolicy resource.
+  - Bind the policy to the external Gateway public-gw in the targetRef.
+  - Reference the exact Cloud Armor policy block-ddos-policy under spec.default.securityPolicy.
+
+  Expected Manifest Generated:
+  apiVersion: networking.gke.io/v1
+  kind: GCPBackendPolicy
+  metadata:
+    name: public-gw-security-policy
+    namespace: default
+  spec:
+    default:
+      securityPolicy: block-ddos-policy
+    targetRef:
+      group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public-gw
