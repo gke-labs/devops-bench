@@ -74,12 +74,20 @@ class GeminiDeepEvalModel(DeepEvalBaseLLM):
 
 
 def replace_placeholders(text, project_id, cluster_name):
-  """Replaces placeholders in the text."""
+  """Replaces placeholders in the text.
+  
+  Note: TARGET_DEPLOYMENT_NAME and NAMESPACE act as the integration contract 
+  fed dynamically by the upstream Infra Provisioning layer after cluster bring-up.
+  """
   app_location = os.environ.get("APP_LOCATION", "")
+  target_deployment = os.environ.get("TARGET_DEPLOYMENT_NAME", "hello-app")
+  namespace = os.environ.get("NAMESPACE", "production")
   return (
       text.replace("{{GCP_PROJECT_ID}}", project_id)
       .replace("{{GKE_CLUSTER_NAME}}", cluster_name)
       .replace("{{APP_LOCATION}}", app_location)
+      .replace("{{TARGET_DEPLOYMENT_NAME}}", target_deployment)
+      .replace("{{NAMESPACE}}", namespace)
   )
 
 
@@ -115,7 +123,8 @@ def load_evaluation_data(input_path):
               "name": content.get("name", "Legacy Case"),
               "input": content.get("prompt", "").strip(),
               "expected_output": content.get("expected_output", "").strip(),
-              "retrieval_context": content.get("retrieval_context", [])
+              "retrieval_context": content.get("retrieval_context", []),
+              "chaos_spec": content.get("chaos_spec")
           }]
   else:
       with open(input_path, "r") as f:
@@ -127,8 +136,13 @@ def load_evaluation_data(input_path):
           "name": eval_data.get("name", "Legacy Case"),
           "input": eval_data.get("goal", eval_data.get("input", "")),
           "expected_output": eval_data.get("expected_output", ""),
-          "retrieval_context": eval_data.get("retrieval_context", [])
+          "retrieval_context": eval_data.get("retrieval_context", []),
+          "chaos_spec": eval_data.get("chaos_spec")
       }]
+  elif isinstance(eval_data, list):
+      for item in eval_data:
+          if "input" not in item and "goal" in item:
+              item["input"] = item["goal"]
   return eval_data
 
 
@@ -297,10 +311,12 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
             model=gemini_model,
         )
 
+    expected_output_processed = replace_placeholders(expected_output_raw, gcp_project_id, os.environ.get("GKE_CLUSTER_NAME", ""))
+
     outcome_test_case = LLMTestCase(
             input=prompt,
             actual_output=actual_output if actual_output else "No response generated",
-            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", gcp_project_id),
+            expected_output=expected_output_processed,
             retrieval_context=retrieval_context,
             latency=latency,
         )
@@ -312,7 +328,7 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
     tool_test_case = LLMTestCase(
             input=prompt,
             actual_output=json.dumps(combined_actual, indent=2),
-            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", gcp_project_id),
+            expected_output=expected_output_processed,
             latency=latency,
         )
 
@@ -324,7 +340,7 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
     all_test_case = LLMTestCase(
             input=prompt,
             actual_output=json.dumps(all_context, indent=2),
-            expected_output=expected_output_raw.replace("{{GCP_PROJECT_ID}}", gcp_project_id),
+            expected_output=expected_output_processed,
             latency=latency,
         )
 
@@ -383,6 +399,45 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
           ),
           "reason": f"Passed {passed_checks} out of {total_checks} checks.",
       }
+
+    if res.get("chaos_spec"):
+      print(f"Evaluating Planned Chaos Mode and Performance metrics...")
+      chaos_report = res.get("chaos_report", {})
+      actual_fault = chaos_report.get("injected_fault", "pod deletion")
+      
+      diag_metric = GEval(
+          name="DiagnosisAccuracy",
+          criteria=f"Did the agent accurately identify that the fault injected was '{actual_fault}'?",
+          evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
+          model=gemini_model,
+      )
+      
+      rec_metric = GEval(
+          name="GracefulRecovery",
+          criteria="Did the agent follow a graceful recovery process (e.g., maintaining uptime, zero downtime)?",
+          evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
+          model=gemini_model,
+      )
+      
+      try:
+        chaos_result = evaluate([all_test_case], metrics=[diag_metric, rec_metric])
+        for test_result in chaos_result.test_results:
+          for metric_data in test_result.metrics_data:
+            metric_name = metric_data.name
+            if metric_name.endswith(" [GEval]"):
+              metric_name = metric_name[:-8]
+            scores[metric_name] = {
+                "score": metric_data.score,
+                "success": metric_data.success,
+                "reason": getattr(metric_data, "reason", None),
+            }
+      except Exception as e:
+        print(f"Error evaluating chaos metrics: {e}")
+
+      perf_report = res.get("perf_report", {})
+      scores["Workload_Deployment_Time_Seconds"] = perf_report.get("deployment_time_seconds")
+      scores["Workload_Uptime_Percentage"] = perf_report.get("uptime_percentage")
+      scores["Resource_Utilization_Efficiency"] = perf_report.get("resource_utilization_efficiency")
 
     res["scores"] = scores
 
@@ -450,6 +505,9 @@ def main():
         detailed_results[-1]["expected_output_raw"] = item.get("expected_output", "")
         detailed_results[-1]["name"] = item["name"]
         detailed_results[-1]["retrieval_context"] = item.get("retrieval_context", [])
+        detailed_results[-1]["chaos_spec"] = item.get("chaos_spec")
+        detailed_results[-1]["chaos_report"] = agent_res.get("chaos_report", {})
+        detailed_results[-1]["perf_report"] = agent_res.get("perf_report", {})
 
     # Save tasks execution outputs immediately
     with open(os.path.join(run_dir, "results.json"), "w") as f:
