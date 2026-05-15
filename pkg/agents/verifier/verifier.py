@@ -7,7 +7,7 @@ class VerifierAgent:
     """Uses kubectl to validate cluster state."""
 
     def wait_for_condition(
-        self, spec: dict, timeout: int = 120
+        self, spec: dict, timeout_sec: int = 120
     ) -> dict:
         """Waits for condition using watch (kubectl wait) or polling with backoff."""
         c_type = spec.get("type")
@@ -25,7 +25,7 @@ class VerifierAgent:
                     "pod",
                     "-l",
                     selector,
-                    f"--timeout={timeout}s",
+                    f"--timeout={timeout_sec}s",
                 ]
                 if namespace:
                     cmd.extend(["-n", namespace])
@@ -53,9 +53,9 @@ class VerifierAgent:
                     }
 
         # Fallback to Polling with Exponential Backoff (Option 1)
-        return self._wait_polling_backoff(spec, timeout)
+        return self._wait_polling_backoff(spec, timeout_sec)
 
-    def _wait_polling_backoff(self, spec: dict, timeout: int) -> dict:
+    def _wait_polling_backoff(self, spec: dict, timeout_sec: int) -> dict:
         start_time = time.time()
         delay = 1  # Start with 1s delay (Option 1)
         max_delay = 10
