@@ -271,11 +271,18 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
       parts = re.split(r"(?i)expected manifest generated\s*:", reqs_section, maxsplit=1)
       reqs_section = parts[0]
 
-    checklist_items = [
+    bench_use_mcp = os.environ.get("BENCH_USE_MCP", "true").lower() == "true"
+    raw_checklist_items = [
         line.strip("- ")
         for line in reqs_section.split("\n")
         if line.strip().startswith("-")
     ]
+    checklist_items = []
+    for item in raw_checklist_items:
+      if not bench_use_mcp and "expected tool call" in item.lower():
+        print(f"Skipping Expected Tool Call criteria: '{item}'")
+        continue
+      checklist_items.append(item)
     dynamic_metrics = []
     for item in checklist_items:
       dynamic_metrics.append(
