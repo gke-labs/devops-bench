@@ -1,0 +1,23 @@
+task_id: 11
+name: "hpa-metric-filtering"
+prompt: "Configure an AutoscalingMetric resource to scrape a Prometheus gauge named http_requests_total but ensure it only scales based on data points where the version label is set to v2."
+expected_output: |
+  critical requirements:
+
+  - Expected Tool Call: generate_manifest
+  - Create an GKE-native AutoscalingMetric resource.
+  - Set target metric to http_requests_total.
+  - Configure Prometheus label filter (version: v2) inside spec.metric.filter.matchLabels.
+
+  Expected Manifest Generated:
+  apiVersion: autoscaling.gke.io/v1
+  kind: AutoscalingMetric
+  metadata:
+    name: http-requests-metric
+    namespace: default
+  spec:
+    metric:
+      name: http_requests_total
+      filter:
+        matchLabels:
+          version: v2

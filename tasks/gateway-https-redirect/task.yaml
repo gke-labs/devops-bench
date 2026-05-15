@@ -1,0 +1,27 @@
+task_id: 10
+name: "gateway-https-redirect"
+prompt: "Configure an HTTP-to-HTTPS redirect on public-gw. All traffic coming in on port 80 should be redirected to port 443 with a 301 status code."
+expected_output: |
+  critical requirements:
+
+  - Expected Tool Call: generate_manifest
+  - Configure redirect filters in HTTPRoute or create a port 80 HTTP listener on the Gateway.
+  - Redirect HTTP traffic from port 80 to port 443 with status code 301.
+
+  Expected Manifest Generated: apiVersion: gateway.networking.k8s.io/v1
+  kind: HTTPRoute
+  metadata:
+    name: https-redirect
+    namespace: default
+  spec:
+    parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: public-gw
+      port: 80
+    rules:
+    - filters:
+      - type: RequestRedirect
+        requestRedirect:
+          scheme: https
+          statusCode: 301

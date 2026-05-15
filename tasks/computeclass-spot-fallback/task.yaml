@@ -1,0 +1,24 @@
+task_id: 7
+name: "computeclass-spot-fallback"
+prompt: "Create a ComputeClass named cost-optimized-high-cpu. It should prioritize Spot VMs using the C3 machine family, but fall back to On-Demand N2 instances if Spot capacity is unavailable."
+expected_output: |
+  critical requirements:
+
+  - Expected Tool Call: generate_manifest
+  - Create a GKE ComputeClass resource.
+  - Use cost-optimized-high-cpu as the resource name.
+  - Define a priorities hierarchy list with at least two rules.
+  - Rule 1: Spot C3 VMs (spot: true, machineFamily: c3).
+  - Rule 2: On-Demand N2 VMs (spot: false, machineFamily: n2).
+
+  Expected Manifest Generated:
+  apiVersion: cloud.google.com/v1
+  kind: ComputeClass
+  metadata:
+    name: cost-optimized-high-cpu
+  spec:
+    priorities:
+    - spot: true
+      machineFamily: c3
+    - spot: false
+      machineFamily: n2
