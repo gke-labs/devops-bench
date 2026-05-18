@@ -1,42 +1,94 @@
+import json
 import os
 import subprocess
+import datetime
+from google import genai
+from google.genai import types
 
+_chaos_active_event = None
+
+def log(msg):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    print(f"[{timestamp}] {msg}", flush=True)
+
+def _run_command(command: str) -> str:
+    """Executes a shell command."""
+    global _chaos_active_event
+    try:
+        log(f"[ChaosAgent/Tool] Running command: {command}")
+        
+        # Intercept the actual load spike to signal the main thread
+        if _chaos_active_event and "fortio load" in command:
+            log("[ChaosAgent/Tool] Load spike detected. Signaling main thread...")
+            _chaos_active_event.set()
+            
+        res = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=40)
+        return f"Stdout:\n{res.stdout}\nStderr:\n{res.stderr}"
+    except Exception as e:
+        return f"Error: {e}"
 
 class ChaosAgent:
-  """Injects faults."""
+  """Injects GKE planned chaos faults using an autonomous LLM agent loop."""
 
   def inject_fault(self, spec: dict):
+    global _chaos_active_event
+    _chaos_active_event = getattr(self, "chaos_active_event", None)
+    
     action_type = spec.get("type")
-    target = spec.get("target", {})
-
-    if action_type == "generate_load":
-      qps = target.get("qps", 100)
-      duration = target.get("duration", "30s")
-      concurrency = target.get("concurrency", 4)
-      service_url = target.get("service_url")
-      if not service_url:
-        print("Error: service_url is required for generate_load")
-        return
-
-      try:
-        # Use the locally installed fortio binary
-        fortio_path = os.path.expanduser("~/go/bin/fortio")
-        cmd = [
-            fortio_path,
-            "load",
-            "-qps",
-            str(qps),
-            "-t",
-            duration,
-            "-c",
-            str(concurrency),
-            service_url,
-        ]
-        result = subprocess.run(cmd, capture_output=True, check=True, text=True)
-        print("--- Fortio Stdout ---")
-        print(result.stdout)
-        print("--- Fortio Stderr ---")
-        print(result.stderr)
-        print(f"Successfully generated load on {service_url} with QPS {qps}")
-      except subprocess.CalledProcessError as e:
-        print(f"Error running fortio: {e.stderr}")
+    
+    if action_type != "generate_load":
+      log(f"Error: Unsupported chaos action type '{action_type}'")
+      return
+      
+    log(f"[ChaosAgent] Activating LLM Planned mode for action type '{action_type}'...")
+    
+    # Build an extensible, generic goal prompt for the LLM agent
+    goal = (
+        f"Your goal is to execute the following GKE planned chaos engineering disruption action:\n"
+        f"```json\n{json.dumps(spec, indent=2)}\n```\n\n"
+        f"Guidelines for execution:\n"
+        f"1. Use the 'fortio' tool to inject traffic into GKE.\n"
+        f"2. Note: GKE service target URLs (like *.svc.cluster.local) are port-forwarded to localhost:8080 on the host, so run fortio against http://localhost:8080 instead.\n"
+        f"Use your run_command tool to execute this disruption safely and effectively."
+    )
+    
+    api_key = os.environ.get("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
+    
+    model_name = os.environ.get("JUDGE_MODEL", "gemini-3-flash-preview")
+    system_instruction = (
+        "You are a professional Site Reliability Engineer (SRE) and Chaos Engineering Expert.\n"
+        "Your role is to disrupt GKE workloads to test system resilience, which can happen in two modes:\n"
+        "1. Planned Mode: Execute a specific GKE chaos disruption according to a provided JSON spec.\n"
+        "2. Autonomous Mode: Autonomously explore the GKE cluster state, identify critical targets (pods, nodes, services), "
+        "and inject transient faults to test recovery.\n\n"
+        "You are equipped with the `_run_command` tool, which runs shell commands locally on the GKE host control machine "
+        "(which is fully authenticated and has GKE admin kubectl privileges).\n\n"
+        "Strict Guidelines for Execution:\n"
+        "- Single Execution Policy: You MUST execute exactly one tool call to run the planned 'fortio' load generation spike. "
+        "Do NOT attempt to rerun, adjust, or tune the load generation if the target service saturates or returns timeouts. "
+        "Once the single load command is executed, analyze the output, write your final performance summary, and exit immediately.\n"
+        "- Safety First: Only inject transient, safe, and recoverable faults (e.g. killing pods, scaling deployments, "
+        "generating traffic spikes). Do NOT permanently destroy GKE clusters, namespaces, or nodes.\n"
+        "- Traffic Generation: For load spikes, use the 'fortio' binary. Since GKE internal "
+        "service URLs (*.svc.cluster.local) are port-forwarded to the host, you MUST target 'http://localhost:8080' instead.\n"
+        "- Analysis & Clarity: Analyze command outputs carefully, report stdout/stderr accurately, and confirm in your "
+        "final response when the disruption has been successfully completed."
+    )
+    
+    log("[ChaosAgent] Spawning Chaos LLM chat session with direct python tools...")
+    chat = client.chats.create(
+        model=model_name,
+        config=types.GenerateContentConfig(
+            tools=[_run_command],
+            system_instruction=system_instruction,
+            temperature=0.0
+        )
+    )
+    
+    try:
+        response = chat.send_message(goal)
+        log("[ChaosAgent] Planned chaos execution complete!")
+        log(f"Agent Final Output:\n{response.text}")
+    except Exception as e:
+        log(f"[ChaosAgent] Error during LLM chaos execution: {e}")
