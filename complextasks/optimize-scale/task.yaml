@@ -1,8 +1,7 @@
 task_id: 1
 name: "optimize-scale"
 prompt: |
-  Analyze the deployment "{{TARGET_DEPLOYMENT_NAME}}" in the namespace "{{NAMESPACE}}". Identify current resource bottlenecks and configuration gaps in the deployment.
-  Your task is to optimize the deployment to be highly available and ensure it is able to handle any traffic surges.
+  Inspect the live deployment "{{TARGET_DEPLOYMENT_NAME}}" in the namespace "{{NAMESPACE}}" and optimize it based on the active cluster state and metrics.
 expected_output: |
   critical requirements:
   - Agent adds resource requests and limits to the deployment.
@@ -12,7 +11,7 @@ chaos_spec: |
   [
     {
       "name": "Planned Load Spike",
-      "trigger": { "type": "time", "delay_seconds": 30 },
+      "trigger": { "type": "time", "delay_seconds": 5 },
       "action": { 
         "type": "generate_load", 
         "target": { "service_url": "http://{{TARGET_DEPLOYMENT_NAME}}.{{NAMESPACE}}.svc.cluster.local", "qps": 1000 } 
