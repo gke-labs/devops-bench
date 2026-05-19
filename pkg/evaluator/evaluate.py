@@ -251,7 +251,7 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
     prompt = res["input"]
     actual_output = res["output"]
     trajectory = res["trajectory"]
-    expected_output_raw = res["expected_output_raw"]
+    expected_output = res["expected_output"]
     latency = res["latency"]
     name = res["name"]
     retrieval_context = res["retrieval_context"]
@@ -261,7 +261,7 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
     tool_criteria = metrics[1].criteria
 
     # Extract checklist items ONLY from the critical requirements section to avoid parsing YAML lists
-    reqs_section = expected_output_raw
+    reqs_section = expected_output
     if "critical requirements:" in reqs_section.lower():
       parts = re.split(r"(?i)critical requirements\s*:", reqs_section, maxsplit=1)
       if len(parts) > 1:
@@ -318,12 +318,10 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
             model=gemini_model,
         )
 
-    expected_output_processed = replace_placeholders(expected_output_raw, gcp_project_id, os.environ.get("GKE_CLUSTER_NAME", ""))
-
     outcome_test_case = LLMTestCase(
             input=prompt,
             actual_output=actual_output if actual_output else "No response generated",
-            expected_output=expected_output_processed,
+            expected_output=expected_output,
             retrieval_context=retrieval_context,
             latency=latency,
         )
@@ -335,7 +333,7 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
     tool_test_case = LLMTestCase(
             input=prompt,
             actual_output=json.dumps(combined_actual, indent=2),
-            expected_output=expected_output_processed,
+            expected_output=expected_output,
             latency=latency,
         )
 
@@ -347,7 +345,7 @@ def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
     all_test_case = LLMTestCase(
             input=prompt,
             actual_output=json.dumps(all_context, indent=2),
-            expected_output=expected_output_processed,
+            expected_output=expected_output,
             latency=latency,
         )
 
@@ -509,7 +507,8 @@ def main():
 
         print(f"--- Agent Response ---\n{actual_output}\n----------------------")
 
-        detailed_results[-1]["expected_output_raw"] = item.get("expected_output", "")
+        expected_output_raw = item.get("expected_output", "")
+        detailed_results[-1]["expected_output"] = replace_placeholders(expected_output_raw, gcp_project_id, gke_cluster_name)
         detailed_results[-1]["name"] = item["name"]
         detailed_results[-1]["retrieval_context"] = item.get("retrieval_context", [])
         detailed_results[-1]["chaos_spec"] = item.get("chaos_spec")
