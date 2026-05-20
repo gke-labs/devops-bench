@@ -356,7 +356,7 @@ def calculate_doc_retrieval_rate(documentation, trajectory) -> float:
   return len(accessed_docs) / len(documentation) if len(documentation) > 0 else 0.0
 
 
-def evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model):
+def evaluate_metrics_batch(detailed_results, gemini_model):
   """Calculates batch metrics for a list of execution results."""
   print("\nStarting batch post-processing evaluation metrics...")
   for res in detailed_results:
@@ -641,7 +641,7 @@ def main():
 
     # 2. Loop to EVALUATE metrics for all tasks at the end
     # 2. Execute batch metrics post-processing turn via helper function
-    evaluate_metrics_batch(detailed_results, gcp_project_id, gemini_model)
+    evaluate_metrics_batch(detailed_results, gemini_model)
 
     with open(os.path.join(run_dir, "results.json"), "w") as f:
         json.dump(detailed_results, f, indent=2)
