@@ -44,7 +44,7 @@ class ChaosAgent:
         f"Your goal is to execute the following GKE planned chaos engineering disruption action:\n"
         f"```json\n{json.dumps(spec, indent=2)}\n```\n\n"
         f"Guidelines for execution:\n"
-        f"1. Use the 'fortio' tool (located at ~/go/bin/fortio) to inject traffic into GKE.\n"
+        f"1. Use the 'fortio' tool to inject traffic into GKE.\n"
         f"2. Note: GKE service target URLs (like *.svc.cluster.local) are port-forwarded to 'http://localhost:8080' on the host, so run fortio against http://localhost:8080 instead.\n"
         f"Use your run_command tool to execute this disruption safely and effectively."
     )
@@ -67,7 +67,7 @@ class ChaosAgent:
         "Once the single load command is executed, analyze the output, write your final performance summary, and exit immediately.\n"
         "- Safety First: Only inject transient, safe, and recoverable faults (e.g. killing pods, scaling deployments, "
         "generating traffic spikes). Do NOT permanently destroy GKE clusters, namespaces, or nodes.\n"
-        "- Traffic Generation: For load spikes, use the 'fortio' binary located at '~/go/bin/fortio'. Since GKE internal "
+        "- Traffic Generation: For load spikes, use the 'fortio' binary. Since GKE internal "
         "service URLs (*.svc.cluster.local) are port-forwarded to the host, you MUST target 'http://localhost:8080' instead.\n"
         "- Analysis & Clarity: Analyze command outputs carefully, report stdout/stderr accurately, and confirm in your "
         "final response when the disruption has been successfully completed."
