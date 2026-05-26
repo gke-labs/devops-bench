@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import time
+import argparse
 from deepeval import assert_test, evaluate
 from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCase, SingleTurnParams
@@ -14,6 +15,7 @@ from deepeval.tracing import observe
 from deepeval.models import DeepEvalBaseLLM
 from deepeval.dataset import EvaluationDataset
 from google import genai
+from anthropic import AnthropicVertex, Anthropic
 
 # Ensure module imports resolve locally
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -69,6 +71,52 @@ class GeminiDeepEvalModel(DeepEvalBaseLLM):
         contents=prompt,
     )
     return response.text
+
+  async def a_generate(self, prompt: str) -> str:
+    return self.generate(prompt)
+
+  def get_model_name(self):
+    return self.model_name
+
+
+class AnthropicDeepEvalModel(DeepEvalBaseLLM):
+  """Wrapper for Anthropic SDK to be used with DeepEval."""
+
+  def __init__(self, model_name=None):
+    if not model_name:
+      model_name = os.environ.get("JUDGE_MODEL", "claude-opus-4-6")
+
+    self.model_name = model_name
+    project_id = os.environ.get("GCP_PROJECT_ID")
+    location = os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
+    api_key = os.environ.get("JUDGE_API_KEY")
+
+    validate_config("judge", os.environ.get("JUDGE_PROVIDER", "anthropic"), self.model_name)
+
+    if api_key:
+      self.client = Anthropic(api_key=api_key)
+    elif project_id:
+      self.client = AnthropicVertex(region=location, project_id=project_id)
+    else:
+      self.client = Anthropic()
+
+  def load_model(self):
+    return self.client
+
+  def generate(self, prompt: str) -> str:
+    response = self.client.messages.create(
+        model=self.model_name,
+        max_tokens=4096,
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
+    )
+    text = ""
+    if hasattr(response, "content"):
+      for content in response.content:
+        if hasattr(content, "type") and content.type == "text":
+          text += content.text
+    return text
 
   async def a_generate(self, prompt: str) -> str:
     return self.generate(prompt)
@@ -158,7 +206,23 @@ def load_configuration_context():
   """Retrieves, validates, and logs the active benchmark and agent configurations."""
   bench_agent_type = os.environ.get("BENCH_AGENT_TYPE", "cli").lower()
   agent_target = os.environ.get("AGENT_TARGET", "./my-agent")
-  gemini_model = GeminiDeepEvalModel()
+  
+  judge_provider = os.environ.get("JUDGE_PROVIDER", "google")
+  judge_model_name = os.environ.get("JUDGE_MODEL")
+
+  if judge_provider == "google":
+    if not judge_model_name:
+      judge_model_name = "gemini-3.1-pro-preview"
+    judge_model = GeminiDeepEvalModel(model_name=judge_model_name)
+  elif judge_provider == "anthropic":
+    if not judge_model_name:
+      judge_model_name = "claude-opus-4-6"
+    judge_model = AnthropicDeepEvalModel(model_name=judge_model_name)
+  else:
+    print(f"Warning: Unknown judge provider '{judge_provider}'. Defaulting to Gemini.")
+    judge_model_name = judge_model_name or "gemini-3.1-pro-preview"
+    judge_model = GeminiDeepEvalModel(model_name=judge_model_name)
+
   gcp_project_id = os.environ.get("GCP_PROJECT_ID")
   gke_cluster_name = os.environ.get("GKE_CLUSTER_NAME")
 
@@ -171,8 +235,6 @@ def load_configuration_context():
   app_location = os.environ.get("APP_LOCATION", "N/A")
   agent_provider = os.environ.get("AGENT_PROVIDER", "google")
   agent_model = os.environ.get("AGENT_MODEL", "gemini-3.1-pro-preview")
-  judge_provider = os.environ.get("JUDGE_PROVIDER", "google")
-  judge_model = os.environ.get("JUDGE_MODEL", "gemini-3.1-pro-preview")
   cloud_provider = os.environ.get("CLOUD_PROVIDER", "gcp")
 
   print_configuration_context(
@@ -187,10 +249,10 @@ def load_configuration_context():
       agent_provider,
       agent_model,
       judge_provider,
-      judge_model
+      judge_model_name
   )
 
-  return bench_agent_type, agent_target, gemini_model, gcp_project_id, gke_cluster_name
+  return bench_agent_type, agent_target, judge_model, gcp_project_id, gke_cluster_name
 
 
 def execute_agent(bench_agent_type, agent_target, prompt, context):
@@ -207,7 +269,7 @@ def execute_agent(bench_agent_type, agent_target, prompt, context):
     elif provider == "anthropic":
       llm_client = AnthropicClientAdapter()
     else:
-      print(f"Unknown provider: {provider}")
+      raise ValueError(f"Unknown provider: {provider}")
     bench_use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
     bench_use_mcp = bench_use_mcp_env == "true"
     return asyncio.run(
@@ -254,7 +316,7 @@ def create_evaluation_metrics(model):
   return [outcome_validity, tool_invocation]
 
 
-def evaluate_documentation_grounding(documentation, all_test_case, gemini_model, scores):
+def evaluate_documentation_grounding(documentation, all_test_case, judge_model, scores):
   """Evaluates documentation constraints via GEval and calculates GroundingAccuracy."""
   doc_metrics = []
   doc_constraints_map = {}
@@ -271,7 +333,7 @@ def evaluate_documentation_grounding(documentation, all_test_case, gemini_model,
                   f" documentation constraint/requirement: {c_text}"
               ),
               evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
-              model=gemini_model,
+              model=judge_model,
           )
       )
 
@@ -360,7 +422,7 @@ def calculate_doc_retrieval_rate(documentation, trajectory) -> float:
   return len(accessed_docs) / len(documentation) if len(documentation) > 0 else 0.0
 
 
-def evaluate_metrics_batch(detailed_results, gemini_model):
+def evaluate_metrics_batch(detailed_results, judge_model):
   """Calculates batch metrics for a list of execution results."""
 
   print("\nStarting batch post-processing evaluation metrics...")
@@ -374,7 +436,7 @@ def evaluate_metrics_batch(detailed_results, gemini_model):
     retrieval_context = res["retrieval_context"]
     documentation = res.get("documentation", [])
 
-    metrics = create_evaluation_metrics(gemini_model)
+    metrics = create_evaluation_metrics(judge_model)
     outcome_criteria = metrics[0].criteria
     tool_criteria = metrics[1].criteria
 
@@ -411,7 +473,7 @@ def evaluate_metrics_batch(detailed_results, gemini_model):
                   f" requirement: {item}"
               ),
               evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
-              model=gemini_model,
+              model=judge_model,
           )
       )
 
@@ -422,7 +484,7 @@ def evaluate_metrics_batch(detailed_results, gemini_model):
             SingleTurnParams.INPUT,
             SingleTurnParams.ACTUAL_OUTPUT,
         ],
-        model=gemini_model,
+        model=judge_model,
     )
 
     tool_invocation = GEval(
@@ -433,7 +495,7 @@ def evaluate_metrics_batch(detailed_results, gemini_model):
                 SingleTurnParams.INPUT,
                 SingleTurnParams.ACTUAL_OUTPUT,
             ],
-            model=gemini_model,
+            model=judge_model,
         )
 
     outcome_test_case = LLMTestCase(
@@ -525,7 +587,7 @@ def evaluate_metrics_batch(detailed_results, gemini_model):
 
     # Grounding Accuracy & Recall
     if documentation:
-      evaluate_documentation_grounding(documentation, all_test_case, gemini_model, scores)
+      evaluate_documentation_grounding(documentation, all_test_case, judge_model, scores)
       scores["DocRetrievalRate"] = calculate_doc_retrieval_rate(documentation, trajectory)
 
     if res.get("chaos_spec"):
@@ -537,14 +599,14 @@ def evaluate_metrics_batch(detailed_results, gemini_model):
           name="DiagnosisAccuracy",
           criteria=f"Did the agent accurately identify that the fault injected was '{actual_fault}'?",
           evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
-          model=gemini_model,
+          model=judge_model,
       )
       
       rec_metric = GEval(
           name="GracefulRecovery",
           criteria="Did the agent follow a graceful recovery process (e.g., maintaining uptime, zero downtime)?",
           evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
-          model=gemini_model,
+          model=judge_model,
       )
       
       try:
@@ -583,7 +645,7 @@ def main():
         eval_data = eval_data[:int(limit)]
         print(f"Limiting evaluation to the first {limit} cases.")
 
-    bench_agent_type, agent_target, gemini_model, gcp_project_id, gke_cluster_name = load_configuration_context()
+    bench_agent_type, agent_target, judge_model, gcp_project_id, gke_cluster_name = load_configuration_context()
 
     print(f"Running dataset evaluation with {len(eval_data)} cases...")
     dataset = EvaluationDataset()
@@ -688,7 +750,7 @@ def main():
 
     # 2. Loop to EVALUATE metrics for all tasks at the end
     # 2. Execute batch metrics post-processing turn via helper function
-    evaluate_metrics_batch(detailed_results, gemini_model)
+    evaluate_metrics_batch(detailed_results, judge_model)
 
     with open(os.path.join(run_dir, "results.json"), "w") as f:
         json.dump(detailed_results, f, indent=2)
