@@ -26,12 +26,22 @@ class ScenarioManager:
         }
         self.start_time = None
 
-    def run_chaos_and_verification(self, spec):
+    def run_chaos_and_verification(self, spec, verification_specs=None):
         """Unpacks the chaos spec, injects the fault, and gathers verification metrics."""
         self.start_time = time.time()
         trigger = spec.get("trigger", {})
         action = spec.get("action", {})
-        verification = spec.get("verification", {})
+        verification_ref = spec.get("verification", {})
+        
+        verification = {}
+        if isinstance(verification_ref, str):
+            if verification_specs:
+                for v_spec in verification_specs:
+                    if v_spec.get("name") == verification_ref:
+                        verification = v_spec
+                        break
+        elif isinstance(verification_ref, dict):
+            verification = verification_ref
         
         # Record initial chaos metadata
         self.result_holder["chaos_report"] = {

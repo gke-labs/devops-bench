@@ -16,18 +16,23 @@ chaos_spec: |
         "type": "generate_load", 
         "target": { "service_url": "http://{{TARGET_DEPLOYMENT_NAME}}.{{NAMESPACE}}.svc.cluster.local", "qps": 300 } 
       },
-      "verification": {
-        "pod_spec": {
-          "type": "pod_healthy",
-          "selector": "app={{TARGET_DEPLOYMENT_NAME}}",
-          "namespace": "{{NAMESPACE}}"
-        },
-        "scaling_spec": {
-          "type": "scaling_complete",
-          "deployment": "{{TARGET_DEPLOYMENT_NAME}}",
-          "min_replicas": 2,
-          "namespace": "{{NAMESPACE}}"
-        }
+      "verification": "Planned Load Spike Verification"
+    }
+  ]
+verification_spec: |
+  [
+    {
+      "name": "Planned Load Spike Verification",
+      "pod_spec": {
+        "type": "pod_healthy",
+        "selector": "app={{TARGET_DEPLOYMENT_NAME}}",
+        "namespace": "{{NAMESPACE}}"
+      },
+      "scaling_spec": {
+        "type": "scaling_complete",
+        "deployment": "{{TARGET_DEPLOYMENT_NAME}}",
+        "min_replicas": 2,
+        "namespace": "{{NAMESPACE}}"
       }
     }
   ]
