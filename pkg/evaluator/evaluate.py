@@ -180,6 +180,7 @@ def load_evaluation_data(input_path):
               "expected_output": content.get("expected_output", "").strip(),
               "retrieval_context": content.get("retrieval_context", []),
               "chaos_spec": content.get("chaos_spec"),
+              "verification_spec": content.get("verification_spec"),
               "documentation": docs
           }]
   else:
@@ -193,7 +194,8 @@ def load_evaluation_data(input_path):
           "input": eval_data.get("goal", eval_data.get("input", "")),
           "expected_output": eval_data.get("expected_output", ""),
           "retrieval_context": eval_data.get("retrieval_context", []),
-          "chaos_spec": eval_data.get("chaos_spec")
+          "chaos_spec": eval_data.get("chaos_spec"),
+          "verification_spec": eval_data.get("verification_spec")
       }]
   elif isinstance(eval_data, list):
       for item in eval_data:
@@ -673,6 +675,7 @@ def main():
         namespace = os.environ.get("NAMESPACE", "default")
         
         chaos_spec = item.get("chaos_spec")
+        verification_spec = item.get("verification_spec")
         scenario_manager = None
         
         if chaos_spec:
@@ -684,12 +687,22 @@ def main():
                     gke_cluster_name
                 )
                 spec_list = json.loads(chaos_spec_processed)
+                
+                verification_spec_list = []
+                if verification_spec:
+                    verification_spec_processed = replace_placeholders(
+                        json.dumps(verification_spec) if isinstance(verification_spec, (dict, list)) else str(verification_spec),
+                        gcp_project_id,
+                        gke_cluster_name
+                    )
+                    verification_spec_list = json.loads(verification_spec_processed)
+
                 if spec_list:
                     spec = spec_list[0]
                     scenario_manager = ScenarioManager(target_deployment, namespace)
                     t = threading.Thread(
                         target=scenario_manager.run_chaos_and_verification, 
-                        args=(spec,)
+                        args=(spec, verification_spec_list)
                     )
                     t.daemon = True
                     t.start()
@@ -740,6 +753,7 @@ def main():
         detailed_results[-1]["name"] = item["name"]
         detailed_results[-1]["retrieval_context"] = item.get("retrieval_context", [])
         detailed_results[-1]["chaos_spec"] = item.get("chaos_spec")
+        detailed_results[-1]["verification_spec"] = item.get("verification_spec")
         
         chaos_report = {}
         perf_report = {}

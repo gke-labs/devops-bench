@@ -133,6 +133,7 @@ def load_from_tasks_dir(dir_path: str) -> list:
                             expected = content.get("expected_output", "")
                             retrieval = content.get("retrieval_context", [])
                             chaos_spec = content.get("chaos_spec")
+                            verification_spec = content.get("verification_spec")
                             
                             eval_data.append({
                                 "task_id": task_id if task_id is not None else 999,
@@ -141,6 +142,7 @@ def load_from_tasks_dir(dir_path: str) -> list:
                                 "expected_output": expected.strip() if isinstance(expected, str) else str(expected),
                                 "retrieval_context": retrieval if isinstance(retrieval, list) else [],
                                 "chaos_spec": chaos_spec,
+                                "verification_spec": verification_spec,
                                 "documentation": docs
                             })
                 except Exception as e:
