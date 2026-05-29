@@ -1,5 +1,12 @@
 task_id: 3
 name: "deploy-config"
+infrastructure:
+  deployer: "terraform"
+  stack: "prebuilt/minimum"
+  teardown: true
+  variables:
+    node_count: 3
+    machine_type: "e2-standard-2"
 prompt: |
   Deploy the provided manifests to cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
 
@@ -113,7 +120,7 @@ prompt: |
       name: hypercomputer-d1-vllm-server
   ```
 expected_output: |
-  critical requirements: 
+  critical requirements:
 
   - Execute the deployment of the provided manifests to the '{{GKE_CLUSTER_NAME}}' in project '{{GCP_PROJECT_ID}}'.
   - Confirm that the 'hypercomputer-d1-vllm-server' deployment was successfully applied to the cluster.
