@@ -1,75 +1,126 @@
-import unittest
+import pytest
 from unittest.mock import patch, MagicMock
 import os
 import sys
+from pathlib import Path
 
-# Add project root to path to resolve imports correctly
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# Ensure project root is in path
+project_root = Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from deployers.gcp.gcp_deployer import GCPDeployer
 
-class TestGCPDeployer(unittest.TestCase):
-    def setUp(self):
-        self.project = "test-project"
-        self.zone = "test-zone"
-        self.cluster_name = "test-cluster"
-        self.deployer = GCPDeployer(self.project, self.zone, self.cluster_name)
 
-    @patch('subprocess.run')
-    def test_up(self, mock_run):
-        # Mock describe check to return failure so that GKE cluster is created
-        mock_run.return_value = MagicMock(returncode=1)
-        self.deployer.up()
-        self.assertEqual(mock_run.call_count, 2)
-        args, kwargs = mock_run.call_args_list[1]
-        cmd = args[0]
-        self.assertIn("kubetest2", cmd)
-        self.assertIn("gke", cmd)
-        self.assertIn("--up", cmd)
-        self.assertIn(self.project, cmd)
-        
-        # Verify env has bin_dir in PATH
-        env = kwargs.get('env')
-        self.assertIsNotNone(env)
-        self.assertIn(self.deployer.bin_dir, env['PATH'])
-        
-    @patch('subprocess.run')
-    def test_up_with_config(self, mock_run):
-        # Mock describe check to return failure so that GKE cluster is created
-        mock_run.return_value = MagicMock(returncode=1)
-        deployer = GCPDeployer(self.project, self.zone, self.cluster_name, machine_type="n1-standard-4", num_nodes=5)
-        deployer.up()
-        self.assertEqual(mock_run.call_count, 2)
-        args, kwargs = mock_run.call_args_list[1]
-        cmd = args[0]
-        self.assertIn("--machine-type", cmd)
-        self.assertIn("n1-standard-4", cmd)
-        self.assertIn("--num-nodes", cmd)
-        self.assertIn("5", cmd)
+@pytest.fixture
+def gcp_deployer_setup():
+    project = "test-project"
+    location = "us-central1-a"
+    cluster_name = "test-cluster"
+    return {
+        "project": project,
+        "location": location,
+        "cluster_name": cluster_name,
+        "deployer": GCPDeployer(project, location, cluster_name)
+    }
 
-    @patch('subprocess.run')
-    def test_down(self, mock_run):
-        self.deployer.down()
-        mock_run.assert_called_once()
-        args, kwargs = mock_run.call_args
-        cmd = args[0]
-        self.assertIn("kubetest2", cmd)
-        self.assertIn("gke", cmd)
-        self.assertIn("--down", cmd)
-        self.assertIn(self.project, cmd)
-        
-        env = kwargs.get('env')
-        self.assertIsNotNone(env)
-        self.assertIn(self.deployer.bin_dir, env['PATH'])
 
-    def test_get_cluster_info(self):
-        info = self.deployer.get_cluster_info()
-        self.assertEqual(info['name'], self.cluster_name)
-        self.assertEqual(info['zone'], self.zone)
-        self.assertEqual(info['project'], self.project)
-        self.assertTrue('kubeconfig_path' in info)
+@patch('subprocess.run')
+# Patch Path.write_text to avoid actually writing to /tmp during tests
+@patch.object(Path, 'write_text')
+def test_up(mock_write_text, mock_run, gcp_deployer_setup):
+    deployer = gcp_deployer_setup["deployer"]
 
-if __name__ == '__main__':
-    unittest.main()
+    mock_desc_process = MagicMock()
+    mock_desc_process.returncode = 1
+
+    mock_run.side_effect = [
+        mock_desc_process, # describe
+        MagicMock() # kubetest2
+    ]
+
+    deployer.up()
+
+    args_list = mock_run.call_args_list
+    assert len(args_list) == 2
+
+    assert args_list[0][0][0] == [
+        "gcloud", "container", "clusters", "describe",
+        gcp_deployer_setup["cluster_name"],
+        "--project", gcp_deployer_setup["project"],
+        "--location", gcp_deployer_setup["location"]
+    ]
+
+    cmd = args_list[1][0][0]
+    assert "kubetest2" in cmd
+    assert "gke" in cmd
+    assert "--up" in cmd
+    assert gcp_deployer_setup["project"] in cmd
+
+    env = args_list[1][1].get('env')
+    assert env is not None
+    assert deployer.bin_dir in env['PATH']
+    mock_write_text.assert_called_once_with("true")
+
+
+@patch('subprocess.run')
+@patch.object(Path, 'write_text')
+def test_up_with_config(mock_write_text, mock_run, gcp_deployer_setup):
+    deployer = GCPDeployer(
+        gcp_deployer_setup["project"],
+        gcp_deployer_setup["location"],
+        gcp_deployer_setup["cluster_name"],
+        machine_type="n1-standard-4",
+        num_nodes=5
+    )
+
+    mock_desc_process = MagicMock()
+    mock_desc_process.returncode = 1
+
+    mock_run.side_effect = [
+        mock_desc_process, # describe
+        MagicMock() # kubetest2
+    ]
+
+    deployer.up()
+
+    args_list = mock_run.call_args_list
+    assert len(args_list) == 2
+
+    cmd = args_list[1][0][0]
+    assert "--machine-type" in cmd
+    assert "n1-standard-4" in cmd
+    assert "--num-nodes" in cmd
+    assert "5" in cmd
+    mock_write_text.assert_called_once_with("true")
+
+
+@patch('subprocess.run')
+def test_down(mock_run, gcp_deployer_setup):
+    deployer = gcp_deployer_setup["deployer"]
+
+    with patch.object(Path, 'exists', return_value=True):
+        with patch.object(Path, 'read_text', return_value="true"):
+            deployer.down()
+
+            mock_run.assert_called_once()
+            args, kwargs = mock_run.call_args
+            cmd = args[0]
+            assert "kubetest2" in cmd
+            assert "gke" in cmd
+            assert "--down" in cmd
+            assert gcp_deployer_setup["project"] in cmd
+
+            env = kwargs.get('env')
+            assert env is not None
+            assert deployer.bin_dir in env['PATH']
+
+
+def test_get_cluster_info(gcp_deployer_setup):
+    deployer = gcp_deployer_setup["deployer"]
+    info = deployer.get_cluster_info()
+    assert info['name'] == gcp_deployer_setup["cluster_name"]
+    assert info['location'] == gcp_deployer_setup["location"]
+    assert info['zone'] == gcp_deployer_setup["location"]
+    assert info['project'] == gcp_deployer_setup["project"]
+    assert 'kubeconfig_path' in info

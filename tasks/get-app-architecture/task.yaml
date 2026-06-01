@@ -1,8 +1,15 @@
 task_id: 1
 name: "get-app-architecture"
+infrastructure:
+  deployer: "terraform"
+  stack: "prebuilt/minimum"
+  teardown: true
+  variables:
+    node_count: 3
+    machine_type: "e2-standard-2"
 prompt: "summarize the hypercomputer d1 app in project {{GCP_PROJECT_ID}}"
 expected_output: |
-  critical requirements: 
+  critical requirements:
 
   - Identify the app as 'hypercomputer d1' in project '{{GCP_PROJECT_ID}}'.
   - List core Kubernetes components (e.g., frontend-deployment, vllm-service).

@@ -1,8 +1,15 @@
 task_id: 2
 name: "create-deployment"
+infrastructure:
+  deployer: "terraform"
+  stack: "prebuilt/minimum"
+  teardown: true
+  variables:
+    node_count: 3
+    machine_type: "e2-standard-2"
 prompt: "Generate Kubernetes manifest for deploying our finetuned Gemma 3 12b model to our GKE {{GKE_CLUSTER_NAME}}. I think the models are stored in GCS in bucket hypercomputer-d1-models-{{GCP_PROJECT_ID}}. Ensure that it can scale up and down with traffic."
 expected_output: |
-  critical requirements: 
+  critical requirements:
 
   - Expected Tool Call: generate_manifest
   - Deploy a vLLM server for the Gemma 3 12B model.
