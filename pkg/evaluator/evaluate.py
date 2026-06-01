@@ -653,7 +653,6 @@ def evaluate_metrics_batch(detailed_results, judge_model):
                     f"Did the agent explicitly detect, acknowledge, or diagnose the active '{actual_fault}' fault "
                     f"(or the specific outage/disruption caused by it) in its text output? "
                     f"The evaluation should be based solely on the agent's recognition and explanation of the active fault. "
-                    f"Whether the agent proposed or applied a fix or structural remediation should NOT be considered for this metric."
                 ),
                 evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
                 model=judge_model,
