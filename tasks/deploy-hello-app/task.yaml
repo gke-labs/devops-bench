@@ -1,8 +1,15 @@
 task_id: 6
 name: "deploy-hello-app"
+infrastructure:
+  deployer: "terraform"
+  stack: "prebuilt/minimum"
+  teardown: true
+  variables:
+    node_count: 3
+    machine_type: "e2-standard-2"
 prompt: "Generate a production-ready Kubernetes manifest for the application located at {{APP_LOCATION}} and then deploy it to cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}. I know the app is just a simple hello world, pretend it is a complex app that needs full productionization."
 expected_output: |
-  critical requirements: 
+  critical requirements:
   - Convert program to HTTP server
   - Add health check to code
   - Container build

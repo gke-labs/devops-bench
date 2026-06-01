@@ -1,53 +1,111 @@
 import os
 import sys
 import argparse
+import json
+
+from pathlib import Path
 
 # Ensure project root is in path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from deployers.gcp.gcp_deployer import GCPDeployer
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+
+from deployers.factory import get_deployer
 
 def main():
     parser = argparse.ArgumentParser(description="DevOps Bench Infra Manager")
-    subparsers = parser.add_subparsers(dest="provider", required=True, help="Cloud provider")
-    
+    parser.add_argument(
+        "--use-terraform", action="store_true", help="Use Terraform for deployment"
+    )
+    parser.add_argument(
+        "--stack",
+        help="Infrastructure stack to use (e.g., prebuilt/minimum)",
+        dest="stack"
+    )
+    # Support both --stack and deprecated --env for a smoother transition
+    parser.add_argument("--env", help=argparse.SUPPRESS)
+
+    subparsers = parser.add_subparsers(
+        dest="provider", required=True, help="Cloud provider"
+    )
+
     # GCP Subparser
     gcp_parser = subparsers.add_parser("gcp", help="GCP operations")
-    gcp_subparsers = gcp_parser.add_subparsers(dest="action", required=True, help="Action")
-    
+    gcp_subparsers = gcp_parser.add_subparsers(
+        dest="action", required=True, help="Action"
+    )
+
     # Add actions for GCP
     for action in ["up", "down", "info"]:
         p = gcp_subparsers.add_parser(action, help=f"Perform {action}")
         p.add_argument("--project", help="GCP Project ID")
         p.add_argument("--cluster-name", help="Name of the cluster")
-        p.add_argument("--zone", default="us-central1-a", help="GCP Zone")
-            
+        p.add_argument(
+            "--location", help="GCP Location (Zone or Region)"
+        )
+
+        # Support deprecated --zone for transition
+        p.add_argument("--zone", help=argparse.SUPPRESS)
+
     args = parser.parse_args()
-    
+
+    # Handle deprecated arguments
+    stack = args.stack or args.env
+    location = args.location
+    if hasattr(args, 'zone') and args.zone:
+         print(
+             "Warning: --zone is deprecated. Use --location instead.",
+             file=sys.stderr
+         )
+         location = args.zone
+
     if args.provider == "gcp":
         project = args.project or os.environ.get("GCP_PROJECT_ID")
         cluster_name = args.cluster_name or os.environ.get("GKE_CLUSTER_NAME")
-        zone = args.zone or os.environ.get("GCP_ZONE", "us-central1-a")
-        
+        # Enforce GCP_LOCATION precedence
+        final_location = (
+            location or os.environ.get("GCP_LOCATION", "us-central1-a")
+        )
+
         if not project or not cluster_name:
-            print("Error: Project and Cluster Name must be specified via flags or environment variables (GCP_PROJECT_ID, GKE_CLUSTER_NAME).", file=sys.stderr)
+
+            print(
+                "Error: Project and Cluster Name must be specified via flags or "
+                "environment variables (GCP_PROJECT_ID, GKE_CLUSTER_NAME).",
+                file=sys.stderr
+            )
             sys.exit(1)
-            
-        deployer = GCPDeployer(project=project, zone=zone, cluster_name=cluster_name)
-        
+
+        infra_config = {
+            "deployer": "terraform" if args.use_terraform else "kubetest2",
+            "stack": stack,
+        }
+        deployer = get_deployer(
+            infra_config, project, cluster_name, global_location=final_location
+        )
+
         if args.action == "up":
-            print(f"Bringing up cluster {cluster_name}...")
+            deploy_type = "Terraform" if args.use_terraform else "kubetest2"
+            print(f"Bringing up infrastructure ({deploy_type})...")
             deployer.up()
         elif args.action == "down":
-            print(f"Tearing down cluster {cluster_name}...")
+            print(f"Tearing down infrastructure...")
             deployer.down()
         elif args.action == "info":
-            import json
             print(json.dumps(deployer.get_cluster_info(), indent=2))
         else:
-            print(f"Critical Error: Unsupported action '{args.action}' for provider 'gcp'", file=sys.stderr)
+            print(
+                f"Critical Error: Unsupported action '{args.action}' "
+                f"for provider 'gcp'",
+                file=sys.stderr
+            )
             sys.exit(1)
     else:
-        print(f"Critical Error: Unsupported provider '{args.provider}'", file=sys.stderr)
+        print(
+            f"Critical Error: Unsupported provider '{args.provider}'",
+            file=sys.stderr
+        )
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -5,10 +5,17 @@ RUN apt-get update && apt-get install -y \
     git \
     make \
     curl \
+    wget \
     gnupg \
+    unzip \
+    lsb-release \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
+    && wget https://releases.hashicorp.com/terraform/1.8.5/terraform_1.8.5_linux_amd64.zip \
+    && unzip terraform_1.8.5_linux_amd64.zip -d /usr/local/bin/ \
+    && rm terraform_1.8.5_linux_amd64.zip \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Install Gemini CLI globally (customizable version)
 ARG GEMINI_CLI_VERSION=latest

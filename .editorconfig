@@ -1,0 +1,50 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# Top-most EditorConfig file
+root = true
+
+# Don't make sweeping formatting changes to existing files,
+# but ensure new files and modifications adhere to consistent styles.
+
+# Universal settings for all files
+[*]
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+charset = utf-8
+
+# Python files (Standardized to 4 spaces)
+[*.py]
+indent_style = space
+indent_size = 4
+
+# YAML files (Standardized to 2 spaces)
+[*.{yaml,yml}]
+indent_style = space
+indent_size = 2
+
+# Terraform/HCL files (Standardized to 2 spaces)
+[*.{tf,tfvars}]
+indent_style = space
+indent_size = 2
+
+# Shell scripts (Standardized to 2 spaces)
+[*.sh]
+indent_style = space
+indent_size = 2
+
+# JSON files (Standardized to 2 spaces)
+[*.json]
+indent_style = space
+indent_size = 2
+
+# Web development files (HTML, CSS, JS standardized to 4 spaces as per codebase standard)
+[*.{html,css,js}]
+indent_style = space
+indent_size = 4
+
+# Markdown files (Standardized to 2 spaces)
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
