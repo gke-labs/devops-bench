@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 
+
 # Install Gemini CLI globally (customizable version)
 ARG GEMINI_CLI_VERSION=latest
 RUN npm install -g @google/gemini-cli@${GEMINI_CLI_VERSION}

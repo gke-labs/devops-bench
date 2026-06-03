@@ -98,6 +98,19 @@ class TerraformDeployer(Deployer):
                 "Failed to retrieve 'cluster_location' from Terraform outputs."
             )
 
+        kubeconfig_path = os.environ.get(
+            "KUBECONFIG", str(Path.home() / ".kube" / "config")
+        )
+
+        if location == "local":
+            project = self.variables.get("project_id") or os.environ.get("GCP_PROJECT_ID") or "local-kind"
+            return {
+                "name": cluster_name,
+                "location": location,
+                "project": project,
+                "kubeconfig_path": kubeconfig_path
+            }
+
         project = self.variables.get("project_id") or os.environ.get("GCP_PROJECT_ID")
         if not project:
              raise ValueError("Project ID not found in variables or environment (GCP_PROJECT_ID).")
@@ -108,13 +121,10 @@ class TerraformDeployer(Deployer):
             "--location", location, "--project", project
         ], check=True)
 
-        kubeconfig_path = os.environ.get(
-            "KUBECONFIG", str(Path.home() / ".kube" / "config")
-        )
-
         return {
             "name": cluster_name,
             "location": location,
             "project": project,
             "kubeconfig_path": kubeconfig_path
         }
+

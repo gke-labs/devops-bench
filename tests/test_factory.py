@@ -23,7 +23,8 @@ def base_config():
     }
 
 
-def test_get_deployer_default(base_config):
+@patch('deployers.terraform.tf_deployer.Path.exists', return_value=True)
+def test_get_deployer_default(mock_exists, base_config):
     infra_config = {}
     deployer = get_deployer(
         infra_config,
@@ -31,10 +32,9 @@ def test_get_deployer_default(base_config):
         base_config["cluster_name"],
         base_config["location"]
     )
-    assert isinstance(deployer, GCPDeployer)
-    assert deployer.project == base_config["project_id"]
-    assert deployer.cluster_name == base_config["cluster_name"]
-    assert deployer.zone == base_config["location"]
+    assert isinstance(deployer, TerraformDeployer)
+    expected_stack_path = str(project_root / "terraform" / "prebuilt/kind")
+    assert deployer.tf_dir == expected_stack_path
 
 
 def test_get_deployer_kubetest2(base_config):
@@ -59,14 +59,16 @@ def test_get_deployer_terraform_default_stack(mock_exists, base_config):
     )
     assert isinstance(deployer, TerraformDeployer)
 
+    import pathlib
+    expected_kubeconfig = os.environ.get("KUBECONFIG") or str(pathlib.Path("~/.kube/config").expanduser().resolve())
     expected_vars = {
-        "project_id": base_config["project_id"],
         "cluster_name": base_config["cluster_name"],
-        "location": base_config["location"]
+        "location": "local",
+        "kubeconfig_path": expected_kubeconfig
     }
     assert deployer.variables == expected_vars
 
-    expected_stack_path = str(project_root / "terraform" / "prebuilt/minimum")
+    expected_stack_path = str(project_root / "terraform" / "prebuilt/kind")
     assert deployer.tf_dir == expected_stack_path
 
 
@@ -103,7 +105,7 @@ def test_get_deployer_terraform_custom_stack_and_vars(mock_exists, base_config):
 
 @patch.dict(os.environ, {"GCP_LOCATION": "us-west1-b"})
 def test_get_deployer_location_from_env(base_config):
-    infra_config = {}
+    infra_config = {"deployer": "kubetest2"}
     # Pass None for global_location to trigger env lookup
     deployer = get_deployer(
         infra_config,
@@ -112,3 +114,27 @@ def test_get_deployer_location_from_env(base_config):
         global_location=None
     )
     assert deployer.zone == "us-west1-b"
+
+
+@patch('deployers.terraform.tf_deployer.Path.exists', return_value=True)
+def test_get_deployer_terraform_kind_stack(mock_exists, base_config):
+    infra_config = {"deployer": "terraform", "stack": "prebuilt/kind"}
+    deployer = get_deployer(
+        infra_config,
+        base_config["project_id"],
+        base_config["cluster_name"],
+        base_config["location"]
+    )
+    assert isinstance(deployer, TerraformDeployer)
+
+    import pathlib
+    expected_kubeconfig = os.environ.get("KUBECONFIG") or str(pathlib.Path("~/.kube/config").expanduser().resolve())
+    expected_vars = {
+        "cluster_name": base_config["cluster_name"],
+        "location": "local",
+        "kubeconfig_path": expected_kubeconfig
+    }
+    assert deployer.variables == expected_vars
+
+    expected_stack_path = str(project_root / "terraform" / "prebuilt/kind")
+    assert deployer.tf_dir == expected_stack_path

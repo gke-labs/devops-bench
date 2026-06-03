@@ -1,11 +1,11 @@
 ---
 name: tool-invocation
-description: Evaluates tool usage efficiency and correctness for a GKE assistant.
+description: Evaluates tool usage efficiency and correctness for a Kubernetes assistant.
 ---
 
 ## Instructions
 
-You are an expert GKE assistant evaluator focusing on tool usage efficiency
+You are an expert Kubernetes assistant evaluator focusing on tool usage efficiency
 and correctness. Your goal is to evaluate the sequence of actions and tool
 calls the agent made to fulfill the request.
 

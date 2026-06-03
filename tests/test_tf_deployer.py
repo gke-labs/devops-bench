@@ -147,6 +147,63 @@ def test_get_cluster_info_regional(mock_run, tf_deployer_setup):
     ]
 
 
+@patch('subprocess.run')
+def test_get_cluster_info_local(mock_run, tf_deployer_setup):
+    tf_output = {
+        "cluster_name": {"value": "test-cluster"},
+        "cluster_location": {"value": "local"}
+    }
+    mock_tf_out_process = MagicMock()
+    mock_tf_out_process.stdout = json.dumps(tf_output)
+
+    mock_run.side_effect = [
+        MagicMock(), # init
+        mock_tf_out_process, # output
+    ]
+
+    info = tf_deployer_setup.get_cluster_info()
+
+    assert info["name"] == "test-cluster"
+    assert info["location"] == "local"
+    assert info["project"] == "test-project"
+    assert "kubeconfig_path" in info
+
+    args_list = mock_run.call_args_list
+    assert len(args_list) == 2
+    assert args_list[0][0][0] == ["terraform", "init", "-input=false"]
+    assert args_list[1][0][0] == ["terraform", "output", "-json"]
+    for call_args in args_list:
+        assert "gcloud" not in call_args[0][0]
+
+
+@patch('subprocess.run')
+def test_get_cluster_info_local_no_project(mock_run):
+    # Test that we default project to local-kind when no project is provided
+    with patch.object(Path, 'exists', return_value=True):
+        deployer = TerraformDeployer(tf_dir="prebuilt/minimum", variables={})
+
+    tf_output = {
+        "cluster_name": {"value": "test-cluster"},
+        "cluster_location": {"value": "local"}
+    }
+    mock_tf_out_process = MagicMock()
+    mock_tf_out_process.stdout = json.dumps(tf_output)
+
+    mock_run.side_effect = [
+        MagicMock(), # init
+        mock_tf_out_process, # output
+    ]
+
+    with patch.dict(os.environ, {}, clear=True):
+        info = deployer.get_cluster_info()
+
+    assert info["name"] == "test-cluster"
+    assert info["location"] == "local"
+    assert info["project"] == "local-kind"
+    assert "kubeconfig_path" in info
+
+
+
 @patch.object(Path, 'exists')
 def test_init_path_resolution(mock_exists):
     # Test absolute path

@@ -24,6 +24,6 @@ class Deployer(ABC):
     def get_cluster_info(self) -> Dict[str, Any]:
         """
         Returns a dictionary with cluster details.
-        Expected keys: 'name', 'zone', 'project', 'kubeconfig_path'
+        Expected keys: 'name', 'location', 'project', 'kubeconfig_path'
         """
         pass

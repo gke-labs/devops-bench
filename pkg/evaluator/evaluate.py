@@ -61,8 +61,8 @@ class GeminiDeepEvalModel(DeepEvalBaseLLM):
             model_name = os.environ.get("JUDGE_MODEL", "gemini-3.1-pro-preview")
 
         self.model_name = model_name
-        project_id = os.environ.get("GCP_PROJECT_ID")
-        location = os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
+        project_id = os.environ.get("PROJECT_ID") or os.environ.get("GCP_PROJECT_ID")
+        location = os.environ.get("LOCATION") or os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
         api_key = os.environ.get("JUDGE_API_KEY")
 
         validate_config(
@@ -103,8 +103,8 @@ class AnthropicDeepEvalModel(DeepEvalBaseLLM):
             model_name = os.environ.get("JUDGE_MODEL", "claude-opus-4-6")
 
         self.model_name = model_name
-        project_id = os.environ.get("GCP_PROJECT_ID")
-        location = os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
+        project_id = os.environ.get("PROJECT_ID") or os.environ.get("GCP_PROJECT_ID")
+        location = os.environ.get("LOCATION") or os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
         api_key = os.environ.get("JUDGE_API_KEY")
 
         validate_config(
@@ -151,7 +151,9 @@ def replace_placeholders(text, project_id, cluster_name):
     target_deployment = os.environ.get("TARGET_DEPLOYMENT_NAME", "hello-app")
     namespace = os.environ.get("NAMESPACE", "production")
     return (
-        text.replace("{{GCP_PROJECT_ID}}", project_id)
+        text.replace("{{PROJECT_ID}}", project_id)
+        .replace("{{GCP_PROJECT_ID}}", project_id)
+        .replace("{{CLUSTER_NAME}}", cluster_name)
         .replace("{{GKE_CLUSTER_NAME}}", cluster_name)
         .replace("{{APP_LOCATION}}", app_location)
         .replace("{{TARGET_DEPLOYMENT_NAME}}", target_deployment)
@@ -161,8 +163,8 @@ def replace_placeholders(text, project_id, cluster_name):
 
 def print_configuration_context(
     cloud_provider,
-    gcp_project_id,
-    gke_cluster_name,
+    project_id,
+    cluster_name,
     bench_agent_type,
     agent_target,
     bench_use_mcp,
@@ -177,8 +179,8 @@ def print_configuration_context(
     print("-" * 50)
     print("Configuration Context:")
     print(f"  - CLOUD_PROVIDER:       {cloud_provider}")
-    print(f"  - GCP_PROJECT_ID:       {gcp_project_id}")
-    print(f"  - GKE_CLUSTER_NAME:     {gke_cluster_name}")
+    print(f"  - PROJECT_ID:           {project_id}")
+    print(f"  - CLUSTER_NAME:         {cluster_name}")
     print(f"  - BENCH_AGENT_TYPE:     {bench_agent_type}")
     print(f"  - AGENT_TARGET:         {agent_target}")
     print(f"  - BENCH_USE_MCP:        {bench_use_mcp}")
@@ -262,11 +264,11 @@ def load_configuration_context():
         judge_model_name = judge_model_name or "gemini-3.1-pro-preview"
         judge_model = GeminiDeepEvalModel(model_name=judge_model_name)
 
-    gcp_project_id = os.environ.get("GCP_PROJECT_ID")
-    gke_cluster_name = os.environ.get("GKE_CLUSTER_NAME")
+    project_id = os.environ.get("PROJECT_ID") or os.environ.get("GCP_PROJECT_ID")
+    cluster_name = os.environ.get("CLUSTER_NAME") or os.environ.get("GKE_CLUSTER_NAME")
 
-    if not gcp_project_id or not gke_cluster_name:
-        print("Error: GCP_PROJECT_ID and GKE_CLUSTER_NAME must be set.")
+    if not project_id or not cluster_name:
+        print("Error: PROJECT_ID (or GCP_PROJECT_ID) and CLUSTER_NAME (or GKE_CLUSTER_NAME) must be set.")
         sys.exit(1)
 
     bench_use_mcp = os.environ.get("BENCH_USE_MCP", "true")
@@ -278,8 +280,8 @@ def load_configuration_context():
 
     print_configuration_context(
         cloud_provider,
-        gcp_project_id,
-        gke_cluster_name,
+        project_id,
+        cluster_name,
         bench_agent_type,
         agent_target,
         bench_use_mcp,
@@ -291,7 +293,7 @@ def load_configuration_context():
         judge_model_name,
     )
 
-    return bench_agent_type, agent_target, judge_model, gcp_project_id, gke_cluster_name
+    return bench_agent_type, agent_target, judge_model, project_id, cluster_name
 
 
 def execute_agent(bench_agent_type, agent_target, prompt, context):
@@ -703,7 +705,7 @@ def main():
         eval_data = eval_data[: int(limit)]
         print(f"Limiting evaluation to the first {limit} cases.")
 
-    bench_agent_type, agent_target, judge_model, gcp_project_id, gke_cluster_name = (
+    bench_agent_type, agent_target, judge_model, project_id, cluster_name = (
         load_configuration_context()
     )
 
@@ -718,7 +720,7 @@ def main():
 
     for item in eval_data:
         infra_config = item.get("infrastructure", {})
-        deployer = get_deployer(infra_config, gcp_project_id, gke_cluster_name)
+        deployer = get_deployer(infra_config, project_id, cluster_name)
 
         try:
             print(f"--- Provisioning Infrastructure for: {item['name']} ---")
@@ -726,9 +728,9 @@ def main():
             cluster_info = deployer.get_cluster_info()
 
             # Use dynamic cluster name from deployer for prompt replacement
-            active_cluster_name = cluster_info.get("name", gke_cluster_name)
+            active_cluster_name = cluster_info.get("name", cluster_name)
             prompt = replace_placeholders(
-                item["input"], gcp_project_id, active_cluster_name
+                item["input"], project_id, active_cluster_name
             )
 
             target_deployment = os.environ.get(
@@ -747,7 +749,7 @@ def main():
                         json.dumps(chaos_spec)
                         if isinstance(chaos_spec, (dict, list))
                         else str(chaos_spec),
-                        gcp_project_id,
+                        project_id,
                         active_cluster_name,
                     )
                     spec_list = json.loads(chaos_spec_processed)
@@ -758,7 +760,7 @@ def main():
                             json.dumps(verification_spec)
                             if isinstance(verification_spec, (dict, list))
                             else str(verification_spec),
-                            gcp_project_id,
+                            project_id,
                             active_cluster_name,
                         )
                         verification_spec_list = json.loads(verification_spec_processed)
@@ -780,7 +782,7 @@ def main():
                     :-3
                 ]
                 print(
-                    f"[{timestamp}] Waiting for Chaos Agent to establish the GKE load spike...",
+                    f"[{timestamp}] Waiting for Chaos Agent to establish the cluster load spike...",
                     flush=True,
                 )
                 scenario_manager.chaos_active_event.wait(timeout=45)
@@ -788,7 +790,7 @@ def main():
                     :-3
                 ]
                 print(
-                    f"[{timestamp}] GKE load spike is now active. Proceeding with Operator Agent...",
+                    f"[{timestamp}] Cluster load spike is now active. Proceeding with Operator Agent...",
                     flush=True,
                 )
 
@@ -814,7 +816,7 @@ def main():
 
             expected_output_raw = item.get("expected_output", "")
             expected_output = replace_placeholders(
-                expected_output_raw, gcp_project_id, active_cluster_name
+                expected_output_raw, project_id, active_cluster_name
             )
 
             chaos_report = {}
@@ -856,16 +858,18 @@ def main():
         except Exception as e:
             print(f"Critical error during task {item['name']}: {e}")
         finally:
-            if infra_config.get("teardown", True):
+            global_no_teardown = os.environ.get("BENCH_NO_TEARDOWN", "false").lower() == "true"
+            if infra_config.get("teardown", True) and not global_no_teardown:
                 print(f"--- Tearing Down Infrastructure for: {item['name']} ---")
                 try:
                     deployer.down()
                 except Exception as teardown_err:
                     print(f"Teardown failed (potential resource leak): {teardown_err}")
 
+
         expected_output_raw = item.get("expected_output", "")
         detailed_results[-1]["expected_output"] = replace_placeholders(
-            expected_output_raw, gcp_project_id, gke_cluster_name
+            expected_output_raw, project_id, cluster_name
         )
         detailed_results[-1]["name"] = item["name"]
         detailed_results[-1]["retrieval_context"] = item.get("retrieval_context", [])

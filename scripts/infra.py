@@ -48,17 +48,29 @@ def main():
         # Support deprecated --zone for transition
         p.add_argument("--zone", help=argparse.SUPPRESS)
 
+    # KinD Subparser
+    kind_parser = subparsers.add_parser("kind", help="KinD local operations")
+    kind_subparsers = kind_parser.add_subparsers(
+        dest="action", required=True, help="Action"
+    )
+
+    # Add actions for KinD
+    for action in ["up", "down", "info"]:
+        p = kind_subparsers.add_parser(action, help=f"Perform {action}")
+        p.add_argument("--cluster-name", help="Name of the local KinD cluster")
+
     args = parser.parse_args()
 
     # Handle deprecated arguments
     stack = args.stack or args.env
-    location = args.location
+    location = getattr(args, 'location', None)
     if hasattr(args, 'zone') and args.zone:
          print(
              "Warning: --zone is deprecated. Use --location instead.",
              file=sys.stderr
          )
          location = args.zone
+
 
     if args.provider == "gcp":
         project = args.project or os.environ.get("GCP_PROJECT_ID")
@@ -101,12 +113,37 @@ def main():
                 file=sys.stderr
             )
             sys.exit(1)
+            
+    elif args.provider == "kind":
+        cluster_name = args.cluster_name or os.environ.get("KUBERNETES_CLUSTER_NAME", "devops-bench-kind")
+        infra_config = {
+            "deployer": "terraform",
+            "stack": stack or "prebuilt/kind",
+        }
+        deployer = get_deployer(infra_config, "local-project", cluster_name)
+
+        if args.action == "up":
+            print(f"Bringing up local KinD cluster {cluster_name} (Terraform)...")
+            deployer.up()
+        elif args.action == "down":
+            print(f"Tearing down local KinD cluster {cluster_name}...")
+            deployer.down()
+        elif args.action == "info":
+            print(json.dumps(deployer.get_cluster_info(), indent=2))
+        else:
+            print(
+                f"Critical Error: Unsupported action '{args.action}' "
+                f"for provider 'kind'",
+                file=sys.stderr
+            )
+            sys.exit(1)
     else:
         print(
             f"Critical Error: Unsupported provider '{args.provider}'",
             file=sys.stderr
         )
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

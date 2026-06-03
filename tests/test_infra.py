@@ -54,3 +54,24 @@ def test_gcp_terraform_down(mock_down):
     with patch.object(sys, 'argv', test_args):
         main()
     mock_down.assert_called_once()
+
+
+@patch('deployers.terraform.tf_deployer.TerraformDeployer.up')
+def test_kind_up(mock_up):
+    test_args = [
+        "infra.py", "kind", "up", "--cluster-name", "my-local-cluster"
+    ]
+    with patch.object(sys, 'argv', test_args):
+        main()
+    mock_up.assert_called_once()
+
+
+@patch('deployers.terraform.tf_deployer.TerraformDeployer.up')
+def test_kind_terraform_up(mock_up):
+    test_args = [
+        "infra.py", "--use-terraform", "kind", "up", "--cluster-name", "my-local-cluster"
+    ]
+    with patch.object(sys, 'argv', test_args):
+        main()
+    mock_up.assert_called_once()
+
