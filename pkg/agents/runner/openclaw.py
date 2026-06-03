@@ -24,7 +24,6 @@ def run_openclaw_agent(prompt, context=None, agent_name="main"):
 
     ssh_cmd = [
         "ssh",
-        "-q",
         "-i",
         ssh_key,
         f"{ssh_user}@{vm_host}",
@@ -50,7 +49,6 @@ def run_openclaw_agent(prompt, context=None, agent_name="main"):
             # Read session file via SSH
             read_cmd = [
                 "ssh",
-                "-q",
                 "-i",
                 ssh_key,
                 f"{ssh_user}@{vm_host}",

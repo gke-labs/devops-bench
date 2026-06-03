@@ -17,10 +17,12 @@ class GeminiClientAdapter(LLMClient):
     location = os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
     api_key = os.environ.get("AGENT_API_KEY")
 
-    if project_id:
+    if api_key:
+      self.client = genai.Client(api_key=api_key)
+    elif project_id:
       self.client = genai.Client(vertexai=True, project=project_id, location=location)
     else:
-      self.client = genai.Client(api_key=api_key)
+      self.client = genai.Client()
 
     self.model_name = model_name
 

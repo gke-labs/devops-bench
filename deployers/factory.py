@@ -29,6 +29,8 @@ def get_deployer(
         variables.setdefault("project_id", global_project_id)
         variables.setdefault("cluster_name", global_cluster_name)
         variables.setdefault("location", location)
+        if "NAMESPACE" in os.environ:
+            variables.setdefault("namespace", os.environ["NAMESPACE"])
 
         return TerraformDeployer(tf_dir=stack, variables=variables)
 

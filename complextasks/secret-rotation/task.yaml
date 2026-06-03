@@ -1,8 +1,9 @@
 task_id: 2
 name: "secret-rotation"
 infrastructure:
-  deployer: "kubetest2"
-  teardown: false
+  deployer: "terraform"
+  stack: "prebuilt/secret-rotation"
+  teardown: true
 prompt: |
   You are a DevOps Engineer managing a Kubernetes environment on cluster "{{GKE_CLUSTER_NAME}}" in project "{{GCP_PROJECT_ID}}". The cluster is equipped with the ExternalSecrets operator, which synchronizes secrets from the Cloud Secret Manager to the cluster in the "{{NAMESPACE}}" namespace. You have administrative access to the "{{NAMESPACE}}" namespace and access to the Secret Manager API. Your mandate is to maintain service availability and data security at all times. Your environment should already be configured to provide necessary access to the cluster and required services.
 
