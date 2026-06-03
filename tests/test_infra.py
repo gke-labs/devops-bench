@@ -34,10 +34,10 @@ def test_gcp_down(mock_down):
     mock_down.assert_called_once()
 
 
-@patch('deployers.terraform.tf_deployer.TerraformDeployer.up')
-def test_gcp_terraform_up(mock_up):
+@patch('deployers.tf.tf_deployer.TFDeployer.up')
+def test_gcp_tofu_up(mock_up):
     test_args = [
-        "infra.py", "--use-terraform", "gcp", "up", "--project", "my-project",
+        "infra.py", "--use-tofu", "gcp", "up", "--project", "my-project",
         "--cluster-name", "my-cluster"
     ]
     with patch.object(sys, 'argv', test_args):
@@ -45,10 +45,10 @@ def test_gcp_terraform_up(mock_up):
     mock_up.assert_called_once()
 
 
-@patch('deployers.terraform.tf_deployer.TerraformDeployer.down')
-def test_gcp_terraform_down(mock_down):
+@patch('deployers.tf.tf_deployer.TFDeployer.down')
+def test_gcp_tofu_down(mock_down):
     test_args = [
-        "infra.py", "--use-terraform", "gcp", "down", "--project", "my-project",
+        "infra.py", "--use-tofu", "gcp", "down", "--project", "my-project",
         "--cluster-name", "my-cluster"
     ]
     with patch.object(sys, 'argv', test_args):
@@ -56,7 +56,7 @@ def test_gcp_terraform_down(mock_down):
     mock_down.assert_called_once()
 
 
-@patch('deployers.terraform.tf_deployer.TerraformDeployer.up')
+@patch('deployers.tf.tf_deployer.TFDeployer.up')
 def test_kind_up(mock_up):
     test_args = [
         "infra.py", "kind", "up", "--cluster-name", "my-local-cluster"
@@ -66,10 +66,10 @@ def test_kind_up(mock_up):
     mock_up.assert_called_once()
 
 
-@patch('deployers.terraform.tf_deployer.TerraformDeployer.up')
-def test_kind_terraform_up(mock_up):
+@patch('deployers.tf.tf_deployer.TFDeployer.up')
+def test_kind_tofu_up(mock_up):
     test_args = [
-        "infra.py", "--use-terraform", "kind", "up", "--cluster-name", "my-local-cluster"
+        "infra.py", "--use-tofu", "kind", "up", "--cluster-name", "my-local-cluster"
     ]
     with patch.object(sys, 'argv', test_args):
         main()

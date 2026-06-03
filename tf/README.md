@@ -1,6 +1,6 @@
-# Terraform Infrastructure
+# TF/OpenTofu Infrastructure
 
-This directory contains the Terraform modules and prebuilt configurations used to provision infrastructure for the benchmarks.
+This directory contains the TF modules and prebuilt configurations used to provision infrastructure for the benchmarks.
 
 ## Directory Structure
 
@@ -14,7 +14,7 @@ Tasks can specify their infrastructure requirements in their `task.yaml` file:
 
 ```yaml
 infrastructure:
-  deployer: "terraform"
+  deployer: "tofu"
   stack: "prebuilt/minimum"
   teardown: true
   variables:

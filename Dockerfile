@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
-    && wget https://releases.hashicorp.com/terraform/1.8.5/terraform_1.8.5_linux_amd64.zip \
-    && unzip terraform_1.8.5_linux_amd64.zip -d /usr/local/bin/ \
-    && rm terraform_1.8.5_linux_amd64.zip \
+    && wget https://github.com/opentofu/opentofu/releases/download/v1.8.8/tofu_1.8.8_linux_amd64.zip \
+    && unzip tofu_1.8.8_linux_amd64.zip -d /usr/local/bin/ \
+    && rm tofu_1.8.8_linux_amd64.zip \
     && rm -rf /var/lib/apt/lists/*
 
 

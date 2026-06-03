@@ -22,7 +22,7 @@ is an augmented agent integrating layers of optimization to improve reliability 
 
 While our initial results are centered on the scale and sophistication of **Google Kubernetes Engine (GKE)**, this benchmark is designed for the entire cloud-native ecosystem. Whether you are operating on-premises, across hybrid clouds, or on various managed offerings, the fundamental challenges of agentic operations remain the same:
 
-* **Intent to Infrastructure**: Can an agent translate a high-level requirement into a secure, scalable deployment? In fact, the benchmark now supports **Just-In-Time (JIT) Infrastructure provisioning** using Terraform to test agents in dynamic environments.
+* **Intent to Infrastructure**: Can an agent translate a high-level requirement into a secure, scalable deployment? In fact, the benchmark now supports **Just-In-Time (JIT) Infrastructure provisioning** using OpenTofu to test agents in dynamic environments.
 
 * **Autonomous Operations**: How effectively can an agent maintain the "desired state" in an unpredictable environment?
 
@@ -91,7 +91,7 @@ This [configuration](https://github.com/GoogleCloudPlatform/gemini-cloud-assist-
 ### Step 2: Run tasks with your agent
 Feed each task to your configured agent and capture the agent's final response for each task, and ideally a trace of the execution steps (tools called, reasoning steps).
 
-**Note on Infrastructure**: The benchmark now supports automated infrastructure setup via Terraform. If a task includes an `infrastructure` block, the evaluator will automatically provision the required environment before running the agent.
+**Note on Infrastructure**: The benchmark now supports automated infrastructure setup via OpenTofu. If a task includes an `infrastructure` block, the evaluator will automatically provision the required environment before running the agent.
 
 ### Step 3: Evaluate Responses with LLM-as-a-Judge
 To evaluate the results, use a capable LLM to score the agent's responses against the specific criteria defined in the repository's [skills](https://github.com/gke-labs/devops-bench/tree/main/skills) directory.
@@ -171,7 +171,7 @@ docker run -it \
 | :--- | :--- |
 | `-it` | Runs the container in interactive mode with a TTY, allowing you to see real-time output. |
 | `-v ~/.config/gcloud:/root/.config/gcloud` | Mounts your local Google Cloud configuration into the container so it can use your existing credentials. |
-| `-e GOOGLE_APPLICATION_CREDENTIALS` | Path to the credentials file (required for Terraform and some agent tools). |
+| `-e GOOGLE_APPLICATION_CREDENTIALS` | Path to the credentials file (required for OpenTofu and some agent tools). |
 | `-v $(pwd)/results:/app/results` | Mounts the local `results` directory to the container. This ensures that evaluation outputs generated inside the container are saved to your host machine. |
 | **Infrastructure** | |
 | `-e CLOUD_PROVIDER` | Specifies the cloud provider (e.g., `gcp`). |

@@ -16,7 +16,7 @@ from deployers.factory import get_deployer
 def main():
     parser = argparse.ArgumentParser(description="DevOps Bench Infra Manager")
     parser.add_argument(
-        "--use-terraform", action="store_true", help="Use Terraform for deployment"
+        "--use-tofu", action="store_true", help="Use OpenTofu for deployment"
     )
     parser.add_argument(
         "--stack",
@@ -90,7 +90,7 @@ def main():
             sys.exit(1)
 
         infra_config = {
-            "deployer": "terraform" if args.use_terraform else "kubetest2",
+            "deployer": "tofu" if args.use_tofu else "kubetest2",
             "stack": stack,
         }
         deployer = get_deployer(
@@ -98,7 +98,7 @@ def main():
         )
 
         if args.action == "up":
-            deploy_type = "Terraform" if args.use_terraform else "kubetest2"
+            deploy_type = "OpenTofu" if args.use_tofu else "kubetest2"
             print(f"Bringing up infrastructure ({deploy_type})...")
             deployer.up()
         elif args.action == "down":
@@ -117,13 +117,13 @@ def main():
     elif args.provider == "kind":
         cluster_name = args.cluster_name or os.environ.get("KUBERNETES_CLUSTER_NAME", "devops-bench-kind")
         infra_config = {
-            "deployer": "terraform",
+            "deployer": "tofu",
             "stack": stack or "prebuilt/kind",
         }
         deployer = get_deployer(infra_config, "local-project", cluster_name)
 
         if args.action == "up":
-            print(f"Bringing up local KinD cluster {cluster_name} (Terraform)...")
+            print(f"Bringing up local KinD cluster {cluster_name} (OpenTofu)...")
             deployer.up()
         elif args.action == "down":
             print(f"Tearing down local KinD cluster {cluster_name}...")

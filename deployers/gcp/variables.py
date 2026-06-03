@@ -7,7 +7,7 @@ def resolve_variables(
     global_cluster_name: str,
     global_location: str
 ) -> Dict[str, Any]:
-    """Resolves default variables for GCP-based Terraform stacks."""
+    """Resolves default variables for GCP-based TF stacks."""
     variables = custom_variables.copy()
     variables.setdefault("project_id", global_project_id)
     variables.setdefault("cluster_name", global_cluster_name)

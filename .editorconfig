@@ -23,7 +23,7 @@ indent_size = 4
 indent_style = space
 indent_size = 2
 
-# Terraform/HCL files (Standardized to 2 spaces)
+# TF/HCL files (Standardized to 2 spaces)
 [*.{tf,tfvars}]
 indent_style = space
 indent_size = 2

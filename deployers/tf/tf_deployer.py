@@ -5,12 +5,12 @@ import os
 from typing import Dict, Any
 from deployers.base import Deployer
 
-class TerraformDeployer(Deployer):
+class TFDeployer(Deployer):
     """
-    Terraform implementation of the Deployer interface.
+    TF implementation of the Deployer interface.
 
     Supports the standard TF_DATA_DIR environment variable for controlling
-    where Terraform stores its state, enabling idempotent runs.
+    where OpenTofu stores its state, enabling idempotent runs.
     """
     def __init__(self, tf_dir: str, variables: Dict[str, Any] = None):
         # Locate project root (3 levels up from this file)
@@ -21,14 +21,14 @@ class TerraformDeployer(Deployer):
             if tf_path.exists():
                 self.tf_dir = str(tf_path)
             else:
-                raise ValueError(f"Absolute Terraform directory not found: {tf_dir}")
+                raise ValueError(f"Absolute TF directory not found: {tf_dir}")
         else:
-            repo_tf_path = repo_root / "terraform" / tf_path
+            repo_tf_path = repo_root / "tf" / tf_path
             if repo_tf_path.exists():
                 self.tf_dir = str(repo_tf_path)
             else:
                 raise ValueError(
-                    f"Terraform stack not found in repo: {tf_dir} "
+                    f"TF stack not found in repo: {tf_dir} "
                     f"(checked {repo_tf_path})"
                 )
 
@@ -52,11 +52,11 @@ class TerraformDeployer(Deployer):
     def up(self) -> None:
         tf_path = Path(self.tf_dir)
         if not tf_path.exists():
-            raise ValueError(f"Terraform directory not found: {self.tf_dir}")
+            raise ValueError(f"TF directory not found: {self.tf_dir}")
 
-        self._run_cmd(["terraform", "init", "-input=false"], cwd=self.tf_dir)
+        self._run_cmd(["tofu", "init", "-input=false"], cwd=self.tf_dir)
 
-        cmd = ["terraform", "apply", "-auto-approve", "-input=false"]
+        cmd = ["tofu", "apply", "-auto-approve", "-input=false"]
         for k, v in self.variables.items():
             cmd.extend(["-var", f"{k}={v}"])
 
@@ -67,35 +67,35 @@ class TerraformDeployer(Deployer):
         tf_path = Path(self.tf_dir)
         if not tf_path.exists():
             print(
-                f"Warning: Terraform directory {self.tf_dir} not found. "
+                f"Warning: TF directory {self.tf_dir} not found. "
                 "Skipping teardown."
             )
             return
 
-        self._run_cmd(["terraform", "init", "-input=false"], cwd=self.tf_dir)
+        self._run_cmd(["tofu", "init", "-input=false"], cwd=self.tf_dir)
 
-        cmd = ["terraform", "destroy", "-auto-approve", "-input=false"]
+        cmd = ["tofu", "destroy", "-auto-approve", "-input=false"]
         for k, v in self.variables.items():
             cmd.extend(["-var", f"{k}={v}"])
 
         self._run_cmd(cmd, cwd=self.tf_dir)
 
     def get_cluster_info(self) -> Dict[str, Any]:
-        self._run_cmd(["terraform", "init", "-input=false"], cwd=self.tf_dir)
+        self._run_cmd(["tofu", "init", "-input=false"], cwd=self.tf_dir)
 
         result = self._run_cmd(
-            ["terraform", "output", "-json"], cwd=self.tf_dir, capture=True
+            ["tofu", "output", "-json"], cwd=self.tf_dir, capture=True
         )
         outputs = json.loads(result.stdout)
 
         cluster_name = outputs.get("cluster_name", {}).get("value")
         if not cluster_name:
-            raise ValueError("Failed to retrieve 'cluster_name' from Terraform outputs.")
+            raise ValueError("Failed to retrieve 'cluster_name' from TF outputs.")
 
         location = outputs.get("cluster_location", {}).get("value")
         if not location:
             raise ValueError(
-                "Failed to retrieve 'cluster_location' from Terraform outputs."
+                "Failed to retrieve 'cluster_location' from TF outputs."
             )
 
         kubeconfig_path = os.environ.get(

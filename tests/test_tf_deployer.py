@@ -11,7 +11,7 @@ project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from deployers.terraform.tf_deployer import TerraformDeployer
+from deployers.tf.tf_deployer import TFDeployer
 
 
 @pytest.fixture
@@ -22,9 +22,9 @@ def tf_deployer_setup():
         "location": "us-central1-a",
         "node_count": 3
     }
-    # We need to mock Path.exists because TerraformDeployer.__init__ calls it
+    # We need to mock Path.exists because TFDeployer.__init__ calls it
     with patch.object(Path, 'exists', return_value=True):
-        deployer = TerraformDeployer(tf_dir="prebuilt/minimum", variables=variables)
+        deployer = TFDeployer(tf_dir="prebuilt/minimum", variables=variables)
     return deployer
 
 
@@ -33,7 +33,7 @@ def test_up(mock_run, tf_deployer_setup):
     tf_deployer_setup.up()
 
     expected_init = call(
-        ["terraform", "init", "-input=false"],
+        ["tofu", "init", "-input=false"],
         cwd=tf_deployer_setup.tf_dir,
         env=os.environ
     )
@@ -43,7 +43,7 @@ def test_up(mock_run, tf_deployer_setup):
     # but since it's `os.environ.copy()`, it should match `os.environ` if we don't modify it in the test.
 
     expected_apply = call([
-        "terraform", "apply", "-auto-approve", "-input=false",
+        "tofu", "apply", "-auto-approve", "-input=false",
         "-var", "project_id=test-project",
         "-var", "cluster_name=test-cluster",
         "-var", "location=us-central1-a",
@@ -56,11 +56,11 @@ def test_up(mock_run, tf_deployer_setup):
 
     args_list = mock_run.call_args_list
     assert len(args_list) == 2
-    assert args_list[0][0][0] == ["terraform", "init", "-input=false"]
+    assert args_list[0][0][0] == ["tofu", "init", "-input=false"]
     assert args_list[0][1]['cwd'] == tf_deployer_setup.tf_dir
 
     assert args_list[1][0][0] == [
-        "terraform", "apply", "-auto-approve", "-input=false",
+        "tofu", "apply", "-auto-approve", "-input=false",
         "-var", "project_id=test-project",
         "-var", "cluster_name=test-cluster",
         "-var", "location=us-central1-a",
@@ -75,9 +75,9 @@ def test_down(mock_run, tf_deployer_setup):
 
     args_list = mock_run.call_args_list
     assert len(args_list) == 2
-    assert args_list[0][0][0] == ["terraform", "init", "-input=false"]
+    assert args_list[0][0][0] == ["tofu", "init", "-input=false"]
     assert args_list[1][0][0] == [
-        "terraform", "destroy", "-auto-approve", "-input=false",
+        "tofu", "destroy", "-auto-approve", "-input=false",
         "-var", "project_id=test-project",
         "-var", "cluster_name=test-cluster",
         "-var", "location=us-central1-a",
@@ -109,8 +109,8 @@ def test_get_cluster_info(mock_run, tf_deployer_setup):
 
     args_list = mock_run.call_args_list
     assert len(args_list) == 3
-    assert args_list[0][0][0] == ["terraform", "init", "-input=false"]
-    assert args_list[1][0][0] == ["terraform", "output", "-json"]
+    assert args_list[0][0][0] == ["tofu", "init", "-input=false"]
+    assert args_list[1][0][0] == ["tofu", "output", "-json"]
     # Check gcloud call with --location
     assert args_list[2][0][0] == [
         "gcloud", "container", "clusters", "get-credentials", "test-cluster",
@@ -170,8 +170,8 @@ def test_get_cluster_info_local(mock_run, tf_deployer_setup):
 
     args_list = mock_run.call_args_list
     assert len(args_list) == 2
-    assert args_list[0][0][0] == ["terraform", "init", "-input=false"]
-    assert args_list[1][0][0] == ["terraform", "output", "-json"]
+    assert args_list[0][0][0] == ["tofu", "init", "-input=false"]
+    assert args_list[1][0][0] == ["tofu", "output", "-json"]
     for call_args in args_list:
         assert "gcloud" not in call_args[0][0]
 
@@ -180,7 +180,7 @@ def test_get_cluster_info_local(mock_run, tf_deployer_setup):
 def test_get_cluster_info_local_no_project(mock_run):
     # Test that we default project to local-kind when no project is provided
     with patch.object(Path, 'exists', return_value=True):
-        deployer = TerraformDeployer(tf_dir="prebuilt/minimum", variables={})
+        deployer = TFDeployer(tf_dir="prebuilt/minimum", variables={})
 
     tf_output = {
         "cluster_name": {"value": "test-cluster"},
@@ -209,20 +209,20 @@ def test_init_path_resolution(mock_exists):
     # Test absolute path
     abs_path = "/tmp/my-tf-stack"
     mock_exists.return_value = True
-    deployer = TerraformDeployer(tf_dir=abs_path)
+    deployer = TFDeployer(tf_dir=abs_path)
     assert deployer.tf_dir == abs_path
 
-    # Test relative path in repo (terraform/<dir>)
+    # Test relative path in repo (tf/<dir>)
     # We need to be careful mocking Path.exists for the fallback logic
     # In our refactored code:
     # 1. Path(tf_dir).is_absolute()
-    # 2. repo_tf_path = repo_root / "terraform" / tf_path
+    # 2. repo_tf_path = repo_root / "tf" / tf_path
     # 3. repo_tf_path.exists()
 
     with patch.object(Path, 'exists', side_effect=lambda *args, **kwargs: True):
-        deployer = TerraformDeployer(tf_dir="my-repo-stack")
-        assert deployer.tf_dir == str(project_root / "terraform" / "my-repo-stack")
+        deployer = TFDeployer(tf_dir="my-repo-stack")
+        assert deployer.tf_dir == str(project_root / "tf" / "my-repo-stack")
 
     # Wait, my refactored code removed the "CWD" check as requested by Comment 3!
-    # "Simplify supported Terraform directory paths in tf_deployer.py to just repo_root/terraform and explicitly specified directory."
+    # "Simplify supported TF directory paths in tf_deployer.py to just repo_root/tf and explicitly specified directory."
     # So I should NOT test the CWD fallback.

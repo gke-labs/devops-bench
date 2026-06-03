@@ -37,7 +37,7 @@ python3 pkg/evaluator/evaluate.py tasks/
 ```
 
 #### Infrastructure Configuration
-The evaluator can automatically provision infrastructure via Terraform if defined in the task.
+The evaluator can automatically provision infrastructure via OpenTofu if defined in the task.
 
 ```bash
 # Required for JIT Infra

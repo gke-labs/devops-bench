@@ -2,7 +2,7 @@ import os
 from typing import Dict, Any
 from deployers.base import Deployer
 from deployers.gcp.gcp_deployer import GCPDeployer
-from deployers.terraform.tf_deployer import TerraformDeployer
+from deployers.tf.tf_deployer import TFDeployer
 
 from deployers.gcp.variables import resolve_variables as resolve_gcp_vars
 from deployers.kind.variables import resolve_variables as resolve_kind_vars
@@ -25,12 +25,12 @@ def get_deployer(
     """
     # Check if CLOUD_PROVIDER environment variable overrides the task-level deployer
     cloud_provider = os.environ.get("CLOUD_PROVIDER", "").lower()
-    deployer_type = cloud_provider if cloud_provider else infra_config.get("deployer", "terraform")
+    deployer_type = cloud_provider if cloud_provider else infra_config.get("deployer", "tofu")
 
     # Resolve Location with strict precedence: argument then GCP_LOCATION env var
     location = global_location or os.environ.get("GCP_LOCATION", "us-central1-a")
 
-    if deployer_type == "terraform":
+    if deployer_type == "tofu":
         stack = infra_config.get("stack") or "prebuilt/kind"
         variables = infra_config.get("variables", {})
 
@@ -42,7 +42,7 @@ def get_deployer(
         if resolver:
             variables = resolver(stack, variables, global_project_id, global_cluster_name, location)
 
-        return TerraformDeployer(tf_dir=stack, variables=variables)
+        return TFDeployer(tf_dir=stack, variables=variables)
 
     # Fallback to legacy GCPDeployer (kubetest2)
     return GCPDeployer(

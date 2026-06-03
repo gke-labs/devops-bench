@@ -1,7 +1,7 @@
 task_id: 5
 name: "fix-config"
 infrastructure:
-  deployer: "terraform"
+  deployer: "tofu"
   stack: "prebuilt/minimum"
   teardown: true
   variables:

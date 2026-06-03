@@ -1,7 +1,7 @@
 task_id: 2
 name: "create-deployment"
 infrastructure:
-  deployer: "terraform"
+  deployer: "tofu"
   stack: "prebuilt/minimum"
   teardown: true
   variables:
