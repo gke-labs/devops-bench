@@ -64,46 +64,47 @@ def load_from_tasks_dir(dir_path: str) -> list:
         print(f"Error: tasks directory not found at {dir_path}")
         sys.exit(1)
 
-    for item in sorted(os.listdir(dir_path)):
-        sub_dir = os.path.join(dir_path, item)
-        if os.path.isdir(sub_dir):
-            yaml_path = os.path.join(sub_dir, "task.yaml")
-            if os.path.exists(yaml_path):
-                try:
-                    with open(yaml_path, "r") as stream:
-                        yaml_text = stream.read()
-                        content = safe_parse_yaml(yaml_text)
-                        docs = parse_documentation_from_yaml(yaml_text)
-                        if isinstance(content, dict):
-                            task_id = content.get("task_id")
-                            name = content.get("name", item)
-                            prompt = content.get("prompt", "")
-                            expected = content.get("expected_output", "")
-                            retrieval = content.get("retrieval_context", [])
-                            chaos_spec = content.get("chaos_spec")
-                            verification_spec = content.get("verification_spec")
+    for root, dirs, files in os.walk(dir_path):
+        # Sort dirs in place to ensure deterministic ordering during walk
+        dirs.sort()
+        if "task.yaml" in files:
+            yaml_path = os.path.join(root, "task.yaml")
+            try:
+                with open(yaml_path, "r") as stream:
+                    yaml_text = stream.read()
+                    content = safe_parse_yaml(yaml_text)
+                    docs = parse_documentation_from_yaml(yaml_text)
+                    if isinstance(content, dict):
+                        task_id = content.get("task_id")
+                        name = content.get("name", os.path.basename(root))
+                        prompt = content.get("prompt", "")
+                        expected = content.get("expected_output", "")
+                        retrieval = content.get("retrieval_context", [])
+                        chaos_spec = content.get("chaos_spec")
+                        verification_spec = content.get("verification_spec")
 
-                            eval_data.append(
-                                {
-                                    "task_id": task_id if task_id is not None else 999,
-                                    "name": name,
-                                    "input": prompt.strip()
-                                    if isinstance(prompt, str)
-                                    else str(prompt),
-                                    "expected_output": expected.strip()
-                                    if isinstance(expected, str)
-                                    else str(expected),
-                                    "retrieval_context": retrieval
-                                    if isinstance(retrieval, list)
-                                    else [],
-                                    "chaos_spec": chaos_spec,
-                                    "verification_spec": verification_spec,
-                                    "infrastructure": content.get("infrastructure", {}),
-                                    "documentation": docs,
-                                }
-                            )
-                except Exception as e:
-                    print(f"Warning: Failed to read task spec in {yaml_path}: {e}")
+                        eval_data.append(
+                            {
+                                "task_id": task_id if task_id is not None else 999,
+                                "name": name,
+                                "input": prompt.strip()
+                                if isinstance(prompt, str)
+                                else str(prompt),
+                                "expected_output": expected.strip()
+                                if isinstance(expected, str)
+                                else str(expected),
+                                "retrieval_context": retrieval
+                                if isinstance(retrieval, list)
+                                else [],
+                                "chaos_spec": chaos_spec,
+                                "verification_spec": verification_spec,
+                                "infrastructure": content.get("infrastructure", {}),
+                                "documentation": docs,
+                            }
+                        )
+            except Exception as e:
+                print(f"Warning: Failed to read task spec in {yaml_path}: {e}")
 
     eval_data.sort(key=lambda k: k["task_id"])
     return eval_data
+
