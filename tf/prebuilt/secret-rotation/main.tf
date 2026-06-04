@@ -157,12 +157,16 @@ resource "null_resource" "kubernetes_manifests" {
   ]
 
   triggers = {
+    namespace            = var.namespace
     cluster_name         = module.gke.cluster_name
     cluster_location     = module.gke.cluster_location
     project_id           = var.project_id
     secret_store_path    = local_file.secret_store_yaml.filename
     external_secret_path = local_file.external_secret_yaml.filename
     deployment_path      = local_file.deployment_yaml.filename
+    secret_store_hash    = local_file.secret_store_yaml.content_sha256
+    external_secret_hash = local_file.external_secret_yaml.content_sha256
+    deployment_hash      = local_file.deployment_yaml.content_sha256
   }
 
   provisioner "local-exec" {
