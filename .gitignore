@@ -11,3 +11,7 @@ results/
 .terraform.lock.hcl
 *.tfvars
 *.tfvars.json
+
+# Local temp and binary files
+*-rendered.yaml
+tofu
