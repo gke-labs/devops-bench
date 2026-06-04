@@ -56,16 +56,8 @@ provider "helm" {
 }
 
 # 3. GCP Secret Manager Setup
-resource "null_resource" "delete_secret_if_exists" {
-  provisioner "local-exec" {
-    command = "gcloud secrets delete db-credentials --project=${var.project_id} --quiet || true"
-  }
-}
-
 resource "google_secret_manager_secret" "db_credentials" {
-  depends_on = [null_resource.delete_secret_if_exists]
-
-  secret_id = "db-credentials"
+  secret_id = "db-credentials-${var.namespace}"
   project   = var.project_id
   replication {
     auto {}
@@ -140,7 +132,11 @@ resource "local_file" "secret_store_yaml" {
 }
 
 resource "local_file" "external_secret_yaml" {
-  content  = replace(file("${path.module}/external-secret.yaml"), "{{NAMESPACE}}", var.namespace)
+  content  = replace(
+    replace(file("${path.module}/external-secret.yaml"), "{{NAMESPACE}}", var.namespace),
+    "{{SECRET_ID}}",
+    "db-credentials-${var.namespace}"
+  )
   filename = "${path.module}/external-secret-rendered.yaml"
 }
 
