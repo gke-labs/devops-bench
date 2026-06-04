@@ -4,7 +4,7 @@ This task evaluates the agent's ability to rotate a compromised Google Secret Ma
 
 ## Setup & Running the Benchmark
 
-The infrastructure for this task (including GKE setup, workload identity, external-secrets operator, permissions for the runner VM service account, and deploying the target application) is automatically provisioned and managed via Terraform when you run the evaluator.
+The infrastructure for this task (including GKE setup, workload identity, external-secrets operator, permissions for the runner VM service account, and deploying the target application) is automatically provisioned and managed via OpenTofu (tofu) when you run the evaluator.
 
 ### 1. Export Environment Variables
 Export the target GCP environment, agent, and judge configurations:
@@ -42,6 +42,11 @@ Run the evaluator script directly:
 ```bash
 python3 pkg/evaluator/evaluate.py complextasks/secret-rotation/task.yaml
 ```
+
+> [!TIP]
+> **Saving time on subsequent runs:**
+> Export `export BENCH_NO_TEARDOWN="true"` to prevent tearing down the GKE cluster at the end of the run. On your next runs, simply change the namespace environment variable (e.g. `export NAMESPACE="secret-rotation-run-2"`) and run the evaluator again. It will skip cluster provisioning and run in under 30 seconds.
+
 
 #### Option B: Running inside Docker
 To run within the container (after building it via `docker build -t devops-bench:latest .`):
