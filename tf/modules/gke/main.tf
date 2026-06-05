@@ -34,6 +34,10 @@ resource "google_container_cluster" "primary" {
   remove_default_node_pool = true
   initial_node_count       = 1
   deletion_protection      = false
+
+  workload_identity_config {
+    workload_pool = "${var.project_id}.svc.id.goog"
+  }
 }
 
 resource "google_container_node_pool" "primary_nodes" {
@@ -50,6 +54,10 @@ resource "google_container_node_pool" "primary_nodes" {
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform"
     ]
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
   }
 }
 
@@ -60,3 +68,12 @@ output "cluster_name" {
 output "cluster_location" {
   value = google_container_cluster.primary.location
 }
+
+output "endpoint" {
+  value = google_container_cluster.primary.endpoint
+}
+
+output "cluster_ca_certificate" {
+  value = google_container_cluster.primary.master_auth[0].cluster_ca_certificate
+}
+
