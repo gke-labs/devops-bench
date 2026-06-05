@@ -2,6 +2,25 @@
 
 This task evaluates the agent's ability to rotate a compromised Google Secret Manager secret consumed by a deployment in a GKE cluster with zero downtime, and then cleanly revoke/destroy the old version of the secret.
 
+## Task Scenario & Evaluation Criteria
+
+### Infrastructure Harness
+When the evaluator runs, it automatically provisions a comprehensive testing environment:
+- **GCP Secret Manager:** A compromised version of `db-credentials` is pre-provisioned.
+- **GKE Cluster:** A cluster configured with Workload Identity.
+- **ExternalSecrets Operator:** Installed and configured to authenticate natively to GCP via Workload Identity.
+- **Application Workload:** A Python HTTP server (`db-secret-viewer`) exposing port `8080` that actively serves the decoded secret from a mounted volume.
+
+### Evaluation Requirements
+The agent is tasked with rotating the secret without causing downtime. The GEval framework automatically scores the agent out of 5 based on whether it successfully executed the following steps:
+1. Inspects the `ExternalSecret` resource to determine the exact GCP Secret Manager object.
+2. Generates a strong, cryptographically secure password and creates a new version of the secret in GCP Secret Manager.
+3. Updates the `ExternalSecret` manifest in the cluster to point to the new version.
+4. Executes a zero-downtime rolling restart of the application deployment.
+5. Verifies the application is healthy and actively consuming the new secret (e.g., by checking pod logs or querying the application endpoint).
+6. Maintains continuous service availability throughout the process.
+7. Explicitly revokes (destroys) the compromised version of the secret in GCP.
+
 ## Setup & Running the Benchmark
 
 The infrastructure for this task (including GKE setup, workload identity, external-secrets operator, permissions for the runner VM service account, and deploying the target application) is automatically provisioned and managed via OpenTofu (tofu) when you run the evaluator.
