@@ -13,12 +13,3 @@ variable "secret_rotation_sa_email" {
   description = "GCP IAM Service Account Email for Workload Identity annotation"
 }
 
-variable "cluster_name" {
-  type        = string
-  description = "GKE Cluster Name"
-}
-
-variable "cluster_location" {
-  type        = string
-  description = "GKE Cluster Location"
-}
