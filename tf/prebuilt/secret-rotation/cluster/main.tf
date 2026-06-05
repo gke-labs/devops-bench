@@ -13,8 +13,9 @@ module "gke" {
   project_id   = var.project_id
   cluster_name = var.cluster_name
   location     = var.location
-  node_count   = var.node_count
-  machine_type = var.machine_type
+  node_count               = var.node_count
+  machine_type             = var.machine_type
+  enable_workload_identity = true
 }
 
 # 3. GCP Secret Manager Setup

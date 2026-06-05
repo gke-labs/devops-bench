@@ -25,3 +25,9 @@ variable "machine_type" {
   type        = string
   default     = "e2-standard-2"
 }
+
+variable "enable_workload_identity" {
+  description = "Enable GKE Workload Identity"
+  type        = bool
+  default     = false
+}

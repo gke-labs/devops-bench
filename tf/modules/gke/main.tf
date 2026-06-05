@@ -35,8 +35,11 @@ resource "google_container_cluster" "primary" {
   initial_node_count       = 1
   deletion_protection      = false
 
-  workload_identity_config {
-    workload_pool = "${var.project_id}.svc.id.goog"
+  dynamic "workload_identity_config" {
+    for_each = var.enable_workload_identity ? [1] : []
+    content {
+      workload_pool = "${var.project_id}.svc.id.goog"
+    }
   }
 }
 
@@ -55,8 +58,11 @@ resource "google_container_node_pool" "primary_nodes" {
       "https://www.googleapis.com/auth/cloud-platform"
     ]
 
-    workload_metadata_config {
-      mode = "GKE_METADATA"
+    dynamic "workload_metadata_config" {
+      for_each = var.enable_workload_identity ? [1] : []
+      content {
+        mode = "GKE_METADATA"
+      }
     }
   }
 }
