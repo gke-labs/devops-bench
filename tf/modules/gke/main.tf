@@ -27,6 +27,27 @@ resource "google_project_iam_member" "gke_nodes_metadata_writer" {
   member  = "serviceAccount:${google_service_account.gke_nodes.email}"
 }
 
+resource "google_project_iam_member" "agent_container_admin" {
+  count   = var.agent_service_account != "" ? 1 : 0
+  project = var.project_id
+  role    = "roles/container.admin"
+  member  = "serviceAccount:${var.agent_service_account}"
+}
+
+resource "google_compute_firewall" "allow_iap_ssh" {
+  count   = var.enable_iap_ssh ? 1 : 0
+  name    = "allow-iap-ssh-${var.cluster_name}"
+  network = "default"
+  project = var.project_id
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
+  source_ranges = ["35.235.240.0/20"]
+}
+
 resource "google_container_cluster" "primary" {
   name     = var.cluster_name
   location = var.location
