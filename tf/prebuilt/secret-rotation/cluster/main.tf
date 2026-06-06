@@ -16,6 +16,8 @@ module "gke" {
   node_count               = var.node_count
   machine_type             = var.machine_type
   enable_workload_identity = true
+  agent_service_account    = "openclaw-vm-sa@${var.project_id}.iam.gserviceaccount.com"
+  enable_iap_ssh           = true
 }
 
 # 3. GCP Secret Manager Setup
@@ -51,26 +53,7 @@ resource "google_service_account_iam_member" "workload_identity" {
   member             = "serviceAccount:${var.project_id}.svc.id.goog[external-secrets/external-secrets]"
 }
 
-# 10. Firewall rule
-resource "google_compute_firewall" "allow_iap_ssh" {
-  name    = "allow-iap-ssh-default"
-  network = "default"
-  project = var.project_id
-
-  allow {
-    protocol = "tcp"
-    ports    = ["22"]
-  }
-
-  source_ranges = ["35.235.240.0/20"]
-}
-
-# 11. Grant permissions to OpenClaw VM Service Account
-resource "google_project_iam_member" "openclaw_vm_container_admin" {
-  project = var.project_id
-  role    = "roles/container.admin"
-  member  = "serviceAccount:openclaw-vm-sa@${var.project_id}.iam.gserviceaccount.com"
-}
+# 10. Grant permissions to OpenClaw VM Service Account
 
 resource "google_project_iam_member" "openclaw_vm_secret_admin" {
   project = var.project_id
