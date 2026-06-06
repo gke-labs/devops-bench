@@ -9,10 +9,10 @@ terraform {
 
 # 1. GKE Cluster Provisioning
 module "gke" {
-  source       = "../../../modules/gke"
-  project_id   = var.project_id
-  cluster_name = var.cluster_name
-  location     = var.location
+  source                   = "../../../modules/gke"
+  project_id               = var.project_id
+  cluster_name             = var.cluster_name
+  location                 = var.location
   node_count               = var.node_count
   machine_type             = var.machine_type
   enable_workload_identity = true

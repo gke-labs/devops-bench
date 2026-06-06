@@ -1,0 +1,27 @@
+task_id: 3
+name: "cp-recovery"
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/cp-recovery"
+  teardown: true
+prompt: |
+  You are a Site Reliability Engineer managing a Kubernetes control plane (simulated by a custom API server 'mock-apiserver' and a 3-member etcd cluster 'etcd-0', 'etcd-1', 'etcd-2') in the namespace '{{NAMESPACE}}' on the cluster '{{GKE_CLUSTER_NAME}}' in project '{{GCP_PROJECT_ID}}'.
+
+  The control plane is currently experiencing a critical failure.
+  Restore the control plane to a healthy, consistent state from the latest verified backup in the GCS bucket 'cpr-{{GCP_PROJECT_ID}}-{{NAMESPACE}}'.
+  To prevent data drift or further corruption during recovery, ensure mutating requests are blocked and the system status is updated accordingly.
+  Verify the integrity of the backup before restoring it. Once the data is restored, bring the API server back online and reconcile any state differences between the restored control plane and the desired state defined in GitOps (ConfigMap 'gitops-state').
+  Finally, resume normal operations (unblocking mutations) and document the recovery steps and incident timeline in a file named 'incident-report.md'.
+expected_output: |
+  critical requirements:
+  - Agent marks control plane status as 'Degraded' by updating the ConfigMap 'control-plane-status' status to 'Degraded'.
+  - Agent blocks mutating API requests by setting 'block-mutating-requests' to 'true' in the ConfigMap 'control-plane-config'.
+  - Agent downloads the etcd snapshot and checksum from GCS bucket 'cpr-{{GCP_PROJECT_ID}}-{{NAMESPACE}}'.
+  - Agent verifies the sha256 checksum of the etcd snapshot.
+  - Agent restores the etcd snapshot to the etcd cluster (e.g. by scaling down, running a temporary pod to restore to PVCs, and scaling back up).
+  - The etcd cluster achieves Raft quorum and is healthy.
+  - Agent restarts the 'mock-apiserver' deployment to reconnect to the restored backend.
+  - Agent compares the actual workloads in the mock API server with the desired state in ConfigMap 'gitops-state'.
+  - Agent re-syncs the missing 'workload-3' to the mock API server.
+  - Agent resumes API traffic by setting 'block-mutating-requests' to 'false' in 'control-plane-config' and marks control plane status as 'Healthy' in 'control-plane-status'.
+  - Agent generates an incident timeline report at 'incident-report.md'.
