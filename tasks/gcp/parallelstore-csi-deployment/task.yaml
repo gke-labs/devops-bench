@@ -110,7 +110,7 @@ expected_output: |
 
 documentation:
   - doc_name: "GKE Parallelstore CSI Driver Guide"
-    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/parallelstore-csi-existing-instance"
+    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/parallelstore-csi-existing-instance"
     constraints:
       - text: "driver: parallelstore.csi.storage.gke.io"
         critical: true
@@ -119,7 +119,7 @@ documentation:
       - text: "volumeHandle format: PROJECT_ID/LOCATION/INSTANCE_NAME/default-pool/default-container"
         critical: true
   - doc_name: "GKE GPU Setup Docs"
-    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/gpus"
+    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/gpus"
     constraints:
       - text: "nvidia.com/gpu resource limit of 1"
         critical: true

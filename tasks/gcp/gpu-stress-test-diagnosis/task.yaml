@@ -27,12 +27,12 @@ expected_output: |
 
 documentation:
   - doc_name: "GCS Fuse CSI Driver Guide"
-    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/cloud-storage-fuse-csi-driver-sidecar"
+    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/cloud-storage-fuse-csi-driver-sidecar"
     constraints:
       - text: "GCS FUSE buffer exhaustion"
         critical: true
   - doc_name: "HPA Configuration Guide"
-    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/horizontal-pod-autoscaling"
+    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/horizontal-pod-autoscaling"
     constraints:
       - text: "HPA max-replica saturation"
         critical: true
