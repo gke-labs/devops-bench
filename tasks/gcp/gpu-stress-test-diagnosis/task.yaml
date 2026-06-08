@@ -1,3 +1,4 @@
+---
 task_id: 14
 name: "gpu-stress-test-diagnosis"
 infrastructure:
@@ -8,20 +9,27 @@ infrastructure:
     node_count: 1
     machine_type: "g2-standard-4"
 prompt: |
-  An automated alert for high Time to First Token (TTFT) latency has triggered for the 'hypercomputer-agent' service.
-  Review the Cloud Monitoring metrics and Cloud Logging history for the GKE cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
+  An automated alert for high Time to First Token (TTFT) latency has triggered
+  for the 'hypercomputer-agent' service in GKE cluster {{GKE_CLUSTER_NAME}} in
+  project {{GCP_PROJECT_ID}}.
 
-  Write an incident post-mortem report named `analysis_report.md` in your workspace detailing:
-  1. The primary storage bottleneck identified in GCS FUSE.
-  2. The autoscaler saturation limits identified.
+  Write an incident post-mortem report named `analysis_report.md` in your
+  workspace detailing:
+  1. The primary storage bottleneck identified and its root cause.
+  2. Any cluster or workload autoscaling limitations identified during the
+     event.
   3. Recommended architectural remediation steps.
 expected_output: |
   critical requirements:
   - Expected file analysis_report.md created in workspace.
-  - Inspect Cloud Logging history for GKE cluster '{{GKE_CLUSTER_NAME}}' in project '{{GCP_PROJECT_ID}}'.
-  - Identify GCS FUSE buffer exhaustion as the primary storage bottleneck in the report.
-  - Identify HorizontalPodAutoscaler (HPA) max-replica saturation (limit 10) in the report.
-  - Detail architectural recommendations (e.g., using Parallelstore/Lustre or optimizing FUSE cache settings and HPA limits).
+  - Inspect Cloud Logging history for GKE cluster '{{GKE_CLUSTER_NAME}}'
+    in project '{{GCP_PROJECT_ID}}'.
+  - Identify GCS FUSE buffer exhaustion as the primary storage bottleneck
+    in the report.
+  - Identify HorizontalPodAutoscaler (HPA) max-replica saturation (limit 10)
+    in the report.
+  - Detail architectural recommendations (e.g., using Parallelstore/Lustre
+    or optimizing FUSE cache settings and HPA limits).
 
   Expected Manifest Generated: N/A, not a manifest generation request.
 

@@ -1,3 +1,4 @@
+---
 task_id: 13
 name: "parallelstore-csi-deployment"
 infrastructure:
@@ -8,15 +9,22 @@ infrastructure:
     node_count: 1
     machine_type: "g2-standard-4"
 prompt: |
-  Deploy a live vLLM inference server for Gemma 4 12B SFP8 onto the GKE cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
-  A Parallelstore Lustre instance named 'lustre-{{GKE_CLUSTER_NAME}}' has been pre-provisioned in zone 'us-central1-a'.
+  Deploy a live vLLM inference server for Gemma 4 12B SFP8 onto the GKE cluster
+  {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
+  A Parallelstore Lustre instance named 'lustre-{{GKE_CLUSTER_NAME}}' has been
+  pre-provisioned in zone 'us-central1-a'.
 
   Objectives:
-  1. Create a PersistentVolume named `gemma-pv` referencing the pre-provisioned Parallelstore Lustre instance `lustre-{{GKE_CLUSTER_NAME}}` in zone `us-central1-a` (access points must be queried from the instance).
+  1. Create a PersistentVolume named `gemma-pv` referencing the
+     pre-provisioned Parallelstore Lustre instance
+     `lustre-{{GKE_CLUSTER_NAME}}` in zone `us-central1-a` (access points
+     must be queried from the instance).
   2. Create a PVC named `gemma-pvc` referencing `gemma-pv`.
-  3. Deploy `gemma-inference-staging` using `nginx:alpine` (simulating serving) that:
+  3. Deploy `gemma-inference-staging` using `nginx:alpine` (simulating serving)
+     that:
      - Requests 1 GPU accelerator (`nvidia.com/gpu: 1`).
-     - Includes the annotation `gke-parallelstore/volumes: "true"` to enable sidecar injection.
+     - Includes the annotation `gke-parallelstore/volumes: "true"` to enable
+       sidecar injection.
      - Mounts the Parallelstore Lustre volume at `/models`.
   4. Create a ClusterIP Service named `gemma-service` exposing port 8000.
 expected_output: |
