@@ -6,7 +6,7 @@ infrastructure:
   teardown: true
   variables:
     node_count: 1
-    machine_type: "n1-standard-4"
+    machine_type: "g2-standard-4"
 prompt: |
   An automated alert for high Time to First Token (TTFT) latency has triggered for the 'hypercomputer-agent' service.
   Review the Cloud Monitoring metrics and Cloud Logging history for the GKE cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
@@ -25,3 +25,14 @@ expected_output: |
 
   Expected Manifest Generated: N/A, not a manifest generation request.
 
+documentation:
+  - doc_name: "GCS Fuse CSI Driver Guide"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/cloud-storage-fuse-csi-driver-sidecar"
+    constraints:
+      - text: "GCS FUSE buffer exhaustion"
+        critical: true
+  - doc_name: "HPA Configuration Guide"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/horizontal-pod-autoscaling"
+    constraints:
+      - text: "HPA max-replica saturation"
+        critical: true

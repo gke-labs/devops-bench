@@ -27,5 +27,5 @@ variable "node_count" {
 
 variable "machine_type" {
   type    = string
-  default = "n1-standard-4"
+  default = "g2-standard-4"
 }

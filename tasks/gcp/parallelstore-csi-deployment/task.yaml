@@ -6,9 +6,9 @@ infrastructure:
   teardown: true
   variables:
     node_count: 1
-    machine_type: "n1-standard-4"
+    machine_type: "g2-standard-4"
 prompt: |
-  Deploy a live vLLM inference server for Gemma 3 onto the GKE cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
+  Deploy a live vLLM inference server for Gemma 4 12B SFP8 onto the GKE cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
   A Parallelstore Lustre instance named 'lustre-{{GKE_CLUSTER_NAME}}' has been pre-provisioned in zone 'us-central1-a'.
 
   Objectives:
@@ -107,3 +107,19 @@ expected_output: |
       targetPort: 80
     selector:
       app: gemma
+
+documentation:
+  - doc_name: "GKE Parallelstore CSI Driver Guide"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/parallelstore-csi-existing-instance"
+    constraints:
+      - text: "driver: parallelstore.csi.storage.gke.io"
+        critical: true
+      - text: "gke-parallelstore/volumes: 'true' annotation in Pod metadata"
+        critical: true
+      - text: "volumeHandle format: PROJECT_ID/LOCATION/INSTANCE_NAME/default-pool/default-container"
+        critical: true
+  - doc_name: "GKE GPU Setup Docs"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/gpus"
+    constraints:
+      - text: "nvidia.com/gpu resource limit of 1"
+        critical: true

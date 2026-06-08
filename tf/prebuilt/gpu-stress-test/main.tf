@@ -78,8 +78,12 @@ resource "google_container_node_pool" "primary_nodes" {
     ]
 
     guest_accelerator {
-      type  = "nvidia-tesla-t4"
+      type  = "nvidia-l4"
       count = 1
+
+      gpu_driver_installation_config {
+        gpu_driver_version = "DEFAULT"
+      }
     }
   }
 }
