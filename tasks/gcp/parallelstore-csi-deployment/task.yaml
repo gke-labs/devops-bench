@@ -1,0 +1,109 @@
+task_id: 13
+name: "parallelstore-csi-deployment"
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/parallelstore-csi"
+  teardown: true
+  variables:
+    node_count: 1
+    machine_type: "n1-standard-4"
+prompt: |
+  Deploy a live vLLM inference server for Gemma 3 onto the GKE cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}.
+  A Parallelstore Lustre instance named 'lustre-{{GKE_CLUSTER_NAME}}' has been pre-provisioned in zone 'us-central1-a'.
+
+  Objectives:
+  1. Create a PersistentVolume named `gemma-pv` referencing the pre-provisioned Parallelstore Lustre instance `lustre-{{GKE_CLUSTER_NAME}}` in zone `us-central1-a` (access points must be queried from the instance).
+  2. Create a PVC named `gemma-pvc` referencing `gemma-pv`.
+  3. Deploy `gemma-inference-staging` using `nginx:alpine` (simulating serving) that:
+     - Requests 1 GPU accelerator (`nvidia.com/gpu: 1`).
+     - Includes the annotation `gke-parallelstore/volumes: "true"` to enable sidecar injection.
+     - Mounts the Parallelstore Lustre volume at `/models`.
+  4. Create a ClusterIP Service named `gemma-service` exposing port 8000.
+expected_output: |
+  critical requirements:
+  - Expected Tool Call: generate_manifest
+  - Create a PersistentVolume with driver parallelstore.csi.storage.gke.io referencing the existing instance.
+  - Set the PV volumeHandle to {{GCP_PROJECT_ID}}/us-central1-a/lustre-{{GKE_CLUSTER_NAME}}/default-pool/default-container.
+  - Query Parallelstore instance access points and specify them in the PV volumeAttributes.
+  - Create a PersistentVolumeClaim named gemma-pvc referencing parallelstore-sc.
+  - Deploy gemma-inference-staging using nginx:alpine.
+  - Include the pod template annotation gke-parallelstore/volumes: "true".
+  - Configure the deployment to request 1 GPU (nvidia.com/gpu: 1) and mount gemma-pvc at /models.
+  - Create a ClusterIP Service named gemma-service exposing port 8000.
+
+  Expected Manifest Generated:
+  apiVersion: v1
+  kind: PersistentVolume
+  metadata:
+    name: gemma-pv
+  spec:
+    storageClassName: parallelstore-sc
+    capacity:
+      storage: 12000Gi
+    accessModes:
+    - ReadWriteMany
+    persistentVolumeReclaimPolicy: Retain
+    volumeMode: Filesystem
+    csi:
+      driver: parallelstore.csi.storage.gke.io
+      volumeHandle: {{GCP_PROJECT_ID}}/us-central1-a/lustre-{{GKE_CLUSTER_NAME}}/default-pool/default-container
+      volumeAttributes:
+        accessPoints: <instance-access-points-ips>
+        network: ps-net-{{GKE_CLUSTER_NAME}}
+  ---
+  apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: gemma-pvc
+    namespace: default
+  spec:
+    accessModes:
+    - ReadWriteMany
+    storageClassName: parallelstore-sc
+    resources:
+      requests:
+        storage: 12000Gi
+  ---
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: gemma-inference-staging
+    namespace: default
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: gemma
+    template:
+      metadata:
+        annotations:
+          gke-parallelstore/volumes: "true"
+        labels:
+          app: gemma
+      spec:
+        containers:
+        - name: gemma-container
+          image: nginx:alpine
+          volumeMounts:
+          - name: model-volume
+            mountPath: /models
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+        volumes:
+        - name: model-volume
+          persistentVolumeClaim:
+            claimName: gemma-pvc
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: gemma-service
+    namespace: default
+  spec:
+    type: ClusterIP
+    ports:
+    - port: 8000
+      targetPort: 80
+    selector:
+      app: gemma
