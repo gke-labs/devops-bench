@@ -15,3 +15,6 @@ results/
 # Local temp and binary files
 *-rendered.yaml
 tofu
+
+# For the devs using macOS
+.DS_Store
