@@ -23,59 +23,9 @@ body {
     border-radius: 3px;
 }
 
-/* Row expand fade animation */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-4px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.animation-fade {
-    animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-
 .chart-container {
     position: relative;
     height: 320px;
     width: 100%;
-}
-
-/* Accordion wrapper using CSS Grid to transition height dynamically */
-.accordion-wrapper {
-    display: grid;
-    grid-template-rows: 0fr;
-    transition: grid-template-rows 0.3s ease-in-out;
-    overflow: hidden; /* Prevent collapsed translation bleed */
-}
-
-.accordion-wrapper.expanded {
-    grid-template-rows: 1fr;
-}
-
-.accordion-content {
-    overflow: hidden;
-    min-height: 0;
-    opacity: 0;
-    visibility: hidden; /* Hide from screen reader when collapsed */
-    transform: translateY(-8px);
-    transition: opacity 0.25s ease-out, transform 0.25s ease-out, visibility 0.25s ease-out;
-}
-
-.accordion-wrapper.expanded .accordion-content {
-    opacity: 1;
-    visibility: visible; /* Show to screen reader when expanded */
-    transform: translateY(0);
-    transition-delay: 0.05s;
-}
-
-/* Subtask progress bar width animation */
-.subtask-progress-bar {
-    width: 100% !important; /* Take up full parent container width */
-    transform: scaleX(0);
-    transform-origin: left;
-    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.accordion-wrapper.expanded .subtask-progress-bar {
-    transform: scaleX(calc(var(--target-width) / 100)) !important; /* Scale dynamically via scalar variable */
 }
 
