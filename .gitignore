@@ -16,5 +16,9 @@ results/
 *-rendered.yaml
 tofu
 
+# Python virtual environments
+.venv/
+venv/
+
 # For the devs using macOS
 .DS_Store
