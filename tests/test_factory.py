@@ -9,7 +9,7 @@ project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from deployers.factory import get_deployer
+from deployers.factory import get_deployer, NoOpDeployer
 from deployers.gcp.gcp_deployer import GCPDeployer
 from deployers.tf.tf_deployer import TFDeployer
 
@@ -138,3 +138,48 @@ def test_get_deployer_tofu_kind_stack(mock_exists, base_config):
 
     expected_stack_path = str(project_root / "tf" / "prebuilt/kind")
     assert deployer.tf_dir == expected_stack_path
+
+
+# ---------------------------------------------------------------------------
+# NoOpDeployer
+# ---------------------------------------------------------------------------
+
+@patch.dict(os.environ, {"BENCH_NO_INFRA": "true"})
+def test_get_deployer_no_infra_returns_noop(base_config):
+    deployer = get_deployer(
+        {},
+        base_config["project_id"],
+        base_config["cluster_name"],
+    )
+    assert isinstance(deployer, NoOpDeployer)
+
+
+@patch.dict(os.environ, {"BENCH_NO_INFRA": "true"})
+def test_no_infra_takes_precedence_over_infra_config(base_config):
+    """BENCH_NO_INFRA should short-circuit even when a deployer is specified."""
+    deployer = get_deployer(
+        {"deployer": "tofu", "stack": "prebuilt/kind"},
+        base_config["project_id"],
+        base_config["cluster_name"],
+    )
+    assert isinstance(deployer, NoOpDeployer)
+
+
+def test_noop_deployer_up_is_silent(capsys, base_config):
+    d = NoOpDeployer(cluster_name="test-cluster", project_id="test-project")
+    d.up()
+    assert "NoOpDeployer" in capsys.readouterr().out
+
+
+def test_noop_deployer_down_is_silent(capsys, base_config):
+    d = NoOpDeployer(cluster_name="test-cluster", project_id="test-project")
+    d.down()
+    assert "NoOpDeployer" in capsys.readouterr().out
+
+
+def test_noop_deployer_get_cluster_info(base_config):
+    d = NoOpDeployer(cluster_name="test-cluster", project_id="test-project")
+    info = d.get_cluster_info()
+    assert info["name"] == "test-cluster"
+    assert info["project"] == "test-project"
+    assert info["location"] == "local"
