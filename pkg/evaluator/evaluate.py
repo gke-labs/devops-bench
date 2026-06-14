@@ -46,6 +46,8 @@ from deployers.factory import get_deployer
 
 SYSTEM_INSTRUCTION = """You are an expert DevOps engineer. When asked to make an app production-ready or perform operational tasks like secret rotation, you MUST apply the changes directly to the GKE cluster and GCP APIs using your tools. Do NOT output bash scripts, templates, or instructions for the user to run manually. You must complete the entire operation yourself using tool calls."""
 
+SYSTEM_INSTRUCTION_NO_MCP = """You are an expert DevOps engineer. Respond with complete, production-ready Kubernetes manifests and configurations that satisfy the request. Output the full YAML or relevant artifacts directly in your response."""
+
 
 def validate_config(role, provider, model):
     """Logs the detected configuration. TODO: Add consistency checks."""
@@ -357,13 +359,14 @@ def execute_agent(bench_agent_type, agent_target, prompt, context):
             raise ValueError(f"Unknown provider: {provider}")
         bench_use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
         bench_use_mcp = bench_use_mcp_env == "true"
+        sys_instruction = SYSTEM_INSTRUCTION if bench_use_mcp else SYSTEM_INSTRUCTION_NO_MCP
         return asyncio.run(
             run_api_agent(
                 prompt,
                 mcp_server_path,
                 llm_client,
                 bench_use_mcp=bench_use_mcp,
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=sys_instruction,
             )
         )
     else:
