@@ -8,6 +8,16 @@ import getpass
 from deepeval.tracing import observe
 
 
+# OpenClaw emits ANSI-colored debug logs to stdout. The escape codes corrupt the
+# `sessionFile=...` path extraction (the regex would capture the trailing reset
+# code) and add noise to the text the judge grades, so strip them first.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text):
+    return _ANSI_RE.sub("", text)
+
+
 def _parse_openclaw_session(session_content):
     """Parses an OpenClaw session JSONL into (tokens, trajectory)."""
     tokens = {}
@@ -84,7 +94,7 @@ def run_openclaw_agent(prompt, context=None, agent_name="main"):
             ssh_cmd, capture_output=True, text=True, check=True
         )
         latency = time.time() - start_time
-        output = result.stdout
+        output = _strip_ansi(result.stdout)
 
         # Parse session file path
         match = re.search(r"sessionFile=([^ \n]+)", output)
@@ -160,7 +170,7 @@ def run_openclaw_agent_local(prompt, context=None, agent_name="operator"):
             check=True,
         )
         latency = time.time() - start_time
-        output = result.stdout
+        output = _strip_ansi(result.stdout)
 
         match = re.search(r"sessionFile=([^ \n]+)", output)
         tokens = {}
