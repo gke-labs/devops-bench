@@ -1,3 +1,4 @@
+import os
 from contextlib import AsyncExitStack
 from deepeval.tracing import observe
 from mcp.client.session import ClientSession
@@ -11,7 +12,13 @@ class MCPClient:
     self.session = None
 
   async def __aenter__(self):
-    server_params = StdioServerParameters(command=self.server_path)
+    # Forward the full environment so the MCP server inherits KUBECONFIG and
+    # cloud credentials (GOOGLE_APPLICATION_CREDENTIALS, etc.). The MCP SDK
+    # otherwise launches the server with a stripped default environment, which
+    # leaves it unable to resolve the target cluster's kubeconfig context.
+    server_params = StdioServerParameters(
+        command=self.server_path, env=os.environ.copy()
+    )
     stdio_transport = await self.exit_stack.enter_async_context(
         stdio_client(server_params)
     )

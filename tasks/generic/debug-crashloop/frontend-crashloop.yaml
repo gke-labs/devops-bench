@@ -1,0 +1,35 @@
+# Fixture for the debug-crashloop task.
+# A deliberately broken 'frontend' deployment: the container's entrypoint requires
+# the DATABASE_URL environment variable and exits non-zero when it is absent,
+# producing a CrashLoopBackOff. Apply this to the task cluster before the agent runs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: busybox:1.36
+        # Fails fast when DATABASE_URL is unset -> non-zero exit -> CrashLoopBackOff.
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            if [ -z "$DATABASE_URL" ]; then
+              echo "FATAL: required environment variable DATABASE_URL is not set" >&2
+              exit 1
+            fi
+            echo "frontend started, connecting to $DATABASE_URL"
+            sleep 3600
+        ports:
+        - containerPort: 8080
