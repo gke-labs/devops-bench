@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: cp-recovery-setup-sa
-  namespace: {{ .Values.namespace }}
-  annotations:
-    iam.gke.io/gcp-service-account: {{ .Values.cpRecoverySAEmail }}

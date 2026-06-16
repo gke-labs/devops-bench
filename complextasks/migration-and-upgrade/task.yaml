@@ -2,26 +2,30 @@ task_id: 4
 name: "migration-and-upgrade"
 infrastructure:
   deployer: "tofu"
-  stack: "prebuilt/migration-and-upgrade"
+  stack: "prebuilt/migration-and-upgrade-kind"
   teardown: true
 prompt: |
-  You are a Kubernetes Administrator managing a GKE cluster named '{{GKE_CLUSTER_NAME}}' in project '{{GCP_PROJECT_ID}}'.
-  Your primary objective is to safely upgrade the GKE cluster to the next minor version. The existing infrastructure manifests are stored in the Cloud Source Repository '{{NAMESPACE}}-repo'.
-  
-  Before triggering the live cluster upgrade, you must guarantee that no workloads will be broken by removed or deprecated APIs. Use the 'upgrade-audit.sh' script in the repository to audit the existing manifests. 
-  
-  To ensure absolute safety, you must strictly validate any manifest modifications by provisioning a temporary, ephemeral GKE cluster at the target version and successfully deploying the workloads there. Only after the validation environment is proven functional should you apply the changes to production and proceed with the rolling version upgrade.
-  
-  Once the upgrade is complete, verify the health of the cluster and write a status report to 'production-readiness.md'.
+  You are a Kubernetes platform engineer responsible for the cluster '{{CLUSTER_NAME}}'.
+
+  Your goal is to safely upgrade the cluster to the next minor Kubernetes version. The
+  application manifests are version-controlled in a git repository at '~/migration-repo.git'.
+
+  Before upgrading, make sure none of those manifests rely on Kubernetes APIs that are
+  deprecated or removed in the target version: audit them, migrate any you find to their stable
+  equivalents, and commit the changes back to the repository. Validate that the updated
+  manifests work on the target version before rolling the change out, then apply them and
+  complete the cluster upgrade.
+
+  When you're done, verify the cluster is healthy and write a status report to
+  'production-readiness.md'.
 expected_output: |
   critical requirements:
-  - Agent runs the audit script to identify deprecated API usage.
-  - Agent clones the Cloud Source Repository containing the manifests.
-  - Agent updates the deprecated APIs in the manifests to their stable equivalents, and commits/pushes the changes back to the repository.
-  - Agent provisions a temporary GKE cluster at the target version.
-  - Agent successfully deploys the updated manifests to the temporary cluster to validate compatibility.
-  - Agent tears down the temporary validation cluster after successful testing.
-  - Agent applies the updated manifests to the production cluster prior to the upgrade.
-  - Agent upgrades the production GKE cluster master and node pools to the new target version.
-  - Agent verifies that all workloads in the upgraded production cluster are healthy and no pods are pending/crashing.
-  - Agent writes the final cluster status and health verification to 'production-readiness.md'.
+  - Agent clones the manifests git repository (at '~/migration-repo.git') and inspects the application manifests.
+  - Agent audits the manifests and identifies the resources using deprecated/removed API versions (the Ingress on 'networking.k8s.io/v1beta1' and the PodDisruptionBudget on 'policy/v1beta1').
+  - Agent migrates the deprecated manifests to their stable API versions ('networking.k8s.io/v1' Ingress with the updated backend schema, and 'policy/v1' PodDisruptionBudget) and commits/pushes the changes back to the repository.
+  - Agent determines the target (next minor) Kubernetes version for the upgrade.
+  - Agent validates the migrated manifests against the target version before applying them to production (e.g. deploying them to a temporary cluster at the target version, or equivalent schema/dry-run validation).
+  - Agent applies the migrated manifests to the cluster.
+  - Agent upgrades the cluster to the target version (a managed master + node-pool upgrade where the platform supports it; otherwise confirming the workloads run on the target version).
+  - Agent verifies the cluster and workloads are healthy after the upgrade, with no pending or crashing pods.
+  - Agent writes a status report to 'production-readiness.md' documenting the deprecated APIs found, the migration performed, and the post-upgrade health.
