@@ -1,0 +1,50 @@
+# migrated.bara.sky — the single source of truth for the migrated frontier.
+# Installs at the gke-labs repo root. Loaded by copy.bara.sky (the back-sync scope) and parsed by
+# hack/check-migrated-readonly.sh (flip guard) and hack/migration-status.sh (tracker), so there is
+# exactly one list. Add a path (uncomment a line) when its forward PR merges; remove it to un-migrate.
+#
+# Each module's unit tests travel in the same PR, so add its tests/unit/<area>/ path alongside it.
+# Only tests/integration/** is added at the end (Stage 4); it spans components. The Stage-0 toolchain
+# (pyproject.toml, uv.lock, .python-version, CI) is human-managed in both repos and is NOT listed here.
+#
+# See docs/migration/README.md. Empty until the first module lands.
+
+MIGRATED = [
+    # --- Stage 1: leaves, start here (see pr-plan.md §2) ---
+    # "devops_bench/core/**",
+    # "tests/unit/core/**",
+    # "devops_bench/tasks/**",
+    # "tests/unit/tasks/**",
+    # "devops_bench/deployers/**",
+    # "tests/unit/deployers/**",
+    # "devops_bench/k8s/kubectl.py",
+    # "tests/unit/k8s/**",
+    # "devops_bench/models/**",
+    # "tests/unit/models/**",
+
+    # --- Stage 2: components (each with its tests/unit/<area>/) ---
+    # "devops_bench/agents/base.py",
+    # "devops_bench/agents/cli/**",
+    # "tests/unit/agents/**",
+    # "devops_bench/verification/**",
+    # "tests/unit/verification/**",
+    # "devops_bench/chaos/**",
+    # "tests/unit/chaos/**",
+    # "devops_bench/metrics/**",
+    # "tests/unit/metrics/**",
+    # "skills/**",                      # judge guides travel with the metrics that read them
+    # "devops_bench/agents/api/**",
+
+    # --- Stage 3: orchestrator ---
+    # "devops_bench/harness/**",
+    # "tests/unit/harness/**",
+
+    # --- Stage 4: data + entrypoint, then the cross-cutting tests last ---
+    # "infra/**",
+    # "tasks/**",
+    # "devops_bench/reporting/**",
+    # "devops_bench/cli.py",
+    # "tests/integration/**",
+]
+
+# New-feature interfaces (e.g. devops_bench/agents/capabilities/**) are added later, during migration.

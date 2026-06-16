@@ -1,0 +1,102 @@
+# Installs at: .github/workflows/guardrails.yml in BOTH gke-labs and kubernetes-sigs.
+# CI guardrail: uv sync, ruff, license headers, unit tests. The `detect` job keeps it
+# a green no-op until pyproject.toml + devops_bench/ exist, so it is safe to install before the
+# reorg. The migrated-readonly job is gke-labs-only. Label (labeled/unlabeled) events only run the
+# migrated-readonly flip guard — the build/lint/test matrix is skipped, since labels don't change
+# code. See docs/migration/.
+name: guardrails
+
+on:
+  pull_request:
+    branches: [main]
+    # labeled/unlabeled so applying the 'migrated-override' label re-runs the flip guard
+    # immediately. The build/lint/test jobs skip on label events (per-job `if`s below), so
+    # unrelated label churn never reruns the full matrix.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    # Has the reorg landed? Keeps the workflow a no-op until it has.
+    # Skip on label events: labels don't change code, so there's nothing to build/lint/test.
+    # `guardrails` (needs: detect) cascades to skipped as well; only `migrated-readonly` runs on labels.
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          set -euo pipefail
+          if [[ -f pyproject.toml && -d devops_bench ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "Target layout present (pyproject.toml + devops_bench/): running full guardrails."
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Target layout not present yet (no pyproject.toml and/or devops_bench/);"
+            echo "::notice::guardrails are a green no-op until the foundation reorg PR lands."
+          fi
+
+  guardrails:
+    needs: detect
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Floor is requires-python (>=3.12); 3.14 is the dev default in .python-version.
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        if: needs.detect.outputs.ready == 'true'
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Sync (build + install, strict library mode)
+        if: needs.detect.outputs.ready == 'true'
+        run: uv sync --frozen
+
+      - name: Lint
+        if: needs.detect.outputs.ready == 'true'
+        # Lint paths come from [tool.ruff] in pyproject.toml; `.` avoids hardcoding devops_bench.
+        run: uv run ruff check .
+
+      - name: License headers
+        if: needs.detect.outputs.ready == 'true'
+        run: uv run python hack/boilerplate.py --dry-run
+
+      - name: Unit tests
+        if: needs.detect.outputs.ready == 'true'
+        run: uv run pytest tests -q
+
+  migrated-readonly:
+    # gke-labs only: block PRs that edit migrated (upstream-owned) paths. No-op while migrated.bara.sky is
+    # empty. Exempt the back-sync bot's PRs (head branch backsync/*) — mirroring into migrated paths
+    # is exactly its job. Runs on code pushes to a PR and, for label events, ONLY when the
+    # 'migrated-override' label itself changes — so unrelated label churn triggers no CI at all.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.repository == 'gke-labs/devops-bench'
+      && !startsWith(github.head_ref, 'backsync/')
+      && ((github.event.action != 'labeled' && github.event.action != 'unlabeled')
+      || github.event.label.name == 'migrated-override')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # need the base branch to diff the PR range
+      - name: Block edits to migrated (read-only) paths
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          # Override hook: the 'migrated-override' label (passed via env, not interpolated).
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        run: ./hack/check-migrated-readonly.sh

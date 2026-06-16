@@ -1,0 +1,62 @@
+# Periodically uncomments migrated.bara.sky entries whose paths now exist upstream and opens a PR.
+# Only uncomments pre-written lines; does not auto-merge.
+name: suggest-flips
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"     # weekly (Monday), off-peak and off the :00 mark
+  workflow_dispatch: {}
+
+concurrency:
+  group: suggest-flips
+  cancel-in-progress: false
+
+# Uses the bot's PAT (secrets.SYNC_BOT_TOKEN) to push branches and open PRs.
+permissions:
+  contents: read
+
+jobs:
+  suggest-flips:
+    if: github.repository == 'gke-labs/devops-bench'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Use bot PAT so git operations attribute to the migration bot.
+          token: ${{ secrets.SYNC_BOT_TOKEN }}
+
+      - name: List upstream files (public, anonymous)
+        run: |
+          set -euo pipefail
+          git fetch --quiet --depth=1 https://github.com/kubernetes-sigs/devops-bench.git main
+          git ls-tree -r --name-only FETCH_HEAD > /tmp/upstream-files.txt
+          echo "upstream files: $(wc -l < /tmp/upstream-files.txt)"
+
+      - name: Uncomment entries now present upstream
+        run: ./hack/migration-status.sh --suggest-flips --apply --upstream-files /tmp/upstream-files.txt
+
+      - name: Open / update the flip PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.SYNC_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- migrated.bara.sky; then
+            echo "Nothing new to flip."; exit 0
+          fi
+          BRANCH=flip-suggestions
+          # Configure identity to match the migration bot for CLA validation.
+          git config user.name  "devops-bench-sync-bot"
+          git config user.email "devops-bench-sync-bot@google.com"
+          git checkout -B "$BRANCH"
+          git add migrated.bara.sky
+          git commit -m "chore(migration): flip modules now present upstream"
+          git push --force origin "$BRANCH"
+          # Check if a PR already exists from this branch to prevent swallowing real token/policy failures
+          PR_EXISTS=$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number')
+          if [[ -z "$PR_EXISTS" ]]; then
+            gh pr create --base main --head "$BRANCH" \
+              --title "Migration: flip modules now present upstream" \
+              --body $'Auto-suggested flips. These entries were uncommented in `migrated.bara.sky` because their paths now exist in kubernetes-sigs. Review and merge to complete the flip: ownership moves upstream, the back-sync turns on, and the path becomes read-only here.'
+          else
+            echo "PR #${PR_EXISTS} is already open; force-push has updated it."
+          fi

@@ -1,0 +1,38 @@
+# Installs at: gke-labs/devops-bench/.github/workflows/backsync.yml (gke-labs only).
+# Mirrors the migrated paths from kubernetes-sigs back into gke-labs. See docs/migration/.
+name: backsync
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the proposed diff without pushing a branch or opening a PR"
+        type: boolean
+        default: false
+
+concurrency:
+  group: backsync
+  cancel-in-progress: false
+
+# Pushes and PRs run as the migration bot via its PAT (secrets.SYNC_BOT_TOKEN).
+# A PAT behaves like a normal user, bypassing default GitHub Actions restrictions.
+# Built-in GITHUB_TOKEN is locked to read-only.
+permissions:
+  contents: read
+
+jobs:
+  backsync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Copybara back-sync
+        # Runs backsync.sh with the bot's PAT to push branches and open PRs.
+        env:
+          GITHUB_TOKEN: ${{ secrets.SYNC_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          DRY=""; [[ "${{ inputs.dry_run }}" == "true" ]] && DRY="--dry-run"
+          ./hack/backsync.sh $DRY
