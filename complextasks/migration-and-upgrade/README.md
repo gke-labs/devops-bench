@@ -94,6 +94,20 @@ done
 
 (The kind path needs none of this.)
 
+> **Gotcha — `container.admin` gets stripped by teardown.** The shared GKE module grants
+> `roles/container.admin` to the same VM SA that `tofu` runs as, and manages it as a
+> `google_project_iam_member`. Because that's the *same* IAM binding your bootstrap grant
+> creates, `tofu destroy` (teardown) **deletes it** — so the next run starts without it,
+> re-creates it mid-`apply`, and then hits GKE's IAM propagation lag → a
+> `container.clusters.create` 403. To make runs repeatable, grant the SA a create-capable role
+> the stack does **not** manage, so teardown can't strip it:
+> ```bash
+> gcloud projects add-iam-policy-binding "$PROJECT" \
+>   --member="serviceAccount:$SA" --role="roles/owner"   # or roles/container.clusterAdmin
+> ```
+> After any fresh IAM grant, **wait ~10 min for propagation** before running, or cluster
+> creation may still 403.
+
 ```bash
 # In complextasks/migration-and-upgrade/task.yaml, set:
 #   stack: "prebuilt/migration-and-upgrade"
