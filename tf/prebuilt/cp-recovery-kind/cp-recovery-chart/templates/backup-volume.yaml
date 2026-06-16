@@ -1,0 +1,42 @@
+# Backup volume for the verified etcd snapshot. Backed by a hostPath on the worker
+# node; the fault-injection step (../scripts/inject-fault.sh) stages
+# etcd-backup.db + etcd-backup.sha256 into /backup on that node before the agent runs.
+# The agent mounts etcd-backup-pvc in a helper pod to verify + use the snapshot.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.namespace }}-etcd-backup-pv
+  labels:
+    app: cp-recovery-backup
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /backup
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - {{ .Values.clusterName }}-worker
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: etcd-backup-pvc
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: ""
+  volumeName: {{ .Values.namespace }}-etcd-backup-pv
+  resources:
+    requests:
+      storage: 1Gi

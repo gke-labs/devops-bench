@@ -1,0 +1,3 @@
+# Overridden by the tofu helm_release (see ../main.tf).
+namespace: cp-recovery
+clusterName: devops-bench-kind

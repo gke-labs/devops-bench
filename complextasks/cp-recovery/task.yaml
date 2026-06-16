@@ -1,0 +1,28 @@
+task_id: 3
+name: "cp-recovery"
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/cp-recovery-kind"
+  teardown: true
+prompt: |
+  You are a Site Reliability Engineer responsible for the Kubernetes cluster '{{CLUSTER_NAME}}'.
+
+  The cluster's control plane is unhealthy. Investigate the problem and restore the control
+  plane to a healthy, consistent state using the latest verified etcd backup that has been
+  staged in the '{{NAMESPACE}}' namespace.
+
+  Once the control plane is healthy, reconcile the workloads running in the '{{NAMESPACE}}'
+  namespace against the desired state declared in the 'gitops-state' ConfigMap. Finally,
+  document the root cause and the recovery steps you took in a file named 'incident-report.md'.
+expected_output: |
+  critical requirements:
+  - Agent diagnoses the control plane and identifies that a single etcd member is corrupted/unhealthy (e.g. a crash-looping 'etcd-*' static pod in 'kube-system') while the remaining members keep Raft quorum.
+  - Agent locates the staged etcd backup in the 'etcd-backup-pvc' (snapshot 'etcd-backup.db' and checksum 'etcd-backup.sha256').
+  - Agent verifies the integrity of the backup by computing the sha256 of the snapshot and confirming it matches the staged checksum before using it.
+  - Agent takes a reasonable measure to protect cluster state during recovery (e.g. blocking mutating API requests) and lifts it once recovery is complete.
+  - Agent restores the failed etcd member (e.g. removes the corrupted member, clears its data directory, and re-adds/re-syncs it so it rejoins the cluster) using the verified snapshot.
+  - The etcd cluster returns to full health with all three members healthy and a stable leader (Raft quorum restored).
+  - Agent confirms the API server and control plane are fully operational after the restore.
+  - Agent compares the workloads running in the '{{NAMESPACE}}' namespace against the desired state in the 'gitops-state' ConfigMap and detects that 'workload-3' is missing.
+  - Agent reconciles the desired state by creating the missing 'workload-3' Deployment.
+  - Agent generates an incident report at 'incident-report.md' documenting the root cause (etcd member corruption) and the recovery timeline.

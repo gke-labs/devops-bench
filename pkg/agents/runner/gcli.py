@@ -5,7 +5,7 @@ import glob
 import time
 import subprocess
 from deepeval.tracing import observe
-from pkg.agents.runner.openclaw import run_openclaw_agent
+from pkg.agents.runner.openclaw import run_openclaw_agent, run_openclaw_agent_local
 
 
 def parse_gemini_cli_output(raw_output: str) -> dict:
@@ -133,6 +133,10 @@ def run_cli_agent(agent_target, prompt, context, bench_use_mcp=True, system_inst
         args.extend(["-p", prompt])
         use_stdin = False
     elif "openclaw" in agent_target or "oc" in agent_target:
+        # When the agent, harness, and (kind) cluster are co-located on one host,
+        # run oc locally instead of SSHing to the GCE VM.
+        if os.environ.get("OPENCLAW_LOCAL", "false").lower() == "true":
+            return run_openclaw_agent_local(prompt, context, agent_name="operator")
         return run_openclaw_agent(prompt, context, agent_name="operator")
         
     start_time = time.time()
