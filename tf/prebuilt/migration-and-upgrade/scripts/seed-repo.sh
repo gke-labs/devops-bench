@@ -13,6 +13,9 @@ set -euo pipefail
 REPO_PATH="${REPO_PATH:?REPO_PATH is required}"
 MANIFESTS_DIR="${MANIFESTS_DIR:?MANIFESTS_DIR is required}"
 REPO_PATH="${REPO_PATH/#\~/$HOME}"   # expand a leading ~ if present
+# Resolve MANIFESTS_DIR to an absolute path now (callers pass it relative to the
+# stack dir), since we `cd` into a temp dir before copying from it.
+MANIFESTS_DIR="$(cd "${MANIFESTS_DIR}" && pwd)"
 
 echo "==> Seeding manifests repo at ${REPO_PATH}"
 rm -rf "${REPO_PATH}"
