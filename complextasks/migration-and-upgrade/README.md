@@ -66,8 +66,33 @@ cluster it creates at the target version (kind has no in-place managed upgrade).
 
 ## Run on GKE (real managed upgrade)
 
-Point the task at the GKE stack and provide real GCP credentials. The runner VM's service
-account needs `roles/container.admin` (granted by the stack) so the agent can drive the upgrade.
+Point the task at the GKE stack and provide real GCP credentials.
+
+### One-time IAM prerequisite (must be done by a project admin)
+
+On the runner VM, `tofu` authenticates as the VM service account
+(`openclaw-vm-sa@<project>.iam.gserviceaccount.com`). Provisioning a self-contained GKE
+environment (cluster + node SA + IAM bindings + firewall) requires broad rights that this SA
+does **not** have by default. These grants **cannot** be automated in the stack — the stack
+itself defines IAM bindings, so it can't run until the SA already has `setIamPolicy`
+(chicken-and-egg). A project Owner/IAM-admin must grant them once, out-of-band (e.g. from Cloud
+Shell), **not** from the VM:
+
+```bash
+PROJECT=<your-project-id>
+SA=openclaw-vm-sa@${PROJECT}.iam.gserviceaccount.com
+for role in \
+  roles/container.admin \
+  roles/iam.serviceAccountAdmin \
+  roles/iam.serviceAccountUser \
+  roles/resourcemanager.projectIamAdmin \
+  roles/compute.admin ; do
+  gcloud projects add-iam-policy-binding "$PROJECT" \
+    --member="serviceAccount:$SA" --role="$role"
+done
+```
+
+(The kind path needs none of this.)
 
 ```bash
 # In complextasks/migration-and-upgrade/task.yaml, set:
@@ -105,5 +130,5 @@ Notes:
 | `Error: … no space left on device` | Disk too small — the agent runs 2 kind clusters; grow to ≥ 50 GB. |
 | `TypeError: unsupported operand type(s) for \|: …` on import | Python < 3.10 — use a 3.10+ venv. |
 | `No such file or directory: 'tofu'` / `kind` / `docker` | Missing prerequisite — install it. |
-| GKE: `does not have ... container.clusters.update` | Re-apply the stack so the VM SA gets `roles/container.admin`. |
+| GKE: `403 ... permission denied` on cluster/SA/IAM/firewall create | The VM SA lacks provisioning rights — run the one-time IAM prerequisite grants (see "Run on GKE"). |
 | GKE: start version not creatable | `start_version` is outside GKE's supported range — bump it. |

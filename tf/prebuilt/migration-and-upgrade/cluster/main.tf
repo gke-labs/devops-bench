@@ -19,10 +19,6 @@ module "gke" {
   enable_iap_ssh        = true
 }
 
-# The agent (running as the openclaw VM SA) needs to drive the managed master +
-# node-pool version upgrade, so grant it container admin on this project.
-resource "google_project_iam_member" "openclaw_vm_container_admin" {
-  project = var.project_id
-  role    = "roles/container.admin"
-  member  = "serviceAccount:openclaw-vm-sa@${var.project_id}.iam.gserviceaccount.com"
-}
+# Note: the shared GKE module already grants roles/container.admin to
+# agent_service_account (openclaw-vm-sa), so the agent can drive the managed
+# master + node-pool upgrade — no extra binding needed here.
