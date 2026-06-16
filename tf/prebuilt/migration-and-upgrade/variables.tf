@@ -19,8 +19,12 @@ variable "namespace" {
 
 variable "start_version" {
   type        = string
-  description = "GKE Kubernetes version the cluster starts at (must be within GKE's supported range; the agent upgrades to the next minor)."
-  default     = "1.30"
+  description = "GKE Kubernetes version the cluster starts at (the agent upgrades to the next minor)."
+  # NOTE: GKE's supported version range drifts over time, so this default WILL go
+  # stale and eventually be rejected ("No valid versions with the prefix ..."). Set
+  # it to a currently-supported minor that ALSO has a next minor available; check
+  # with: gcloud container get-server-config --zone <zone>
+  default = "1.33"
 }
 
 variable "repo_path" {

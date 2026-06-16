@@ -12,6 +12,6 @@ variable "location" {
 
 variable "kubernetes_version" {
   type        = string
-  description = "Kubernetes version the cluster is created at (the START version for the upgrade)."
-  default     = "1.30"
+  description = "Kubernetes version the cluster is created at (the START version for the upgrade). Overridden by the root start_version; keep in sync. Must be a currently-supported GKE minor (the range drifts over time)."
+  default     = "1.33"
 }

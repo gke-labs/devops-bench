@@ -109,9 +109,17 @@ python pkg/evaluator/evaluate.py complextasks/migration-and-upgrade/task.yaml
 ```
 
 Notes:
-- The **start version** (`start_version`, default `1.30`) must be within GKE's currently
-  supported range; the agent upgrades to the next minor via `gcloud container clusters upgrade`
-  (master + node pool).
+- The **start version** (`start_version` in `tf/prebuilt/migration-and-upgrade/variables.tf`)
+  must be a **currently-supported GKE minor that still has a next minor available** — the agent
+  upgrades to the next minor via `gcloud container clusters upgrade` (master + node pool).
+  GKE's supported range **drifts over time**, so this default goes stale and will eventually be
+  rejected (`No valid versions with the prefix ...`). Check the current set and update the
+  default accordingly:
+  ```bash
+  gcloud container get-server-config --zone "$GCP_LOCATION" --format="yaml(channels)"
+  ```
+  (If a bare minor like `1.33` is rejected by the default version set, pin a full version such
+  as `1.33.12-gke.1059000`.)
 - Running on the VM is recommended even for GKE, because the agent still uses local `kind` for
   the cheap target-version validation. (Local Mac works for reachability since GKE is remote,
   but you'd have to replicate `oc`/Python 3.10/gcloud/docker/kind locally.)
