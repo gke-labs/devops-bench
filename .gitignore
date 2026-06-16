@@ -4,6 +4,9 @@ __pycache__/
 third_party/
 results/
 .deepeval/
+# Python tooling (uv / ruff)
+.venv/
+.ruff_cache/
 # TF metadata directories
 **/.terraform
 *.tfstate
