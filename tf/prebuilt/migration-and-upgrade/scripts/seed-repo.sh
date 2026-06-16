@@ -36,4 +36,8 @@ WORK="$(mktemp -d)"
 )
 rm -rf "${WORK}"
 
+# Point the bare repo's HEAD at main so a plain `git clone` checks it out
+# (git init --bare defaults HEAD to the nonexistent 'master').
+git -C "${REPO_PATH}" symbolic-ref HEAD refs/heads/main
+
 echo "==> Repo seeded. Clone with: git clone ${REPO_PATH}"
