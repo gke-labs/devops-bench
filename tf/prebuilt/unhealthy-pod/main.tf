@@ -62,7 +62,17 @@ resource "kubernetes_deployment" "frontend" {
         container {
           image   = "busybox"
           name    = "frontend"
-          command = ["sh", "-c", "echo 'Connecting to DB...'; sleep 2; ping -c 1 db-service; if [ $? -ne 0 ]; then echo 'FATAL: Database connection failed. Host db-service unreachable.'; exit 1; fi; echo 'Connected!'; sleep 3600"]
+          command = ["sh", "-c", "echo 'Frontend running...'; sleep 3600"]
+          
+          env {
+            name = "API_URL"
+            value_from {
+              config_map_key_ref {
+                name = "frontend-config"
+                key  = "api-url"
+              }
+            }
+          }
         }
       }
     }

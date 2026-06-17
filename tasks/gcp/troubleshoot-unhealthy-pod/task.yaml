@@ -11,17 +11,17 @@ prompt: "The `frontend` deployment in namespace {{NAMESPACE}} in cluster {{GKE_C
 expected_output: |
   critical requirements:
 
-  - Confirm the 'frontend' deployment in namespace '{{NAMESPACE}}' is in a failed state (e.g. CrashLoopBackOff).
-  - Inspect the logs of the failing 'frontend' pod and identify the error message: "FATAL: Database connection failed. Host db-service unreachable."
-  - Identify that the root cause is that the application cannot connect to 'db-service' because the service does not exist in the namespace '{{NAMESPACE}}'.
-  - Suggest a mitigation plan to resolve the issue (e.g., deploying the missing 'db-service' or updating the application configuration to point to a valid database).
+  - Confirm the 'frontend' deployment in namespace '{{NAMESPACE}}' is in a failed state (e.g., `CreateContainerConfigError` or `CreateContainerError`).
+  - Identify the root cause by inspecting pod events (e.g., `warning` events indicating `configmap "frontend-config" not found`).
+  - Identify that the logs are unavailable or empty because the container failed to start due to the missing configuration.
+  - Suggest the exact mitigation: Create the missing ConfigMap named `frontend-config` in namespace `{{NAMESPACE}}` with the key `api-url`.
 
   Expected Manifest Generated: N/A, not a manifest generation request.
 documentation:
   - doc_name: "Troubleshooting Applications"
     url: "https://kubernetes.io/docs/tasks/debug/debug-application/"
     constraints:
-      - text: "Inspect pod logs"
-        critical: true
       - text: "Check pod events"
-        critical: false
+        critical: true
+      - text: "Inspect pod status"
+        critical: true
