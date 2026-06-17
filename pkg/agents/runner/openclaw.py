@@ -18,15 +18,14 @@ def _strip_ansi(text):
     return _ANSI_RE.sub("", text)
 
 
-def _oc_model_flag():
-    """Build oc's `--model <provider/model> ` arg from the harness env.
+def _oc_model_id():
+    """Resolve the OpenClaw model id from the harness env (AGENT_MODEL/AGENT_PROVIDER).
 
-    Lets AGENT_MODEL / AGENT_PROVIDER control the OpenClaw agent's model (the same
-    knobs the other agent runners use), instead of OpenClaw silently using its
-    ~/.openclaw/openclaw.json default. Returns a trailing-space-terminated, shell-
-    quoted fragment to splice into the `oc agent` command, or "" when AGENT_MODEL
-    is unset (oc then falls back to its configured default — preserving prior
-    behavior). oc expects a 'provider/model' id, e.g. 'google/gemini-3.1-pro-preview'.
+    `oc agent` has no per-invocation model flag, so the model is selected by running
+    `oc models set <id>` before the agent turn (see `_oc_set_model_cmd`). Returns oc's
+    'provider/model' id (e.g. 'google/gemini-3.1-pro-preview'), or "" when AGENT_MODEL
+    is unset (we then leave oc's configured default untouched — preserving prior
+    behavior).
     """
     model = os.environ.get("AGENT_MODEL", "").strip()
     if not model:
@@ -36,7 +35,20 @@ def _oc_model_flag():
         if provider == "gemini":
             provider = "google"
         model = f"{provider}/{model}"
-    return f"--model {shlex.quote(model)} "
+    return model
+
+
+def _oc_set_model_cmd(oc_bin, sep):
+    """Shell fragment that points oc at AGENT_MODEL before the agent runs, or "".
+
+    `oc models set <id>` persists the default model in oc's config; the harness
+    re-sets it every run, so it stays driven by AGENT_MODEL. `sep` joins it to the
+    following command (e.g. " && " for the SSH chain, "; " for the local one).
+    """
+    model_id = _oc_model_id()
+    if not model_id:
+        return ""
+    return f"{oc_bin} models set {shlex.quote(model_id)}{sep}"
 
 
 def _parse_openclaw_session(session_content):
@@ -99,8 +111,8 @@ def run_openclaw_agent(prompt, context=None, agent_name="main"):
     # We use --local and --agent as discovered by the user
     # We also use single quotes for the prompt, assuming it doesn't contain single quotes.
     # For safety, we should escape single quotes if possible, but let's keep it simple first.
-    model_flag = _oc_model_flag()
-    remote_command = f"rm -rf ~/.openclaw/agents/operator/sessions/* && export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && source \"$NVM_DIR/nvm.sh\" && ~/bin/oc --log-level debug agent --local {model_flag}--agent {agent_name} -m '{prompt}'"
+    set_model = _oc_set_model_cmd("~/bin/oc", " && ")
+    remote_command = f"rm -rf ~/.openclaw/agents/operator/sessions/* && export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && source \"$NVM_DIR/nvm.sh\" && {set_model}~/bin/oc --log-level debug agent --local --agent {agent_name} -m '{prompt}'"
 
     ssh_cmd = [
         "ssh",
@@ -177,8 +189,9 @@ def run_openclaw_agent_local(prompt, context=None, agent_name="operator"):
     local_command = (
         f"rm -rf {shlex.quote(sessions_glob)}/* 2>/dev/null; "
         "export NVM_DIR=\"$HOME/.nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; "
+        f"{_oc_set_model_cmd(shlex.quote(oc_bin), '; ')}"
         f"{shlex.quote(oc_bin)} --log-level debug agent --local "
-        f"{_oc_model_flag()}--agent {shlex.quote(agent_name)} -m {shlex.quote(prompt)}"
+        f"--agent {shlex.quote(agent_name)} -m {shlex.quote(prompt)}"
     )
 
     start_time = time.time()
