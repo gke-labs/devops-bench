@@ -21,7 +21,7 @@ Runs on **kind** (local, on the runner VM) — no cloud dependency.
   discovers the violations by scanning (`kubectl get policyreport,clusterpolicyreport -A`).
 - **The agent** scans, removes `privileged: true` and adds resource limits in the repo manifests,
   commits/pushes, applies them, verifies the reports go clean, ideally flips the policies to
-  enforce to prevent regressions, and writes `compliance-report.md`.
+  enforce to prevent regressions, and writes `report.md`.
 
 ## Setup (run on the GCE VM)
 
@@ -84,7 +84,7 @@ limitless workloads (`web`, `worker`), but **not** for the compliant `api`.
 
 `results/run_<timestamp>/`:
 - `results.json` — per-check scores + the agent's full trajectory (scan + remediation + commit).
-- `generated_files/compliance-report.md` — the report the agent wrote.
+- `generated_files/report.md` — the report the agent wrote.
 
 ## Troubleshooting
 

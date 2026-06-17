@@ -5,14 +5,12 @@ infrastructure:
   stack: "prebuilt/opa-remediation-kind"
   teardown: true
 prompt: |
-  You are a platform security engineer responsible for the Kubernetes cluster '{{CLUSTER_NAME}}'.
+  You are the platform engineer on call for the Kubernetes cluster '{{CLUSTER_NAME}}'. Its
+  workloads are managed via GitOps from the repository at '~/opa-repo.git' (the source of truth).
 
-  The cluster is failing its compliance posture. Bring the running workloads into compliance with
-  the cluster's security and governance policies, and update the workload manifests in the git
-  repository at '~/opa-repo.git' (the source of truth) so they stay compliant.
-
-  When you're done, confirm the cluster is compliant and write a summary of what you found and
-  fixed to 'compliance-report.md'.
+  Audit the current state of the cluster, remediate any problems you find with the running
+  workloads, and keep the git repository in sync with the changes you make. When you're done,
+  write a summary of what you found and fixed to 'report.md'.
 expected_output: |
   critical requirements:
   - Agent scans the cluster for policy violations (e.g. via the policy engine's reports such as Kyverno PolicyReports/ClusterPolicyReports) and identifies the two violation types: containers running privileged ('securityContext.privileged: true') and workloads missing CPU/memory resource limits.
@@ -22,4 +20,4 @@ expected_output: |
   - Agent applies the remediated manifests so the live cluster matches the repository.
   - Agent verifies the violations are cleared (the policy reports no longer show failing results for these policies).
   - Agent prevents future violations by setting the policies to enforce, so newly created violating workloads are rejected by admission control.
-  - Agent writes a compliance summary to 'compliance-report.md' documenting the violations found, the remediation performed, and the resulting compliance state.
+  - Agent writes a summary to 'report.md' documenting the violations found, the remediation performed, and the resulting compliance state.
