@@ -18,6 +18,27 @@ def _strip_ansi(text):
     return _ANSI_RE.sub("", text)
 
 
+def _oc_model_flag():
+    """Build oc's `--model <provider/model> ` arg from the harness env.
+
+    Lets AGENT_MODEL / AGENT_PROVIDER control the OpenClaw agent's model (the same
+    knobs the other agent runners use), instead of OpenClaw silently using its
+    ~/.openclaw/openclaw.json default. Returns a trailing-space-terminated, shell-
+    quoted fragment to splice into the `oc agent` command, or "" when AGENT_MODEL
+    is unset (oc then falls back to its configured default — preserving prior
+    behavior). oc expects a 'provider/model' id, e.g. 'google/gemini-3.1-pro-preview'.
+    """
+    model = os.environ.get("AGENT_MODEL", "").strip()
+    if not model:
+        return ""
+    if "/" not in model:  # allow AGENT_MODEL to be a full oc id (provider/model)
+        provider = (os.environ.get("AGENT_PROVIDER") or "google").strip().lower()
+        if provider == "gemini":
+            provider = "google"
+        model = f"{provider}/{model}"
+    return f"--model {shlex.quote(model)} "
+
+
 def _parse_openclaw_session(session_content):
     """Parses an OpenClaw session JSONL into (tokens, trajectory)."""
     tokens = {}
@@ -78,7 +99,8 @@ def run_openclaw_agent(prompt, context=None, agent_name="main"):
     # We use --local and --agent as discovered by the user
     # We also use single quotes for the prompt, assuming it doesn't contain single quotes.
     # For safety, we should escape single quotes if possible, but let's keep it simple first.
-    remote_command = f"rm -rf ~/.openclaw/agents/operator/sessions/* && export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && source \"$NVM_DIR/nvm.sh\" && ~/bin/oc --log-level debug agent --local --agent {agent_name} -m '{prompt}'"
+    model_flag = _oc_model_flag()
+    remote_command = f"rm -rf ~/.openclaw/agents/operator/sessions/* && export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && source \"$NVM_DIR/nvm.sh\" && ~/bin/oc --log-level debug agent --local {model_flag}--agent {agent_name} -m '{prompt}'"
 
     ssh_cmd = [
         "ssh",
@@ -156,7 +178,7 @@ def run_openclaw_agent_local(prompt, context=None, agent_name="operator"):
         f"rm -rf {shlex.quote(sessions_glob)}/* 2>/dev/null; "
         "export NVM_DIR=\"$HOME/.nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; "
         f"{shlex.quote(oc_bin)} --log-level debug agent --local "
-        f"--agent {shlex.quote(agent_name)} -m {shlex.quote(prompt)}"
+        f"{_oc_model_flag()}--agent {shlex.quote(agent_name)} -m {shlex.quote(prompt)}"
     )
 
     start_time = time.time()
