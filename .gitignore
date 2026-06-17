@@ -21,3 +21,10 @@ tofu
 
 # For the devs using macOS
 .DS_Store
+
+# Local worktrees for isolated workspaces
+.worktrees/
+.claude/worktrees
+
+# Local settings
+settings.local.json
