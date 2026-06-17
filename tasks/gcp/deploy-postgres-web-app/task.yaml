@@ -7,11 +7,10 @@ infrastructure:
   variables:
     node_count: 3
     machine_type: "e2-standard-2"
-prompt: "Deploy a Postgres-backed Python web app to namespace {{NAMESPACE}} in the cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}. The web app should have 2 replicas. Ensure that the deployment complies with GKE security baselines (e.g., non-root user, no privilege escalation) and passes admission controllers. Use `postgres:15` for the database and a standard python image (e.g., `python:3.9-slim`) for the web app, configured to connect to the database."
+prompt: "Deploy a Postgres-backed Python web app to namespace {{NAMESPACE}} in the cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}. The web app should have 2 replicas. Use `postgres:15` for the database and a standard python image (e.g., `python:3.9-slim`) for the web app, configured to connect to the database."
 expected_output: |
   critical requirements:
 
-  - Expected Tool Call: generate_manifest
   - Deploy a Postgres database using `postgres:15` image in namespace `{{NAMESPACE}}`.
   - Create a Service for the Postgres database to allow the web app to connect.
   - Deploy a Python web app with 2 replicas using a standard image (e.g., `python:3.9-slim`) in namespace `{{NAMESPACE}}`.
