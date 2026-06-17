@@ -16,7 +16,14 @@ expected_output: |
   - Identify that the logs are unavailable or empty because the container failed to start due to the missing configuration.
   - Suggest the exact mitigation: Create the missing ConfigMap named `frontend-config` in namespace `{{NAMESPACE}}` with the key `api-url`.
 
-  Expected Manifest Generated: N/A, not a manifest generation request.
+  Expected Manifest Generated:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: frontend-config
+    namespace: {{NAMESPACE}}
+  data:
+    api-url: "http://mock-api"
 documentation:
   - doc_name: "Troubleshooting Applications"
     url: "https://kubernetes.io/docs/tasks/debug/debug-application/"
