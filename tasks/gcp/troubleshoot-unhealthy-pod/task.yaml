@@ -7,7 +7,7 @@ infrastructure:
   variables:
     node_count: 3
     machine_type: "e2-standard-2"
-prompt: "The `frontend` deployment in namespace {{NAMESPACE}} in cluster {{GKE_CLUSTER_NAME}} is failing. Diagnose the issue, identify the root cause by inspecting logs and events, and suggest a mitigation plan."
+prompt: "The `frontend` deployment in namespace {{NAMESPACE}} in cluster {{GKE_CLUSTER_NAME}} is failing. Diagnose the issue and suggest a mitigation."
 expected_output: |
   critical requirements:
 
