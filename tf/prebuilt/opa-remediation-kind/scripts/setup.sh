@@ -39,6 +39,18 @@ kubectl apply -f "${MANIFESTS_DIR}/policies/"
 echo "==> Deploying team workloads (some violate the policies)..."
 kubectl apply -f "${MANIFESTS_DIR}/workloads/"
 
+echo "==> Waiting for Kyverno's background scan to populate PolicyReports..."
+# Ensures the compliance signal exists before the agent starts, so it can't scan
+# an empty report set and wrongly conclude the cluster is already compliant.
+for _ in $(seq 1 36); do
+  if kubectl get policyreport -A -o json 2>/dev/null \
+       | python3 -c 'import sys,json; sys.exit(0 if any(r.get("result")=="fail" for it in json.load(sys.stdin).get("items",[]) for r in it.get("results",[])) else 1)'; then
+    echo "    PolicyReports populated with violations."
+    break
+  fi
+  sleep 5
+done
+
 echo "==> Seeding GitOps repo at ${REPO_PATH}..."
 rm -rf "${REPO_PATH}"
 git init --bare "${REPO_PATH}"
