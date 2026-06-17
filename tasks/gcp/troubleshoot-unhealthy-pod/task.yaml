@@ -1,0 +1,27 @@
+task_id: 14
+name: "troubleshoot-unhealthy-pod"
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/unhealthy-pod"
+  teardown: true
+  variables:
+    node_count: 3
+    machine_type: "e2-standard-2"
+prompt: "The `frontend` deployment in namespace {{NAMESPACE}} in cluster {{GKE_CLUSTER_NAME}} is failing. Diagnose the issue, identify the root cause by inspecting logs and events, and suggest a mitigation plan."
+expected_output: |
+  critical requirements:
+
+  - Confirm the 'frontend' deployment in namespace '{{NAMESPACE}}' is in a failed state (e.g. CrashLoopBackOff).
+  - Inspect the logs of the failing 'frontend' pod and identify the error message: "FATAL: Database connection failed. Host db-service unreachable."
+  - Identify that the root cause is that the application cannot connect to 'db-service' because the service does not exist in the namespace '{{NAMESPACE}}'.
+  - Suggest a mitigation plan to resolve the issue (e.g., deploying the missing 'db-service' or updating the application configuration to point to a valid database).
+
+  Expected Manifest Generated: N/A, not a manifest generation request.
+documentation:
+  - doc_name: "Troubleshooting Applications"
+    url: "https://kubernetes.io/docs/tasks/debug/debug-application/"
+    constraints:
+      - text: "Inspect pod logs"
+        critical: true
+      - text: "Check pod events"
+        critical: false
