@@ -1,0 +1,98 @@
+variable "project_id" {
+  type        = string
+  description = "GCP Project ID."
+}
+
+variable "cluster_name" {
+  type        = string
+  description = <<-EOT
+    Base name for the stack. The two regional GKE clusters are named
+    "<cluster_name>-east" (primary) and "<cluster_name>-west" (standby); the global
+    LB / Cloud SQL resources derive their names from it too. Supplied by the harness
+    (GKE_CLUSTER_NAME); the "cluster_name" output returns the east cluster so the
+    harness credentials it.
+  EOT
+}
+
+# Declared so `tofu apply -var location=...` from the harness's GCP variable resolver
+# does not fail; this stack pins its own regions/zones (see below) and ignores it.
+variable "location" {
+  type        = string
+  description = "Unused. Present only to accept the harness's standard -var location."
+  default     = "us-central1-a"
+}
+
+variable "namespace" {
+  type        = string
+  description = "Kubernetes namespace the storefront app runs in (both clusters)."
+  default     = "storefront"
+}
+
+variable "zone_primary" {
+  type        = string
+  description = "Zone for the primary (east) GKE cluster."
+  default     = "us-east1-b"
+}
+
+variable "zone_standby" {
+  type        = string
+  description = "Zone for the standby (west) GKE cluster."
+  default     = "us-west1-b"
+}
+
+variable "region_primary" {
+  type        = string
+  description = "Region for the primary static IP and the Cloud SQL primary."
+  default     = "us-east1"
+}
+
+variable "region_standby" {
+  type        = string
+  description = "Region for the standby static IP and the Cloud SQL read replica."
+  default     = "us-west1"
+}
+
+variable "node_count_primary" {
+  type        = number
+  description = "Initial node count for the primary (east) cluster."
+  default     = 1
+}
+
+variable "node_count_standby" {
+  type        = number
+  description = <<-EOT
+    Initial node count for the standby (west) cluster. Kept small on purpose so the
+    agent has to scale it up to absorb the redirected production load.
+  EOT
+  default     = 1
+}
+
+variable "machine_type" {
+  type        = string
+  description = "Machine type for the GKE nodes in both clusters."
+  default     = "e2-standard-2"
+}
+
+variable "db_tier" {
+  type        = string
+  description = <<-EOT
+    Cloud SQL tier for the primary and replica. Must be a dedicated-core tier so the
+    cross-region read replica is supported (shared-core db-f1-micro/g1-small are not).
+  EOT
+  default     = "db-custom-1-3840"
+}
+
+variable "repo_path" {
+  type        = string
+  description = "Path to the GitOps bare repo seeded with the app's desired state."
+  default     = "~/app-repo.git"
+}
+
+variable "agent_service_account" {
+  type        = string
+  description = <<-EOT
+    Service account email the agent runs as. Granted roles/container.admin (project
+    wide, so it reaches both clusters). Defaults to the OpenClaw VM SA.
+  EOT
+  default     = ""
+}

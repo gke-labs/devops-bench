@@ -1,0 +1,28 @@
+task_id: 6
+name: "multi-region-failover"
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/multi-region-failover"
+  teardown: true
+prompt: |
+  You are the platform engineer on call for the "storefront" web service in project
+  "{{GCP_PROJECT_ID}}". Storefront is a user-facing application that runs on the
+  project's GKE infrastructure (Kubernetes namespace "{{NAMESPACE}}") and is served to
+  users through a global HTTP load balancer. Its desired state is tracked in the git
+  repository at "~/app-repo.git" (the source of truth).
+
+  Monitoring is paging: users are reporting that the storefront is returning errors.
+  Investigate the incident, restore the service to a healthy state for all users as
+  quickly as possible, and leave it in a resilient configuration. When the incident is
+  resolved, write a post-mortem to "incident-report.md" describing what happened, the
+  actions you took, and any follow-ups.
+expected_output: |
+  critical requirements:
+  - Agent discovers the service topology: a global HTTP load balancer fronting two regional GKE clusters (a primary and a standby), and identifies that the global endpoint is returning 5xx errors to users.
+  - Agent localizes the failure to the primary region (its nodes/workloads are unavailable so its frontend cannot serve traffic), rather than assuming a generic application bug.
+  - Before shifting traffic, Agent verifies the standby region is a safe failover target: it checks the standby's health/capacity AND confirms cross-region data consistency by inspecting Cloud SQL replication state (the read replica is caught up / replication lag is low).
+  - Agent redirects user traffic to the healthy standby region by updating the global load balancer's URL map default route (primary -> standby), so the global endpoint serves 2xx responses again.
+  - Agent scales up the standby region's capacity (increases its GKE node pool) so it can absorb the redirected production load.
+  - During post-failover validation, Agent detects that the standby region is missing application configuration the primary had (the "app-config" ConfigMap and "app-secret" Secret) and reconciles it by applying the missing objects from the GitOps repo "~/app-repo.git".
+  - Agent confirms the recovery: the global endpoint serves healthy 2xx responses and the standby workloads are running with the reconciled configuration.
+  - Agent writes "incident-report.md" containing a timeline of the incident, the root cause (a primary-region outage), the remediation actions it took (failover, scale-up, config reconciliation), and follow-up recommendations.
