@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from devops_bench.core import ClusterInfo, ConfigError, get_env, get_logger
+from devops_bench.core import ClusterInfo, ConfigError, get_logger
 from devops_bench.core.subprocess import run
 from devops_bench.deployers.base import Deployer
+
+if TYPE_CHECKING:
+    from devops_bench.providers import Provider
 
 __all__ = ["TFDeployer"]
 
@@ -56,20 +59,32 @@ def _format_var(value: Any) -> str:
 class TFDeployer(Deployer):
     """Deployer that provisions a cluster via an OpenTofu stack.
 
-    Honors the ``TF_DATA_DIR`` environment variable so OpenTofu state can be
-    redirected for idempotent runs.
+    A pure provisioning engine: it runs ``tofu`` and delegates all cloud-specific
+    behavior (account credentials, cluster credentials, project resolution) to
+    its :class:`~devops_bench.providers.Provider`. Honors the ``TF_DATA_DIR``
+    environment variable so OpenTofu state can be redirected for idempotent runs.
+
+    Path resolution: a relative ``tf_dir`` is resolved under ``<repo_root>/tf``;
+    an absolute path (``~`` is expanded) is used as-is, so stacks may live outside
+    the repository.
 
     Args:
-        tf_dir: Stack directory; an absolute path or a name resolved under
-            ``<repo_root>/tf``.
+        tf_dir: Stack directory; an absolute/``~`` path used as-is, or a name
+            resolved under ``<repo_root>/tf``.
+        provider: Cloud provider supplying credentials and cluster details.
         variables: OpenTofu input variables passed as ``-var`` flags.
 
     Raises:
         ConfigError: If the stack directory does not exist.
     """
 
-    def __init__(self, tf_dir: str, variables: dict[str, Any] | None = None) -> None:
-        tf_path = Path(tf_dir)
+    def __init__(
+        self,
+        tf_dir: str,
+        provider: Provider,
+        variables: dict[str, Any] | None = None,
+    ) -> None:
+        tf_path = Path(tf_dir).expanduser()
         if tf_path.is_absolute():
             if not tf_path.exists():
                 raise ConfigError(f"Absolute TF directory not found: {tf_dir}")
@@ -80,6 +95,7 @@ class TFDeployer(Deployer):
                 raise ConfigError(f"TF stack not found in repo: {tf_dir} (checked {repo_tf_path})")
             self.tf_dir = str(repo_tf_path)
 
+        self.provider = provider
         self.variables = variables or {}
 
     def _var_flags(self) -> list[str]:
@@ -93,6 +109,7 @@ class TFDeployer(Deployer):
         if not tf_path.exists():
             raise ConfigError(f"TF directory not found: {self.tf_dir}")
 
+        self.provider.ensure_account_credentials()
         run(["tofu", "init", "-input=false"], cwd=self.tf_dir, capture=False)
 
         cmd = ["tofu", "apply", "-auto-approve", "-input=false", *self._var_flags()]
@@ -104,6 +121,7 @@ class TFDeployer(Deployer):
             _log.warning("TF directory %s not found. Skipping teardown.", self.tf_dir)
             return
 
+        self.provider.ensure_account_credentials()
         run(["tofu", "init", "-input=false"], cwd=self.tf_dir, capture=False)
 
         cmd = ["tofu", "destroy", "-auto-approve", "-input=false", *self._var_flags()]
@@ -112,15 +130,14 @@ class TFDeployer(Deployer):
     def get_cluster_info(self) -> ClusterInfo:
         """Read cluster details from the stack outputs.
 
-        For non-local clusters this also configures ``kubectl`` credentials via
-        ``gcloud``.
+        Parses the stack outputs (no side effects) and delegates project
+        resolution and kubeconfig setup to the provider.
 
         Returns:
             The provisioned cluster's :class:`~devops_bench.core.ClusterInfo`.
 
         Raises:
-            ConfigError: If required outputs are missing, or a non-local cluster
-                has no resolvable project.
+            ConfigError: If required outputs are missing or unparseable.
         """
         run(["tofu", "init", "-input=false"], cwd=self.tf_dir, capture=False)
 
@@ -138,32 +155,4 @@ class TFDeployer(Deployer):
         if not location:
             raise ConfigError("Failed to retrieve 'cluster_location' from TF outputs.")
 
-        if location == "local":
-            project = self.variables.get("project_id") or get_env("GCP_PROJECT_ID") or "local-kind"
-            return ClusterInfo.from_dict(
-                {"name": cluster_name, "location": location, "project": project}
-            )
-
-        project = self.variables.get("project_id") or get_env("GCP_PROJECT_ID")
-        if not project:
-            raise ConfigError("Project ID not found in variables or environment (GCP_PROJECT_ID).")
-
-        _log.info("Configuring kubectl for cluster: %s in %s...", cluster_name, location)
-        run(
-            [
-                "gcloud",
-                "container",
-                "clusters",
-                "get-credentials",
-                cluster_name,
-                "--location",
-                location,
-                "--project",
-                project,
-            ],
-            capture=False,
-        )
-
-        return ClusterInfo.from_dict(
-            {"name": cluster_name, "location": location, "project": project}
-        )
+        return self.provider.ensure_cluster_credentials(cluster_name, location, self.variables)

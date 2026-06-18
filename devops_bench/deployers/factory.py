@@ -16,25 +16,48 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
-from devops_bench.core import ConfigError, Registry, get_bool, get_env
+from devops_bench.core import ConfigError, get_bool, get_env
 from devops_bench.deployers.base import Deployer
-from devops_bench.deployers.gcp import resolve_variables as resolve_gcp_vars
-from devops_bench.deployers.kind import resolve_variables as resolve_kind_vars
+from devops_bench.deployers.noop import NoOpDeployer
+from devops_bench.deployers.tofu import TFDeployer
+from devops_bench.providers import PROVIDERS, ResolveContext
 
-__all__ = ["DEPLOYERS", "get_deployer"]
+__all__ = ["get_deployer"]
 
 _DEFAULT_LOCATION = "us-central1-a"
 _DEFAULT_STACK = "prebuilt/kind"
 
-# Per-provider OpenTofu variable resolvers, keyed by deduced provider name. The
-# resolver modules are lightweight, so they are imported and registered eagerly
-# at module load to keep registration race-free under concurrent callers.
-DEPLOYERS: Registry[Callable[..., dict[str, Any]]] = Registry("deployers")
-DEPLOYERS.register("gcp")(resolve_gcp_vars)
-DEPLOYERS.register("kind")(resolve_kind_vars)
+
+def _select_provider(infra_config: dict[str, Any], stack: str) -> str:
+    """Determine the provider name for a tofu stack.
+
+    Precedence: explicit ``provider`` config key → ``CLOUD_PROVIDER`` env →
+    substring deduction from the stack name. Deduction is only applied to
+    in-repo (relative) stacks; an out-of-repo (absolute or ``~``) stack must name
+    its provider explicitly rather than be guessed at.
+
+    Args:
+        infra_config: Task infrastructure config.
+        stack: Resolved stack name or path.
+
+    Returns:
+        The selected provider name.
+
+    Raises:
+        ConfigError: If an absolute/external stack has no explicit provider.
+    """
+    explicit = (infra_config.get("provider") or get_env("CLOUD_PROVIDER", "") or "").strip().lower()
+    if explicit:
+        return explicit
+    if Path(stack).expanduser().is_absolute():
+        raise ConfigError(
+            f"external stack {stack!r} requires an explicit provider; set 'provider' in task "
+            "config or the CLOUD_PROVIDER env var (e.g. 'gcp' or 'kind')"
+        )
+    return "kind" if "kind" in stack else "gcp"
 
 
 def get_deployer(
@@ -46,14 +69,19 @@ def get_deployer(
     """Instantiate the deployer selected by task config and environment.
 
     OpenTofu (``tofu``) is the sole provisioning engine; the provider (``gcp`` or
-    ``kind``) only selects which variable resolver fills the stack defaults. Set
-    ``BENCH_NO_INFRA=true`` or ``deployer: noop`` to skip provisioning entirely;
-    ``BENCH_NO_INFRA`` takes precedence over any task config. Location precedence:
-    ``global_location`` arg → ``GCP_LOCATION`` env → ``us-central1-a``.
+    ``kind``) only supplies credentials and stack variable defaults. Two layers
+    can skip provisioning, with the env layer winning:
+
+    * ``deployer: noop`` (config) *declares* a task that needs no infrastructure.
+    * ``BENCH_NO_INFRA=true`` (env) *overrides* any config to skip infra for a
+      run (local smoke tests, CI plumbing, running against existing clusters).
+
+    Location precedence: ``global_location`` arg → ``GCP_LOCATION`` env →
+    ``us-central1-a``.
 
     Args:
-        infra_config: Task infrastructure config (``deployer``, ``stack``,
-            ``variables``).
+        infra_config: Task infrastructure config (``deployer``, ``provider``,
+            ``stack``, ``variables``).
         global_project_id: Default project ID.
         global_cluster_name: Default cluster name.
         global_location: Explicit location override.
@@ -62,15 +90,13 @@ def get_deployer(
         A configured :class:`~devops_bench.deployers.base.Deployer`.
 
     Raises:
-        ConfigError: If ``infra_config["deployer"]`` is set to anything other
-            than ``tofu`` or ``noop``.
+        ConfigError: If ``infra_config["deployer"]`` is anything other than
+            ``tofu`` or ``noop``, if an external stack names no provider, or if
+            the selected provider is unknown.
     """
     deployer_type = (infra_config.get("deployer") or "").lower()
 
     if get_bool("BENCH_NO_INFRA") or deployer_type == "noop":
-        # Imported lazily to keep package import light.
-        from devops_bench.deployers.noop import NoOpDeployer
-
         return NoOpDeployer(cluster_name=global_cluster_name, project_id=global_project_id)
 
     if deployer_type and deployer_type != "tofu":
@@ -79,17 +105,21 @@ def get_deployer(
             "BENCH_NO_INFRA=true to skip infra"
         )
 
-    # The concrete engine is imported here so importing this module stays light.
-    from devops_bench.deployers.tofu import TFDeployer
-
     location = global_location or get_env("GCP_LOCATION", _DEFAULT_LOCATION)
     stack = infra_config.get("stack") or _DEFAULT_STACK
-    variables = infra_config.get("variables", {})
+    custom_variables = infra_config.get("variables", {})
 
-    cloud_provider = (get_env("CLOUD_PROVIDER", "") or "").lower()
-    provider = cloud_provider or ("kind" if "kind" in stack else "gcp")
-    if provider in DEPLOYERS:
-        resolver = DEPLOYERS.get(provider)
-        variables = resolver(stack, variables, global_project_id, global_cluster_name, location)
+    provider_name = _select_provider(infra_config, stack)
+    if provider_name not in PROVIDERS:
+        raise ConfigError(f"unknown provider {provider_name!r}; known: {sorted(PROVIDERS.keys())}")
+    provider = PROVIDERS.get(provider_name)()
 
-    return TFDeployer(tf_dir=stack, variables=variables)
+    ctx = ResolveContext(
+        stack=stack,
+        project_id=global_project_id,
+        cluster_name=global_cluster_name,
+        location=location,
+    )
+    variables = provider.resolve_variables(ctx, custom_variables)
+
+    return TFDeployer(tf_dir=stack, provider=provider, variables=variables)

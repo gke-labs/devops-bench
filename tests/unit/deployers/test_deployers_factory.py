@@ -148,3 +148,69 @@ def test_get_deployer_no_infra_env_precedence(mocker, base_config):
     assert isinstance(deployer, NoOpDeployer)
     assert deployer.cluster_name == base_config["cluster_name"]
     assert deployer.project_id == base_config["project_id"]
+
+
+def test_get_deployer_explicit_provider_overrides_deduction(mocker, base_config):
+    # A 'kind'-looking stack name is forced to the gcp provider via config.
+    mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
+    deployer = get_deployer(
+        {"deployer": "tofu", "stack": "prebuilt/kind", "provider": "gcp"},
+        base_config["project_id"],
+        base_config["cluster_name"],
+        base_config["location"],
+    )
+    assert isinstance(deployer, TFDeployer)
+    # GCP variables (project_id/location), not the kind kubeconfig defaults.
+    assert deployer.variables["project_id"] == base_config["project_id"]
+    assert deployer.variables["location"] == base_config["location"]
+    assert "kubeconfig_path" not in deployer.variables
+
+
+def test_get_deployer_cloud_provider_env(mocker, base_config):
+    mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
+    mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp"})
+    deployer = get_deployer(
+        {"deployer": "tofu", "stack": "prebuilt/kind"},
+        base_config["project_id"],
+        base_config["cluster_name"],
+        base_config["location"],
+    )
+    assert isinstance(deployer, TFDeployer)
+    assert deployer.variables["project_id"] == base_config["project_id"]
+
+
+def test_get_deployer_unknown_provider_raises(mocker, base_config):
+    mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
+    with pytest.raises(ConfigError, match="unknown provider"):
+        get_deployer(
+            {"deployer": "tofu", "stack": "custom/stack", "provider": "aws"},
+            base_config["project_id"],
+            base_config["cluster_name"],
+            base_config["location"],
+        )
+
+
+def test_get_deployer_absolute_stack_requires_explicit_provider(tmp_path, base_config):
+    # An out-of-repo stack must not have its provider guessed from the path.
+    abs_stack = tmp_path / "ext" / "stack"
+    abs_stack.mkdir(parents=True)
+    with pytest.raises(ConfigError, match="requires an explicit provider"):
+        get_deployer(
+            {"deployer": "tofu", "stack": str(abs_stack)},
+            base_config["project_id"],
+            base_config["cluster_name"],
+            base_config["location"],
+        )
+
+
+def test_get_deployer_absolute_stack_with_provider(tmp_path, base_config):
+    abs_stack = tmp_path / "ext" / "stack"
+    abs_stack.mkdir(parents=True)
+    deployer = get_deployer(
+        {"deployer": "tofu", "stack": str(abs_stack), "provider": "gcp"},
+        base_config["project_id"],
+        base_config["cluster_name"],
+        base_config["location"],
+    )
+    assert isinstance(deployer, TFDeployer)
+    assert deployer.tf_dir == str(abs_stack)
