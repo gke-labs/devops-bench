@@ -12,6 +12,29 @@ PROVIDER_RESOLVERS = {
     "kind": resolve_kind_vars,
 }
 
+
+class NoOpDeployer(Deployer):
+    """Pass-through deployer for local testing without infrastructure provisioning."""
+
+    def __init__(self, cluster_name: str, project_id: str):
+        self._cluster_name = cluster_name
+        self._project_id = project_id
+
+    def up(self) -> None:
+        print("[NoOpDeployer] Skipping infrastructure provisioning (BENCH_NO_INFRA=true)")
+
+    def down(self) -> None:
+        print("[NoOpDeployer] Skipping infrastructure teardown (BENCH_NO_INFRA=true)")
+
+    def get_cluster_info(self) -> Dict[str, Any]:
+        return {
+            "name": self._cluster_name,
+            "location": "local",
+            "project": self._project_id,
+            "kubeconfig_path": os.environ.get("KUBECONFIG", ""),
+        }
+
+
 def get_deployer(
     infra_config: Dict[str, Any],
     global_project_id: str,
@@ -31,6 +54,9 @@ def get_deployer(
             deployer_type = cloud_provider
         else:
             deployer_type = "tofu"
+
+    if os.environ.get("BENCH_NO_INFRA", "false").lower() == "true":
+        return NoOpDeployer(cluster_name=global_cluster_name, project_id=global_project_id)
 
     # Resolve Location with strict precedence: argument then GCP_LOCATION env var
     location = global_location or os.environ.get("GCP_LOCATION", "us-central1-a")
