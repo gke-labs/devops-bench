@@ -83,10 +83,17 @@ done
 | `roles/serviceusage.serviceUsageAdmin` | Enable/verify APIs from within the provisioner. |
 
 > [!WARNING]
-> **`container.admin` teardown-clobber.** The GKE module manages the agent SA's project
-> `roles/container.admin` binding, so `tofu destroy` **removes** it (it's the same IAM entry the
-> grant loop adds). Either re-run the grant loop after each teardown, or grant the VM SA a durable
-> role (e.g. `roles/owner`) on a dev project to avoid the dance.
+> **`container.admin` teardown-clobber — grant `roles/owner` on a dev project.** The GKE module
+> manages the agent SA's project `roles/container.admin` binding, so **every** `tofu destroy`
+> removes it (it's the same IAM entry the grant loop adds). Worse, destroy can remove it *before*
+> the cluster/node-pool deletions finish, leaving them stuck on `container.operations.get` 403s and
+> requiring a re-grant + re-destroy. The clean fix on a dev project is to grant the VM SA a durable
+> role the module never touches — `roles/owner` supersets all the roles above, so you can skip the
+> grant loop entirely and no teardown will ever clobber it:
+> ```bash
+> gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+>   --member="serviceAccount:${VM_SA}" --role=roles/owner --condition=None
+> ```
 
 ## Setup & Running the Benchmark
 
