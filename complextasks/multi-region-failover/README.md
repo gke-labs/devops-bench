@@ -20,13 +20,17 @@ clusters, and a **cross-region Cloud SQL** primary/replica pair.
     backend services (`be-east`/`be-west`) → a **URL map whose default route is pinned to east**
     → target proxy → global forwarding rule on a global anycast IP;
   - **Cloud SQL** MySQL **primary** in `us-east1` + a **cross-region read replica** in `us-west1`
-    (the datastore whose replication health the agent checks before failover).
+    (the datastore whose replication health the agent checks before failover). The instance names
+    are surfaced in `app-config` (`DB_PRIMARY_INSTANCE`/`DB_REPLICA_INSTANCE`) so the app's
+    dependency on a cross-region DB is discoverable from the desired state.
 - **The outage is injected outside the cluster.** During `tofu apply`, `scripts/setup.sh` deploys
-  the `storefront` app (nginx `frontend` → `backend`) to both regions, then **scales the east node
-  pool to 0** — a regional capacity loss. Because the URL map still defaults to the east backend,
-  the global endpoint returns **5xx**. There is no automatic cross-backend failover, and the
-  outage can't be undone by re-applying app manifests, so the correct recovery is to fail traffic
-  over to the healthy **west** region. Nothing in either cluster describes the outage or the fix.
+  the `storefront` app (nginx `frontend` → `backend`) to both regions, then **deletes the east
+  node pool** — a regional capacity loss. Because the URL map still defaults to the east backend,
+  the global endpoint returns **5xx**. There is no automatic cross-backend failover, and — since
+  there is no node pool to scale back — the outage **cannot be repaired in place** by re-applying
+  manifests; the only path to restore users is to fail traffic over to the healthy **west** region.
+  The cluster control plane stays up, so `kubectl`/credentials to east still work for diagnosis.
+  Nothing in either cluster describes the outage or the fix.
 - **Config drift is pre-seeded.** West is deployed **without** the `app-config` ConfigMap and
   `app-secret` Secret that east has (they are marked `optional`, so west still runs). Post-failover
   validation is expected to surface this drift; the agent reconciles it from the GitOps repo.
@@ -172,7 +176,7 @@ tofu init && tofu apply -auto-approve -var project_id="$GCP_PROJECT_ID" -var clu
 LB_IP=$(tofu output -raw lb_ip)
 
 curl -s -o /dev/null -w '%{http_code}\n' "http://$LB_IP/"   # 5xx — primary region is down
-kubectl --context east get nodes                            # 0 nodes (drained)
+kubectl --context east get nodes                            # no nodes (node pool deleted)
 kubectl --context west get pods -n storefront               # frontend + backend Running
 kubectl --context east get cm,secret -n storefront          # app-config + app-secret present
 kubectl --context west get cm,secret -n storefront          # app-config + app-secret MISSING (drift)
@@ -211,6 +215,11 @@ tofu destroy -auto-approve -var project_id="$GCP_PROJECT_ID" -var cluster_name=s
   `lag > 500ms → soft-drain` branch is not exercised (kept deterministic).
 - **No real Slack** — the post-mortem is written to `incident-report.md` only.
 - **Golden signals** = global-endpoint health + error checks (no full dashboards).
+- **Forcing the DR path.** The primary outage is injected by *deleting* the east node pool (not
+  scaling it to 0). An earlier scale-to-0 version let agents sidestep failover by simply resizing
+  the pool back; deleting it means there is nothing to resize, so failover to west is the only
+  in-budget recovery. (A determined agent could still recreate a node pool, but that is a far less
+  natural move than re-pointing the URL map.)
 
 The faithful 5-step DR core is exercised: detect → verify-safe (capacity + replication) → redirect
 (URL map) → scale standby → validate + reconcile config drift → post-mortem.

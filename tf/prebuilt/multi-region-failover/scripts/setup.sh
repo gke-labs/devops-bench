@@ -8,8 +8,11 @@
 #   2. deploys the storefront app (frontend + backend) to both regions;
 #   3. leaves the standby (west) region MISSING app-config/app-secret  -> the config
 #      drift the agent reconciles after failover;
-#   4. injects the regional outage by scaling the primary (east) node pool to 0, so the
-#      global endpoint (URL map default -> east) serves 5xx until the agent re-points it;
+#   4. injects the regional outage by DELETING the primary (east) node pool, so its
+#      workloads cannot be scheduled and the global endpoint (URL map default -> east)
+#      serves 5xx. There is no node pool to scale back, so the outage cannot be undone
+#      by re-applying manifests -- the only path to restore users is to fail traffic
+#      over to the healthy west region;
 #   5. seeds the GitOps bare repo with the app's desired state (incl. app-config/secret).
 #
 # Nothing left in either cluster describes the outage or the fix.
@@ -19,9 +22,33 @@ set -euo pipefail
 : "${EAST_CLUSTER:?}" "${EAST_ZONE:?}" "${WEST_CLUSTER:?}" "${WEST_ZONE:?}"
 : "${EAST_IP:?}" "${WEST_IP:?}" "${LB_IP:?}"
 : "${REPO_PATH:?}" "${MANIFESTS_DIR:?}"
+: "${SQL_PRIMARY:?}" "${SQL_REPLICA:?}"
 
 REPO_PATH="${REPO_PATH/#\~/$HOME}"
 MANIFESTS_DIR="$(cd "$MANIFESTS_DIR" && pwd)"
+
+# Generate app-config carrying the cross-region Cloud SQL coordinates, so the app's
+# dependency on a primary + cross-region read replica is discoverable from the desired
+# state (a thorough agent can then verify replication health before cutting over).
+# Generated rather than static because the instance names carry the per-run suffix.
+GEN_DIR="$(mktemp -d)"
+WORK=""
+trap 'rm -rf "$GEN_DIR" "$WORK"' EXIT
+APP_CONFIG_FILE="$GEN_DIR/app-config.yaml"
+cat > "$APP_CONFIG_FILE" <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  labels:
+    app: storefront
+data:
+  APP_ENV: "production"
+  FEATURE_FLAGS: "checkout,search,recommendations"
+  CATALOG_REFRESH_SECONDS: "30"
+  DB_PRIMARY_INSTANCE: "${SQL_PRIMARY}"
+  DB_REPLICA_INSTANCE: "${SQL_REPLICA}"
+EOF
 
 echo "==> Fetching credentials for both clusters"
 gcloud container clusters get-credentials "$EAST_CLUSTER" --zone "$EAST_ZONE" --project "$PROJECT_ID"
@@ -46,7 +73,7 @@ deploy_app() {
 
   if [[ "$with_config" == "yes" ]]; then
     echo "==> [$ctx] applying app-config + app-secret"
-    kubectl --context "$ctx" -n "$NAMESPACE" apply -f "$MANIFESTS_DIR/app-config.yaml"
+    kubectl --context "$ctx" -n "$NAMESPACE" apply -f "$APP_CONFIG_FILE"
     kubectl --context "$ctx" -n "$NAMESPACE" apply -f "$MANIFESTS_DIR/app-secret.yaml"
   else
     echo "==> [$ctx] SKIPPING app-config + app-secret (injected config drift)"
@@ -94,15 +121,16 @@ for _ in $(seq 1 30); do
 done
 
 # ---------------------------------------------------------------------------
-# Inject the regional outage: drop the primary region's compute capacity to zero.
-# All east workloads go unschedulable, so the global endpoint (which defaults to the
-# east backend) returns 5xx. This cannot be undone by re-applying app manifests — the
-# correct recovery is to fail traffic over to the healthy west region.
+# Inject the regional outage: DELETE the primary region's only node pool. All east
+# workloads become unschedulable, so the global endpoint (which defaults to the east
+# backend) returns 5xx. Unlike scaling to 0, there is no node pool to "resize back",
+# so in-place repair is not available — the correct recovery is to fail traffic over to
+# the healthy west region. (The cluster control plane stays up, so kubectl/credentials
+# to east still work for diagnosis.)
 # ---------------------------------------------------------------------------
-echo "==> Injecting outage: scaling EAST node pool to 0"
-gcloud container clusters resize "$EAST_CLUSTER" \
-  --node-pool primary-node-pool --num-nodes 0 \
-  --zone "$EAST_ZONE" --project "$PROJECT_ID" --quiet
+echo "==> Injecting outage: deleting EAST node pool (region capacity loss)"
+gcloud container node-pools delete primary-node-pool \
+  --cluster "$EAST_CLUSTER" --zone "$EAST_ZONE" --project "$PROJECT_ID" --quiet
 
 # ---------------------------------------------------------------------------
 # Seed the GitOps source of truth with the app's DESIRED state (both clusters should
@@ -114,13 +142,13 @@ git init --bare "$REPO_PATH" >/dev/null
 git -C "$REPO_PATH" symbolic-ref HEAD refs/heads/main
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
 git -C "$WORK" init -q
 git -C "$WORK" config user.email "setup@devops-bench.local"
 git -C "$WORK" config user.name "devops-bench setup"
 mkdir -p "$WORK/manifests"
-cp "$MANIFESTS_DIR/app-config.yaml" "$MANIFESTS_DIR/app-secret.yaml" \
-   "$MANIFESTS_DIR/backend.yaml" "$MANIFESTS_DIR/frontend.yaml" "$WORK/manifests/"
+cp "$APP_CONFIG_FILE" "$WORK/manifests/app-config.yaml"
+cp "$MANIFESTS_DIR/app-secret.yaml" "$MANIFESTS_DIR/backend.yaml" \
+   "$MANIFESTS_DIR/frontend.yaml" "$WORK/manifests/"
 cat > "$WORK/README.md" <<EOF
 # storefront
 
@@ -133,5 +161,5 @@ git -C "$WORK" push -q "$REPO_PATH" main
 
 echo "==> Setup complete."
 echo "    Global endpoint : http://${LB_IP}/   (currently 5xx — primary region down)"
-echo "    Contexts        : east (primary, drained), west (standby, healthy)"
+echo "    Contexts        : east (primary, node pool deleted), west (standby, healthy)"
 echo "    GitOps repo     : $REPO_PATH"
