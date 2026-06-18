@@ -36,13 +36,18 @@ classifiers = [
 # floors (>=, like upstream) rather than exact pins; uv.lock pins the resolution.
 dependencies = [
     "deepeval>=4.0.3",
-    "google-genai>=2.6.0",
     "mcp>=1.27.1",
-    "anthropic>=0.104.1",
     "pydantic>=2.0",
     "pyyaml>=6.0.3",
     "ruamel.yaml>=0.18.0",
 ]
+
+# Provider SDKs are optional: install only the extras for the providers you use.
+# Extra names match the keys accepted by ``get_model`` / ``AGENT_PROVIDER``.
+[project.optional-dependencies]
+gemini = ["google-genai>=2.6.0"]
+anthropic = ["anthropic>=0.104.1"]
+all = ["devops-bench[gemini,anthropic]"]
 
 [tool.hatch.version]
 path = "devops_bench/__init__.py"
@@ -52,12 +57,15 @@ packages = ["devops_bench"]
 
 [dependency-groups]
 # pytest-mock is carried over from requirements.txt; pytest, ruff, and
-# pre-commit use the upstream floors.
+# pre-commit use the upstream floors. The ``all`` extra pulls in every provider
+# SDK so the full test suite (which exercises all adapters) resolves; the SDK
+# version floors stay defined once, in [project.optional-dependencies].
 dev = [
     "pytest>=8.0.0",
     "pytest-mock>=3.15.1",
     "ruff>=0.8.2",
     "pre-commit>=3.5.0",
+    "devops-bench[all]",
 ]
 
 [[tool.uv.index]]

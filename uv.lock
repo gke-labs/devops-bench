@@ -454,17 +454,28 @@ wheels = [
 name = "devops-bench"
 source = { editable = "." }
 dependencies = [
-    { name = "anthropic" },
     { name = "deepeval" },
-    { name = "google-genai" },
     { name = "mcp" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "ruamel-yaml" },
 ]
 
+[package.optional-dependencies]
+all = [
+    { name = "anthropic" },
+    { name = "google-genai" },
+]
+anthropic = [
+    { name = "anthropic" },
+]
+gemini = [
+    { name = "google-genai" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "devops-bench", extra = ["all"] },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-mock" },
@@ -473,17 +484,21 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", specifier = ">=0.104.1" },
+    { name = "anthropic", marker = "extra == 'all'", specifier = ">=0.104.1" },
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.104.1" },
     { name = "deepeval", specifier = ">=4.0.3" },
-    { name = "google-genai", specifier = ">=2.6.0" },
+    { name = "google-genai", marker = "extra == 'all'", specifier = ">=2.6.0" },
+    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=2.6.0" },
     { name = "mcp", specifier = ">=1.27.1" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruamel-yaml", specifier = ">=0.18.0" },
 ]
+provides-extras = ["all", "anthropic", "gemini"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "devops-bench", extras = ["all"] },
     { name = "pre-commit", specifier = ">=3.5.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
