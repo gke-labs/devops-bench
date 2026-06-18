@@ -122,11 +122,9 @@ mkdir -p "$WORK/manifests"
 cp "$MANIFESTS_DIR/app-config.yaml" "$MANIFESTS_DIR/app-secret.yaml" \
    "$MANIFESTS_DIR/backend.yaml" "$MANIFESTS_DIR/frontend.yaml" "$WORK/manifests/"
 cat > "$WORK/README.md" <<EOF
-# storefront — desired state (GitOps source of truth)
+# storefront
 
-Kubernetes manifests for the storefront service. Every region should be reconciled to
-match this repository: namespace \`${NAMESPACE}\`, frontend + backend, and the
-\`app-config\` ConfigMap and \`app-secret\` Secret the backend consumes.
+Kubernetes manifests for the storefront service (namespace \`${NAMESPACE}\`).
 EOF
 git -C "$WORK" add -A
 git -C "$WORK" -c init.defaultBranch=main commit -q -m "storefront desired state"
