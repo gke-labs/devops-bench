@@ -12,64 +12,135 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Anthropic (Claude on Vertex) adapter for the LLM client interface."""
+"""Anthropic (Claude) adapter for the LLM client interface.
+
+Claude is reachable through three backends; this adapter selects one from the
+environment so the ``anthropic`` provider key names the model family rather than
+a single transport:
+
+- ``api`` — the first-party Anthropic API (``AsyncAnthropic``), the canonical
+  default, selected when ``AGENT_API_KEY``/``ANTHROPIC_API_KEY`` is set.
+- ``vertex`` — Claude on Google Vertex AI (``AsyncAnthropicVertex``), selected
+  when ``GCP_PROJECT_ID`` is set, and the fallback when nothing else matches.
+- ``bedrock`` — Claude on Amazon Bedrock (``AsyncAnthropicBedrock``), selected
+  when ``AWS_REGION``/``AWS_DEFAULT_REGION`` is set.
+
+Set ``ANTHROPIC_BACKEND`` to force a backend regardless of the inference above.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from devops_bench.core.config import get_env, get_int
-from devops_bench.core.errors import MissingDependencyError
+from devops_bench.core.config import first_env, get_env, get_int
+from devops_bench.core.errors import ConfigError, MissingDependencyError
 from devops_bench.core.logging import get_logger
 from devops_bench.models.base import MODELS, LLMClient
 
 try:
-    from anthropic import AsyncAnthropicVertex
+    from anthropic import AsyncAnthropic, AsyncAnthropicBedrock, AsyncAnthropicVertex
 except ImportError:  # pragma: no cover - exercised only without the SDK
+    AsyncAnthropic = None
+    AsyncAnthropicBedrock = None
     AsyncAnthropicVertex = None
 
 __all__ = ["AnthropicClientAdapter"]
 
 _DEFAULT_MAX_TOKENS = 16000
 
+# Per-backend default models. The model-id format is backend-specific, so each
+# backend carries its own default; Bedrock ids are region/version-specific and
+# have no safe universal default, so it requires AGENT_MODEL.
+_DEFAULT_MODELS = {
+    "api": "claude-sonnet-4-5",
+    "vertex": "claude-sonnet-4-5@20250929",
+}
+_BACKENDS = frozenset({"api", "vertex", "bedrock"})
+
 _log = get_logger("models.anthropic")
 
 
 @MODELS.register("anthropic")
 class AnthropicClientAdapter(LLMClient):
-    """Adapter for the Anthropic SDK using ``AsyncAnthropicVertex``.
+    """Adapter for the Anthropic SDK across its three backends.
 
-    Targets Claude models served through Vertex AI; the region and project are
-    read from ``GCP_VERTEX_LOCATION`` and ``GCP_PROJECT_ID``.
+    The backend (first-party API, Vertex AI, or Bedrock) is chosen from the
+    environment; see the module docstring for the selection rules.
 
     Args:
-        model_name: Model override; falls back to ``AGENT_MODEL`` when omitted.
+        model_name: Model override; falls back to ``AGENT_MODEL`` and then a
+            backend-specific default when omitted.
         max_tokens: Per-response output token cap; falls back to
             ``AGENT_MAX_TOKENS`` and then a sane default when omitted.
 
     Raises:
         MissingDependencyError: If the ``anthropic`` SDK is not installed.
+        ConfigError: If ``ANTHROPIC_BACKEND`` is unrecognized, or the ``bedrock``
+            backend is selected without ``AGENT_MODEL`` set.
     """
 
     def __init__(self, model_name: str | None = None, max_tokens: int | None = None) -> None:
-        if AsyncAnthropicVertex is None:
+        if AsyncAnthropic is None:
             raise MissingDependencyError("the Anthropic model adapter", "anthropic")
 
-        project_id = get_env("GCP_PROJECT_ID")
-        location = get_env("GCP_VERTEX_LOCATION", "us-central1")
+        backend = self._select_backend()
 
         if not model_name:
-            model_name = get_env("AGENT_MODEL", "claude-sonnet-4-5@20250929")
-
-        if not project_id:
-            _log.warning(
-                "GCP_PROJECT_ID not set; AsyncAnthropicVertex may fail if it "
-                "cannot be inferred from the environment.",
+            model_name = get_env("AGENT_MODEL", _DEFAULT_MODELS.get(backend))
+        if not model_name:
+            raise ConfigError(
+                f"the Anthropic {backend!r} backend has no default model; set AGENT_MODEL"
             )
 
-        self.client = AsyncAnthropicVertex(region=location, project_id=project_id)
+        self.client = self._build_client(backend)
         self.model_name = model_name
         self.max_tokens = max_tokens or get_int("AGENT_MAX_TOKENS", _DEFAULT_MAX_TOKENS)
+
+    @staticmethod
+    def _select_backend() -> str:
+        """Resolve which backend to use from the environment.
+
+        Returns:
+            One of ``"api"``, ``"vertex"``, or ``"bedrock"``.
+
+        Raises:
+            ConfigError: If ``ANTHROPIC_BACKEND`` is set to an unknown value.
+        """
+        override = get_env("ANTHROPIC_BACKEND")
+        if override:
+            backend = override.lower()
+            if backend not in _BACKENDS:
+                raise ConfigError(
+                    f"ANTHROPIC_BACKEND must be one of {sorted(_BACKENDS)}; got {override!r}"
+                )
+            return backend
+
+        if first_env("AGENT_API_KEY", "ANTHROPIC_API_KEY"):
+            return "api"
+        if get_env("GCP_PROJECT_ID"):
+            return "vertex"
+        if first_env("AWS_REGION", "AWS_DEFAULT_REGION"):
+            return "bedrock"
+
+        _log.warning(
+            "No Anthropic backend could be inferred from the environment; "
+            "defaulting to Vertex. Set ANTHROPIC_BACKEND, AGENT_API_KEY, "
+            "GCP_PROJECT_ID, or AWS_REGION to select one explicitly.",
+        )
+        return "vertex"
+
+    @staticmethod
+    def _build_client(backend: str) -> Any:
+        """Construct the SDK client for the selected backend."""
+        if backend == "api":
+            return AsyncAnthropic(api_key=first_env("AGENT_API_KEY", "ANTHROPIC_API_KEY"))
+        if backend == "bedrock":
+            return AsyncAnthropicBedrock(aws_region=first_env("AWS_REGION", "AWS_DEFAULT_REGION"))
+        # vertex
+        return AsyncAnthropicVertex(
+            region=get_env("GCP_VERTEX_LOCATION", "us-central1"),
+            project_id=get_env("GCP_PROJECT_ID"),
+        )
 
     async def generate_content(
         self,

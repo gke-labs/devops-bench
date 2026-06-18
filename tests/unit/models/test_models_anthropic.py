@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the Anthropic (Claude on Vertex) adapter."""
+"""Tests for the Anthropic (Claude) adapter and its backend selection."""
 
 from __future__ import annotations
 
@@ -21,6 +21,9 @@ import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
+
+from devops_bench.core.errors import ConfigError, MissingDependencyError
 from devops_bench.models import anthropic
 from devops_bench.models.anthropic import AnthropicClientAdapter
 
@@ -29,10 +32,10 @@ def _make_tool(name, description, input_schema):
     return SimpleNamespace(name=name, description=description, inputSchema=input_schema)
 
 
-# --- construction / client selection -----------------------------------------
+# --- backend selection / construction ----------------------------------------
 
 
-def test_init_uses_region_and_project(mocker):
+def test_init_selects_vertex_from_project(mocker):
     client_cls = mocker.patch.object(anthropic, "AsyncAnthropicVertex")
     mocker.patch.dict(
         os.environ, {"GCP_PROJECT_ID": "proj", "GCP_VERTEX_LOCATION": "us-east5"}, clear=True
@@ -44,14 +47,84 @@ def test_init_uses_region_and_project(mocker):
     assert adapter.model_name == "claude-sonnet-4-5@20250929"
 
 
-def test_init_warns_without_project(mocker):
+def test_init_defaults_to_vertex_and_warns(mocker):
     mocker.patch.object(anthropic, "AsyncAnthropicVertex")
     warn = mocker.patch.object(anthropic._log, "warning")
     mocker.patch.dict(os.environ, {}, clear=True)
 
-    AnthropicClientAdapter()
+    adapter = AnthropicClientAdapter()
 
     warn.assert_called_once()
+    assert adapter.model_name == "claude-sonnet-4-5@20250929"
+
+
+def test_init_selects_api_from_key(mocker):
+    client_cls = mocker.patch.object(anthropic, "AsyncAnthropic")
+    mocker.patch.dict(os.environ, {"AGENT_API_KEY": "sk-test"}, clear=True)
+
+    adapter = AnthropicClientAdapter()
+
+    client_cls.assert_called_once_with(api_key="sk-test")
+    assert adapter.model_name == "claude-sonnet-4-5"
+
+
+def test_init_api_key_takes_precedence_over_project(mocker):
+    api_cls = mocker.patch.object(anthropic, "AsyncAnthropic")
+    vertex_cls = mocker.patch.object(anthropic, "AsyncAnthropicVertex")
+    mocker.patch.dict(
+        os.environ, {"AGENT_API_KEY": "sk-test", "GCP_PROJECT_ID": "proj"}, clear=True
+    )
+
+    AnthropicClientAdapter()
+
+    api_cls.assert_called_once()
+    vertex_cls.assert_not_called()
+
+
+def test_init_selects_bedrock_from_aws_region(mocker):
+    client_cls = mocker.patch.object(anthropic, "AsyncAnthropicBedrock")
+    mocker.patch.dict(
+        os.environ, {"AWS_REGION": "us-west-2", "AGENT_MODEL": "anthropic.claude-x"}, clear=True
+    )
+
+    adapter = AnthropicClientAdapter()
+
+    client_cls.assert_called_once_with(aws_region="us-west-2")
+    assert adapter.model_name == "anthropic.claude-x"
+
+
+def test_init_bedrock_requires_model(mocker):
+    mocker.patch.object(anthropic, "AsyncAnthropicBedrock")
+    mocker.patch.dict(os.environ, {"AWS_REGION": "us-west-2"}, clear=True)
+
+    with pytest.raises(ConfigError):
+        AnthropicClientAdapter()
+
+
+def test_init_backend_override_forces_vertex(mocker):
+    mocker.patch.object(anthropic, "AsyncAnthropic")
+    vertex_cls = mocker.patch.object(anthropic, "AsyncAnthropicVertex")
+    mocker.patch.dict(
+        os.environ, {"AGENT_API_KEY": "sk-test", "ANTHROPIC_BACKEND": "vertex"}, clear=True
+    )
+
+    AnthropicClientAdapter()
+
+    vertex_cls.assert_called_once()
+
+
+def test_init_backend_override_invalid_raises(mocker):
+    mocker.patch.dict(os.environ, {"ANTHROPIC_BACKEND": "nope"}, clear=True)
+
+    with pytest.raises(ConfigError):
+        AnthropicClientAdapter()
+
+
+def test_init_without_sdk_raises(mocker):
+    mocker.patch.object(anthropic, "AsyncAnthropic", None)
+
+    with pytest.raises(MissingDependencyError):
+        AnthropicClientAdapter()
 
 
 # --- format_tools -------------------------------------------------------------
