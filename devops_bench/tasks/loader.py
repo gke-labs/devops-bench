@@ -17,8 +17,8 @@
 from __future__ import annotations
 
 import json
-import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
 from ruamel.yaml import YAML
@@ -61,7 +61,7 @@ def _sort_key(task: Task) -> tuple[int, int | str]:
     return (0, int(text)) if text.isdigit() else (1, text)
 
 
-def _load_yaml_task(path: str, name_default: str) -> Task | None:
+def _load_yaml_task(path: Path, name_default: str) -> Task | None:
     """Read one YAML spec file into a Task, or None if it is not a mapping.
 
     Args:
@@ -71,8 +71,7 @@ def _load_yaml_task(path: str, name_default: str) -> Task | None:
     Returns:
         The parsed task, or ``None`` when the document is not a mapping.
     """
-    with open(path) as stream:
-        content = safe_parse_yaml(stream.read())
+    content = safe_parse_yaml(path.read_text())
     if not isinstance(content, dict):
         return None
     return Task.from_dict(content, name_default=name_default)
@@ -96,20 +95,21 @@ def load_from_tasks_dir(dir_path: str) -> list[Task]:
     Raises:
         ConfigError: If ``dir_path`` does not exist.
     """
-    if not os.path.exists(dir_path):
+    root_dir = Path(dir_path)
+    if not root_dir.exists():
         raise ConfigError(f"tasks directory not found at {dir_path}")
 
     tasks: list[Task] = []
     seen_ids: set[str] = set()
-    for root, dirs, files in os.walk(dir_path):
+    for current, dirs, files in root_dir.walk():
         # Sort dirs in place to ensure deterministic ordering during walk.
         dirs.sort()
         if _TASK_FILE not in files:
             continue
 
-        yaml_path = os.path.join(root, _TASK_FILE)
+        yaml_path = current / _TASK_FILE
         try:
-            task = _load_yaml_task(yaml_path, name_default=os.path.basename(root))
+            task = _load_yaml_task(yaml_path, name_default=current.name)
             if task is not None:
                 if task.id and task.id in seen_ids:
                     _log.warning("duplicate task id %r at %s", task.id, yaml_path)
@@ -141,15 +141,15 @@ def _load_single_file(path: str) -> list[Task]:
             Unlike directory loads (which log and skip), single-file loads
             always surface a clean ``ConfigError``.
     """
-    name_default = os.path.splitext(os.path.basename(path))[0]
+    spec = Path(path)
+    name_default = spec.stem
 
     try:
-        if path.endswith((".yaml", ".yml")):
-            task = _load_yaml_task(path, name_default=name_default)
+        if spec.suffix in (".yaml", ".yml"):
+            task = _load_yaml_task(spec, name_default=name_default)
             return [task] if task is not None else []
 
-        with open(path) as f:
-            raw = json.load(f)
+        raw = json.loads(spec.read_text())
 
         if isinstance(raw, dict):
             return [Task.from_dict(raw, name_default=name_default)]
@@ -201,9 +201,10 @@ class FileSystemTaskLoader(TaskLoader):
         Raises:
             ConfigError: If ``source`` does not exist.
         """
-        if os.path.isdir(source):
+        spec = Path(source)
+        if spec.is_dir():
             return load_from_tasks_dir(source)
-        if not os.path.exists(source):
+        if not spec.exists():
             raise ConfigError(f"task spec not found at {source}")
         return _load_single_file(source)
 
