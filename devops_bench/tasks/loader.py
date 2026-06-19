@@ -30,7 +30,6 @@ __all__ = [
     "TaskLoader",
     "FileSystemTaskLoader",
     "load_from_tasks_dir",
-    "load_tasks",
 ]
 
 _log = get_logger("tasks.loader")
@@ -207,20 +206,3 @@ class FileSystemTaskLoader(TaskLoader):
         if not spec.exists():
             raise ConfigError(f"task spec not found at {source}")
         return _load_single_file(source)
-
-
-def load_tasks(source: str) -> list[Task]:
-    """Load task contracts from a directory or a single spec file.
-
-    Convenience wrapper over :class:`FileSystemTaskLoader`.
-
-    Args:
-        source: A tasks directory or a single spec file.
-
-    Returns:
-        The loaded tasks.
-
-    Raises:
-        ConfigError: If ``source`` does not exist.
-    """
-    return FileSystemTaskLoader().load_tasks(source)

@@ -25,7 +25,6 @@ from devops_bench.tasks.loader import (
     FileSystemTaskLoader,
     TaskLoader,
     load_from_tasks_dir,
-    load_tasks,
 )
 
 
@@ -46,7 +45,7 @@ def test_load_from_tasks_dir_recursive_and_ordered(tmp_path):
         'task_id: 1\nname: "task-one"\nprompt: "One"\nexpected_output: "E1"\n',
     )
 
-    tasks = load_tasks(str(tmp_path))
+    tasks = FileSystemTaskLoader().load_tasks(str(tmp_path))
     assert len(tasks) == 2
     assert tasks[0].id == "1"
     assert tasks[0].name == "task-one"
@@ -174,7 +173,7 @@ def test_yaml_1_2_booleans_stay_strings(tmp_path):
 def test_load_single_yaml_file(tmp_path):
     path = tmp_path / "case.yaml"
     _write(path, 'task_id: 11\nname: "single"\nprompt: "  hi  "\nexpected_output: "out"\n')
-    tasks = load_tasks(str(path))
+    tasks = FileSystemTaskLoader().load_tasks(str(path))
     assert len(tasks) == 1
     assert tasks[0].id == "11"
     assert tasks[0].name == "single"
@@ -187,7 +186,7 @@ def test_load_single_json_file_object_with_goal_alias(tmp_path):
         path,
         json.dumps({"task_id": 4, "name": "json-case", "goal": "json goal"}),
     )
-    tasks = load_tasks(str(path))
+    tasks = FileSystemTaskLoader().load_tasks(str(path))
     assert len(tasks) == 1
     assert tasks[0].id == "4"
     assert tasks[0].name == "json-case"
@@ -205,7 +204,7 @@ def test_load_single_json_file_list(tmp_path):
             ]
         ),
     )
-    tasks = load_tasks(str(path))
+    tasks = FileSystemTaskLoader().load_tasks(str(path))
     assert [t.name for t in tasks] == ["a", "b"]
     assert tasks[0].prompt == "ia"
     assert tasks[1].prompt == "gb"
@@ -217,7 +216,7 @@ def test_single_file_malformed_yaml_raises_config_error(tmp_path):
     path = tmp_path / "broken.yaml"
     _write(path, "[unterminated")
     with pytest.raises(ConfigError):
-        load_tasks(str(path))
+        FileSystemTaskLoader().load_tasks(str(path))
 
 
 def test_single_file_json_list_non_dict_element_raises_config_error(tmp_path):
@@ -226,7 +225,7 @@ def test_single_file_json_list_non_dict_element_raises_config_error(tmp_path):
     path = tmp_path / "cases.json"
     _write(path, json.dumps([{"task_id": 1}, 5]))
     with pytest.raises(ConfigError):
-        load_tasks(str(path))
+        FileSystemTaskLoader().load_tasks(str(path))
 
 
 def test_missing_directory_raises_config_error(tmp_path):
@@ -235,10 +234,10 @@ def test_missing_directory_raises_config_error(tmp_path):
         load_from_tasks_dir(str(missing))
 
 
-def test_missing_directory_via_load_tasks_raises_config_error(tmp_path):
+def test_missing_directory_via_loader_raises_config_error(tmp_path):
     missing = tmp_path / "definitely-does-not-exist-xyz-456"
     with pytest.raises(ConfigError):
-        load_tasks(str(missing))
+        FileSystemTaskLoader().load_tasks(str(missing))
 
 
 def test_parse_error_is_logged_and_skipped(tmp_path, caplog):
