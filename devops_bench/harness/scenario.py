@@ -1,0 +1,305 @@
+# Copyright 2026 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Background chaos + verification on a daemon thread.
+
+Connectivity is owned by the fault: the :class:`ScenarioManager` threads the
+port-forward target env onto the run context and runs chaos plus verification
+on a daemon thread, resolving :attr:`ChaosSpec.verify` against a name-keyed
+verification mapping supplied by the caller.
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+from typing import Any
+
+from devops_bench.chaos import ChaosSpec
+from devops_bench.chaos.faults.generate_load import (
+    _ENV_SKIP_PORT_FORWARD,
+    _ENV_TARGET_DEPLOYMENT,
+    _ENV_TARGET_NAMESPACE,
+)
+from devops_bench.core import get_logger
+from devops_bench.core.context import RunContext
+from devops_bench.verification import VerifierAgent
+
+__all__ = ["ScenarioManager", "VERIFICATION_TIMEOUT_SEC"]
+
+_log = get_logger("harness.scenario")
+
+# Verification budget shared across the (possibly nested) checks.
+VERIFICATION_TIMEOUT_SEC = 120
+
+
+class ScenarioManager:
+    """Orchestrate a background chaos disruption and its verification.
+
+    The manager runs on a daemon thread alongside the agent under test: it
+    waits on the typed trigger, drives the typed
+    :class:`~devops_bench.chaos.base.Fault` (via ``action.inject``) to inject
+    the planned disruption, then resolves the spec's ``verify:`` key against the
+    per-task verification mapping and runs
+    :meth:`~devops_bench.verification.VerifierAgent.wait_for_condition` on the
+    resolved node. The ``kubectl port-forward`` the load fault needs to reach
+    its target is owned by the fault, not the manager — the manager only threads
+    the target deployment / namespace onto ``ctx.env`` so the fault can open it.
+
+    Args:
+        target_deployment: Deployment the load fault should port-forward and
+            disrupt; threaded onto ``ctx.env`` for the fault.
+        namespace: Namespace the deployment lives in; threaded onto ``ctx.env``.
+        verification_mapping: Name-keyed mapping of verification specs the
+            chaos ``verify:`` reference is resolved against. The mapping carries
+            already-validated :class:`VerificationSpec` instances (or any value
+            ``VerifierAgent.wait_for_condition`` accepts); the manager never
+            re-validates. Empty mapping disables verification lookups.
+        skip_port_forward: When True, the fault runs without opening a
+            ``kubectl port-forward``. The E2E smoke harness (against
+            :class:`~devops_bench.deployers.NoOpDeployer`) flips this on so
+            tests can exercise the wiring without a real cluster.
+
+    Attributes:
+        chaos_active_event: Set by the chaos fault once the disruption is
+            observably active, so the harness can synchronize the operator
+            agent's start.
+    """
+
+    def __init__(
+        self,
+        target_deployment: str,
+        namespace: str,
+        verification_mapping: dict[str, Any] | None = None,
+        *,
+        skip_port_forward: bool = False,
+    ) -> None:
+        self.target_deployment = target_deployment
+        self.namespace = namespace
+        self.verification_mapping: dict[str, Any] = dict(verification_mapping or {})
+        self.skip_port_forward = skip_port_forward
+        self.chaos_active_event = threading.Event()
+        self.verifier_agent = VerifierAgent()
+        self.result_holder: dict[str, dict[str, Any]] = {
+            "chaos_report": {},
+            "perf_report": {},
+        }
+        self.start_time: float | None = None
+        self._aborted = threading.Event()
+
+    def run_chaos_and_verification(
+        self,
+        spec: ChaosSpec,
+        ctx: RunContext,
+    ) -> None:
+        """Inject the planned fault, then gather verification metrics.
+
+        Args:
+            spec: A typed :class:`ChaosSpec` carrying the trigger, action, and
+                opaque ``verify:`` key to resolve.
+            ctx: The per-task run context (forwarded to the trigger / fault).
+        """
+        self.start_time = time.time()
+
+        # Record initial chaos metadata before injection begins, so a crash
+        # mid-injection still produces a partial report rather than silence.
+        self.result_holder["chaos_report"] = {
+            "injected_fault": spec.action.type,
+            "name": spec.name,
+            "status": "initiated",
+        }
+
+        try:
+            chaos_result = self._inject_chaos(spec, ctx)
+            self.result_holder["chaos_report"] = self._chaos_report_from_result(
+                spec, chaos_result
+            )
+        except Exception as exc:  # noqa: BLE001 - surface failure into the report
+            _log.error("error running scenario: %s", exc)
+            self.result_holder["chaos_report"]["status"] = "failed"
+            self.result_holder["chaos_report"]["error"] = str(exc)
+            # Unblock the main thread immediately: it waits on this event to
+            # learn the disruption is active, and a failed injection never sets
+            # it via the fault, so without this it stalls for the full
+            # ``_CHAOS_ACTIVE_WAIT_SEC`` timeout before proceeding.
+            self.chaos_active_event.set()
+            return
+
+        if self._aborted.is_set():
+            return
+
+        verification_node = self._resolve_verification(spec.verify)
+        if verification_node is None:
+            # No verification scheduled (``verify`` was None) — leave the
+            # chaos_report alone. An UNKNOWN key, on the other hand, has
+            # already stamped ``chaos_report["verification"]`` with the
+            # failure record so the operator sees the typo'd cross-reference
+            # on the run record, not just in the log.
+            return
+
+        _log.info("starting planned verification using VerifierAgent...")
+        try:
+            verification_result = self.verifier_agent.wait_for_condition(
+                verification_node, timeout_sec=VERIFICATION_TIMEOUT_SEC
+            )
+            _log.info(
+                "verification completed: %s",
+                verification_result.model_dump_json(indent=2),
+            )
+            self.result_holder["chaos_report"]["verification"] = (
+                verification_result.model_dump()
+            )
+            self.result_holder["perf_report"] = self._perf_from_verification(
+                verification_result
+            )
+        except Exception as exc:  # noqa: BLE001 - surface failure into the report
+            _log.error("verification failed with exception: %s", exc)
+            self.result_holder["chaos_report"]["verification"] = {
+                "success": False,
+                "reason": f"Verification exception: {exc}",
+            }
+
+    def _inject_chaos(self, spec: ChaosSpec, ctx: RunContext):
+        """Wait on the trigger, then drive ``action.inject`` with the target env.
+
+        The trigger is a typed node; wait through its own ``wait(ctx)`` rather
+        than reading raw ``delay_seconds`` here — the harness only knows the
+        ``Trigger`` Protocol, not the concrete trigger's parameters. Before
+        injecting, the port-forward target the load fault needs is threaded onto
+        ``ctx.env``; the fault opens and tears down its own tunnel.
+
+        Args:
+            spec: Typed chaos spec.
+            ctx: Run context handed to the trigger / fault.
+
+        Returns:
+            The :class:`~devops_bench.chaos.ChaosResult` returned by the fault.
+        """
+        spec.trigger.wait(ctx)
+
+        # Thread the port-forward target onto the context so the fault can open
+        # its own tunnel. ``ctx.env`` values are strings; the skip flag is set
+        # only when truthy so the fault's ``bool(env.get(...))`` reads cleanly.
+        ctx.env[_ENV_TARGET_DEPLOYMENT] = self.target_deployment
+        ctx.env[_ENV_TARGET_NAMESPACE] = self.namespace
+        if self.skip_port_forward:
+            ctx.env[_ENV_SKIP_PORT_FORWARD] = "1"
+
+        return spec.action.inject(ctx, self.chaos_active_event)
+
+    @staticmethod
+    def _chaos_report_from_result(spec: ChaosSpec, result: Any) -> dict[str, Any]:
+        """Shape a typed ``ChaosResult`` into the chaos-report dict.
+
+        Args:
+            spec: The originating spec (carries the human-readable ``name``).
+            result: A :class:`~devops_bench.chaos.ChaosResult`.
+
+        Returns:
+            The ``chaos_report`` dict consumed by the result reporter; the
+            ``status`` field is derived from ``ChaosResult.success``.
+        """
+        dumped = result.model_dump()
+        # Carry both the human-readable name and the typed result fields so
+        # downstream consumers see a superset of both.
+        report: dict[str, Any] = {
+            "injected_fault": result.injected_fault,
+            "name": spec.name,
+            "status": "success" if result.success else "failed",
+            "output": dumped.get("output", ""),
+            "elapsed_time": dumped.get("elapsed_time", 0.0),
+        }
+        if dumped.get("error") is not None:
+            report["error"] = dumped["error"]
+        return report
+
+    @staticmethod
+    def _perf_from_verification(result: Any) -> dict[str, Any]:
+        """Derive ``perf_report`` from a verification result.
+
+        Deployment time flows through on success; the uptime / utilization
+        fields collapse to a success binary.
+        """
+        success = bool(result.success)
+        elapsed = float(result.elapsed_time)
+        return {
+            "deployment_time_seconds": elapsed if success else None,
+            "uptime_percentage": 100.0 if success else 0.0,
+            "resource_utilization_efficiency": 1.0 if success else 0.0,
+        }
+
+    def _resolve_verification(self, verify_ref: str | None) -> Any | None:
+        """Resolve the chaos spec's opaque ``verify`` key against the mapping.
+
+        Args:
+            verify_ref: The string key carried on :attr:`ChaosSpec.verify`, or
+                ``None`` when the spec opts out of verification.
+
+        Returns:
+            The mapped verification node (already validated) when the key is
+            present and known; ``None`` when the spec opts out **or** the
+            key is unknown. The unknown-key case is *not* silent — a
+            verification-failure entry is written into ``chaos_report``
+            naming the missing key + the available keys, so a typo'd
+            cross-reference shows up on the run record (not just in the
+            log).
+        """
+        if not verify_ref:
+            return None
+        node = self.verification_mapping.get(verify_ref)
+        if node is None:
+            known = sorted(self.verification_mapping.keys())
+            reason = (
+                f"chaos verify reference {verify_ref!r} not found in "
+                f"verification mapping; known keys: {known}"
+            )
+            _log.warning(reason)
+            # Surface the unresolved reference on the chaos_report so the
+            # operator sees the typo'd cross-reference in results.json, not
+            # just in the log. The shape mirrors the typed
+            # VerificationResult dump (success/reason/name) so downstream
+            # consumers don't need a special-case parse path.
+            self.result_holder["chaos_report"]["verification"] = {
+                "success": False,
+                "reason": reason,
+                "name": verify_ref,
+                "unresolved_reference": verify_ref,
+                "known_references": known,
+            }
+            return None
+        return node
+
+    def get_reports(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return the aggregated chaos and performance reports.
+
+        Returns:
+            A ``(chaos_report, perf_report)`` pair derived from the most recent
+            scenario run; each is an empty dict before the run produces it.
+        """
+        return (
+            self.result_holder.get("chaos_report", {}),
+            self.result_holder.get("perf_report", {}),
+        )
+
+    def stop(self) -> None:
+        """Abort the scenario so a pending verification is skipped.
+
+        Sets an abort flag the scenario thread checks before dispatching
+        verification. The ``kubectl port-forward`` is owned by the load fault
+        (which tears it down in its own ``finally``), so there is nothing for
+        the manager to release here. Safe to call more than once and from a
+        different thread than the scenario's; it never raises, so it can run
+        from a ``finally`` block during cleanup.
+        """
+        self._aborted.set()
