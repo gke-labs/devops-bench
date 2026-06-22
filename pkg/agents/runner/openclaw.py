@@ -112,7 +112,7 @@ def run_openclaw_agent(prompt, context=None, agent_name="main"):
     # We also use single quotes for the prompt, assuming it doesn't contain single quotes.
     # For safety, we should escape single quotes if possible, but let's keep it simple first.
     set_model = _oc_set_model_cmd("~/bin/oc", " && ")
-    remote_command = f"rm -rf ~/.openclaw/agents/operator/sessions/* && export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && source \"$NVM_DIR/nvm.sh\" && {set_model}~/bin/oc --log-level debug agent --local --agent {agent_name} -m '{prompt}'"
+    remote_command = f"rm -rf ~/.openclaw/agents/{agent_name}/sessions/* && export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && source \"$NVM_DIR/nvm.sh\" && {set_model}~/bin/oc --log-level debug agent --local --agent {agent_name} -m '{prompt}'"
 
     ssh_cmd = [
         "ssh",

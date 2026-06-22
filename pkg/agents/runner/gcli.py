@@ -133,11 +133,15 @@ def run_cli_agent(agent_target, prompt, context, bench_use_mcp=True, system_inst
         args.extend(["-p", prompt])
         use_stdin = False
     elif "openclaw" in agent_target or "oc" in agent_target:
+        # Which oc agent profile to run (`oc agent --agent <name>`). Defaults to
+        # "operator" (the configured DevOps operator agent the benchmark has used so
+        # far); override with OPENCLAW_AGENT, e.g. OPENCLAW_AGENT=main for oc's default.
+        oc_agent = (os.environ.get("OPENCLAW_AGENT") or "operator").strip() or "operator"
         # When the agent, harness, and (kind) cluster are co-located on one host,
         # run oc locally instead of SSHing to the GCE VM.
         if os.environ.get("OPENCLAW_LOCAL", "false").lower() == "true":
-            return run_openclaw_agent_local(prompt, context, agent_name="operator")
-        return run_openclaw_agent(prompt, context, agent_name="operator")
+            return run_openclaw_agent_local(prompt, context, agent_name=oc_agent)
+        return run_openclaw_agent(prompt, context, agent_name=oc_agent)
         
     start_time = time.time()
     
