@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     unzip \
     lsb-release \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && wget https://github.com/opentofu/opentofu/releases/download/v1.8.8/tofu_1.8.8_linux_amd64.zip \
     && unzip tofu_1.8.8_linux_amd64.zip -d /usr/local/bin/ \

@@ -1,4 +1,5 @@
 import os
+import json
 import base64
 from google import genai
 from google.genai import types
@@ -209,3 +210,87 @@ class AnthropicClientAdapter(LLMClient):
             ],
         })
     return anthropic_messages
+
+
+class OllamaClientAdapter(LLMClient):
+  """Adapter for Ollama via its OpenAI-compatible API."""
+
+  def __init__(self, model_name=None):
+    from openai import AsyncOpenAI
+    if not model_name:
+      model_name = os.environ.get("AGENT_MODEL", "gemma4:2b")
+    base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    # api_key is required by the openai client but unused by Ollama
+    self.client = AsyncOpenAI(base_url=base_url, api_key="ollama")
+    self.model_name = model_name
+
+  async def generate_content(self, contents, tools, system_instruction):
+    messages = self._convert_to_openai_messages(contents, system_instruction)
+    kwargs = {"model": self.model_name, "messages": messages}
+    if tools:
+      kwargs["tools"] = tools
+    return await self.client.chat.completions.create(**kwargs)
+
+  def format_tools(self, mcp_tools):
+    return [
+      {
+        "type": "function",
+        "function": {
+          "name": tool.name,
+          "description": tool.description,
+          "parameters": tool.inputSchema if hasattr(tool, "inputSchema") else {},
+        },
+      }
+      for tool in mcp_tools
+    ]
+
+  def extract_function_calls(self, response):
+    calls = []
+    message = response.choices[0].message
+    if message.tool_calls:
+      for tc in message.tool_calls:
+        args = tc.function.arguments
+        if isinstance(args, str):
+          try:
+            args = json.loads(args)
+          except json.JSONDecodeError:
+            args = {}
+        calls.append({"name": tc.function.name, "args": args, "id": tc.id})
+    return calls
+
+  def get_text_content(self, response) -> str:
+    content = response.choices[0].message.content
+    return content if content else ""
+
+  def _convert_to_openai_messages(self, contents, system_instruction):
+    messages = []
+    if system_instruction:
+      messages.append({"role": "system", "content": system_instruction})
+    for msg in contents:
+      role = msg["role"]
+      content = msg["content"]
+      if role == "user":
+        messages.append({"role": "user", "content": content})
+      elif role == "assistant":
+        if "tool_calls" in msg:
+          tool_calls = [
+            {
+              "id": tc.get("id") or f"call_{i}",
+              "type": "function",
+              "function": {
+                "name": tc["name"],
+                "arguments": json.dumps(tc["args"]) if isinstance(tc["args"], dict) else tc["args"],
+              },
+            }
+            for i, tc in enumerate(msg["tool_calls"])
+          ]
+          messages.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
+        else:
+          messages.append({"role": "assistant", "content": content})
+      elif role == "tool":
+        messages.append({
+          "role": "tool",
+          "tool_call_id": msg.get("tool_call_id", ""),
+          "content": content,
+        })
+    return messages

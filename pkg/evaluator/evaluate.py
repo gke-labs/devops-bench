@@ -29,6 +29,7 @@ sys.path.insert(
 from pkg.agents.runner.api.llm_adapters import (
     AnthropicClientAdapter,
     GeminiClientAdapter,
+    OllamaClientAdapter,
 )
 
 from pkg.agents.runner.api.api import run_api_agent
@@ -44,6 +45,8 @@ from deployers.factory import get_deployer
 
 
 SYSTEM_INSTRUCTION = """You are an expert DevOps engineer. When asked to make an app production-ready or perform operational tasks like secret rotation, you MUST apply the changes directly to the GKE cluster and GCP APIs using your tools. Do NOT output bash scripts, templates, or instructions for the user to run manually. You must complete the entire operation yourself using tool calls."""
+
+SYSTEM_INSTRUCTION_NO_MCP = """You are an expert DevOps engineer. Respond with complete, production-ready Kubernetes manifests and configurations that satisfy the request. Output the full YAML or relevant artifacts directly in your response."""
 
 
 def validate_config(role, provider, model):
@@ -133,6 +136,35 @@ class AnthropicDeepEvalModel(DeepEvalBaseLLM):
                 if hasattr(content, "type") and content.type == "text":
                     text += content.text
         return text
+
+    async def a_generate(self, prompt: str) -> str:
+        return self.generate(prompt)
+
+    def get_model_name(self):
+        return self.model_name
+
+
+class OllamaDeepEvalModel(DeepEvalBaseLLM):
+    """Wrapper for Ollama (OpenAI-compatible API) to be used with DeepEval."""
+
+    def __init__(self, model_name=None):
+        from openai import OpenAI
+        if not model_name:
+            model_name = os.environ.get("JUDGE_MODEL", "gemma4:2b")
+        self.model_name = model_name
+        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        self.client = OpenAI(base_url=base_url, api_key="ollama")
+        validate_config("judge", "ollama", self.model_name)
+
+    def load_model(self):
+        return self.client
+
+    def generate(self, prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content or ""
 
     async def a_generate(self, prompt: str) -> str:
         return self.generate(prompt)
@@ -257,6 +289,10 @@ def load_configuration_context():
         if not judge_model_name:
             judge_model_name = "claude-opus-4-6"
         judge_model = AnthropicDeepEvalModel(model_name=judge_model_name)
+    elif judge_provider == "ollama":
+        if not judge_model_name:
+            judge_model_name = "gemma4:2b"
+        judge_model = OllamaDeepEvalModel(model_name=judge_model_name)
     else:
         print(
             f"Warning: Unknown judge provider '{judge_provider}'. Defaulting to Gemini."
@@ -317,17 +353,20 @@ def execute_agent(bench_agent_type, agent_target, prompt, context):
             llm_client = GeminiClientAdapter()
         elif provider == "anthropic":
             llm_client = AnthropicClientAdapter()
+        elif provider == "ollama":
+            llm_client = OllamaClientAdapter()
         else:
             raise ValueError(f"Unknown provider: {provider}")
         bench_use_mcp_env = os.environ.get("BENCH_USE_MCP", "true").lower()
         bench_use_mcp = bench_use_mcp_env == "true"
+        sys_instruction = SYSTEM_INSTRUCTION if bench_use_mcp else SYSTEM_INSTRUCTION_NO_MCP
         return asyncio.run(
             run_api_agent(
                 prompt,
                 mcp_server_path,
                 llm_client,
                 bench_use_mcp=bench_use_mcp,
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=sys_instruction,
             )
         )
     else:
