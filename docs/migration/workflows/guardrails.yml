@@ -1,0 +1,74 @@
+# Installs at: .github/workflows/guardrails.yml in BOTH gke-labs and kubernetes-sigs.
+# CI guardrail: uv sync, ruff, unit tests. Lint/test are scoped to the devops_bench
+# component (devops_bench/ + tests/unit/) — the rest of the repo is not yet compliant, so it is
+# deliberately left out of scope. The migrated-readonly job is gke-labs-only. Label
+# (labeled/unlabeled) events only run the migrated-readonly flip guard — the build/lint/test matrix
+# is skipped, since labels don't change code. See docs/migration/.
+name: guardrails
+
+on:
+  pull_request:
+    branches: [main]
+    # labeled/unlabeled so applying the 'migrated-override' label re-runs the flip guard
+    # immediately. The build/lint/test jobs skip on label events (per-job `if`s below), so
+    # unrelated label churn never reruns the full matrix.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  guardrails:
+    # Skip on label events: labels don't change code, so there's nothing to build/lint/test.
+    # Only `migrated-readonly` runs on label changes.
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Floor is requires-python (>=3.12); 3.14 is the dev default in .python-version.
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Sync (build + install, strict library mode)
+        run: uv sync --frozen
+
+      - name: Lint
+        # Scoped to the devops_bench component; the rest of the repo is not yet compliant.
+        run: uv run ruff check devops_bench tests/unit
+
+      - name: Unit tests
+        run: uv run pytest tests/unit -q
+
+  migrated-readonly:
+    # gke-labs only: block PRs that edit migrated (upstream-owned) paths. No-op while migrated.bara.sky is
+    # empty. Exempt the back-sync bot's PRs (head branch backsync/*) — mirroring into migrated paths
+    # is exactly its job. Runs on code pushes to a PR and, for label events, ONLY when the
+    # 'migrated-override' label itself changes — so unrelated label churn triggers no CI at all.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.repository == 'gke-labs/devops-bench'
+      && !startsWith(github.head_ref, 'backsync/')
+      && ((github.event.action != 'labeled' && github.event.action != 'unlabeled')
+      || github.event.label.name == 'migrated-override')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # need the base branch to diff the PR range
+      - name: Block edits to migrated (read-only) paths
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          # Override hook: the 'migrated-override' label (passed via env, not interpolated).
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        run: ./hack/check-migrated-readonly.sh

@@ -1,0 +1,76 @@
+# Back-sync importer: mirrors the migrated paths from kubernetes-sigs/devops-bench back into
+# gke-labs. Run by .github/workflows/backsync.yml or hack/backsync.sh. Re-running on an unchanged
+# frontier is a NO_OP (exit 4). See docs/migration/ for the how and why.
+
+# The frontier is the single source of truth in migrated.bara.sky, also parsed by the flip guard
+# and the tracker. (load() must stay at the top of the file.)
+load("//migrated.bara.sky", "MIGRATED")
+
+CANONICAL = "https://github.com/kubernetes-sigs/devops-bench.git"   # origin (public)
+GKE_LABS  = "https://github.com/gke-labs/devops-bench.git"          # destination (ours)
+
+# Dynamically select origins/destinations to seamlessly support local file:// sandboxing
+origin_obj = git.origin(
+    url = CANONICAL,
+    ref = "main",
+) if (CANONICAL.startswith("file://") or "github.com" not in CANONICAL) else git.github_origin(
+    url = CANONICAL,
+    ref = "main",
+)
+
+dest_obj = git.destination(
+    url = GKE_LABS,
+    push = "main",
+) if (GKE_LABS.startswith("file://") or "github.com" not in GKE_LABS) else git.github_pr_destination(
+    url             = GKE_LABS,
+    destination_ref = "main",
+    pr_branch       = "backsync/from-upstream",
+)
+
+# Dedicated migration bot identity, used as a fallback author.
+# Real upstream authors are preserved (via pass_thru).
+SYNC_BOT = "devops-bench-sync-bot <devops-bench-sync-bot@google.com>"
+
+# Never mirror back: gke-labs-only assets, each repo's own CI, and the human-managed manifests.
+NEVER_SYNC = [
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/.terraform/**",
+    "**/*.tfstate*",
+    ".github/**",
+    "site/**",
+    "site_new/**",
+    "copy.bara.sky",
+    "migrated.bara.sky",
+    "pyproject.toml",
+    "uv.lock",
+    ".python-version",
+    "LICENSE",
+    "LICENSES/**",
+]
+
+def frontier_glob():
+    # glob([]) is an error, so use a placeholder while the frontier is empty.
+    paths = MIGRATED if MIGRATED else ["__migration_frontier_placeholder__"]
+    return glob(paths, exclude = NEVER_SYNC)
+
+# No message-rewriting transforms: ITERATIVE mode replays each upstream commit individually,
+# keeping original metadata intact. This is required for author-keyed CLA validation.
+TRANSFORMS = []
+
+core.workflow(
+    name = "backsync",
+    origin = origin_obj,
+    # gke-labs is ours, so push the branch and open a same-repo PR directly. The fixed pr_branch
+    # name lets the read-only flip guard exempt this bot (it writes to migrated paths by design).
+    destination = dest_obj,
+    origin_files      = frontier_glob(),
+    destination_files = frontier_glob(),
+    # pass_thru preserves upstream commit authors (required for CLA validation).
+    # SYNC_BOT is used only as a fallback default.
+    authoring = authoring.pass_thru(SYNC_BOT),
+    # ITERATIVE mode preserves per-commit history and authorship (required for CLA gates).
+    # Do NOT use SQUASH, as it collapses all changes and hides original authorship.
+    mode = "ITERATIVE",
+    transformations = TRANSFORMS,
+)
