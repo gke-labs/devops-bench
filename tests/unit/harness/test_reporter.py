@@ -156,6 +156,22 @@ def test_new_run_dir_records_last_run_dir(tmp_path: Path) -> None:
     assert r.last_run_dir == d
 
 
+def test_new_run_dir_appends_run_id(tmp_path: Path) -> None:
+    """A supplied run id is appended so concurrent runs do not collide."""
+    r = ResultReporter(results_root=tmp_path, run_id="20260101-120000-4242")
+    d = r.new_run_dir()
+    assert d.name.startswith("run_")
+    assert d.name.endswith("_20260101-120000-4242")
+
+
+def test_new_run_dir_sanitizes_run_id(tmp_path: Path) -> None:
+    """Filesystem-unsafe characters in the run id are replaced."""
+    r = ResultReporter(results_root=tmp_path, run_id="a/b c:d")
+    d = r.new_run_dir()
+    assert "/" not in d.name[len("run_") :]
+    assert d.name.endswith("_a-b-c-d")
+
+
 def test_legacy_success_record_keys_are_emitted_verbatim(
     isolated_env: None,
 ) -> None:

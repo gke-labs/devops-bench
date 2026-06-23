@@ -164,7 +164,9 @@ def run_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
     if config.limit is not None:
         tasks = tasks[: config.limit]
 
-    reporter = ResultReporter(config.results_root)
+    reporter = ResultReporter(
+        config.results_root, run_id=run_env.run_id if run_env.isolated else None
+    )
     harness = DefaultHarness(
         project_id,
         cluster_name,
