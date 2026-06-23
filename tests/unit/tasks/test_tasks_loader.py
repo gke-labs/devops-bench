@@ -16,7 +16,7 @@
 
 import json
 import logging
-from pathlib import Path
+import os
 
 import pytest
 
@@ -25,27 +25,29 @@ from devops_bench.tasks.loader import (
     FileSystemTaskLoader,
     TaskLoader,
     load_from_tasks_dir,
+    load_tasks,
 )
 
 
-def _write(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+def _write(path: str, content: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(content)
 
 
 def test_load_from_tasks_dir_recursive_and_ordered(tmp_path):
     # id 2 lives under a directory that sorts before id 1, so a correct
     # loader must sort by id rather than discovery order.
     _write(
-        tmp_path / "aaa" / "task-two" / "task.yaml",
+        os.path.join(str(tmp_path), "aaa", "task-two", "task.yaml"),
         'task_id: 2\nname: "task-two"\nprompt: "Two"\nexpected_output: "E2"\n',
     )
     _write(
-        tmp_path / "zzz" / "task-one" / "task.yaml",
+        os.path.join(str(tmp_path), "zzz", "task-one", "task.yaml"),
         'task_id: 1\nname: "task-one"\nprompt: "One"\nexpected_output: "E1"\n',
     )
 
-    tasks = FileSystemTaskLoader().load_tasks(str(tmp_path))
+    tasks = load_tasks(str(tmp_path))
     assert len(tasks) == 2
     assert tasks[0].id == "1"
     assert tasks[0].name == "task-one"
@@ -54,8 +56,8 @@ def test_load_from_tasks_dir_recursive_and_ordered(tmp_path):
 
 
 def test_numeric_ids_sort_by_value_not_lexically(tmp_path):
-    _write(tmp_path / "a" / "task.yaml", 'task_id: 10\nname: "ten"\n')
-    _write(tmp_path / "b" / "task.yaml", 'task_id: 2\nname: "two"\n')
+    _write(os.path.join(str(tmp_path), "a", "task.yaml"), 'task_id: 10\nname: "ten"\n')
+    _write(os.path.join(str(tmp_path), "b", "task.yaml"), 'task_id: 2\nname: "two"\n')
 
     tasks = load_from_tasks_dir(str(tmp_path))
     assert [t.name for t in tasks] == ["two", "ten"]
@@ -63,15 +65,15 @@ def test_numeric_ids_sort_by_value_not_lexically(tmp_path):
 
 def test_load_from_tasks_dir_subdir_scope(tmp_path):
     _write(
-        tmp_path / "gcp" / "task-gcp" / "task.yaml",
+        os.path.join(str(tmp_path), "gcp", "task-gcp", "task.yaml"),
         'task_id: 1\nname: "task-gcp"\nprompt: "GCP"\nexpected_output: "G"\n',
     )
     _write(
-        tmp_path / "generic" / "task-generic" / "task.yaml",
+        os.path.join(str(tmp_path), "generic", "task-generic", "task.yaml"),
         'task_id: 2\nname: "task-generic"\nprompt: "Generic"\nexpected_output: "X"\n',
     )
 
-    scoped = load_from_tasks_dir(str(tmp_path / "generic"))
+    scoped = load_from_tasks_dir(os.path.join(str(tmp_path), "generic"))
     assert len(scoped) == 1
     assert scoped[0].name == "task-generic"
 
@@ -79,7 +81,7 @@ def test_load_from_tasks_dir_subdir_scope(tmp_path):
 def test_field_defaults_missing_id_and_name(tmp_path):
     # No task_id and no name -> empty id and the directory basename.
     _write(
-        tmp_path / "the-dir-name" / "task.yaml",
+        os.path.join(str(tmp_path), "the-dir-name", "task.yaml"),
         'prompt: "  padded prompt  "\nexpected_output: "  padded  "\n',
     )
 
@@ -93,7 +95,7 @@ def test_field_defaults_missing_id_and_name(tmp_path):
 
 def test_goal_alias_in_dir_load(tmp_path):
     _write(
-        tmp_path / "alias" / "task.yaml",
+        os.path.join(str(tmp_path), "alias", "task.yaml"),
         'task_id: 5\ngoal: "  goal driven  "\n',
     )
     tasks = load_from_tasks_dir(str(tmp_path))
@@ -121,7 +123,7 @@ documentation:
 
 
 def test_documentation_parsed_on_load(tmp_path):
-    _write(tmp_path / "doc" / "task.yaml", _DOC_YAML)
+    _write(os.path.join(str(tmp_path), "doc", "task.yaml"), _DOC_YAML)
     docs = load_from_tasks_dir(str(tmp_path))[0].documentation
     assert len(docs) == 2
 
@@ -150,7 +152,7 @@ def test_invalid_task_is_skipped_with_warning(tmp_path, caplog):
         '      - text: "x"\n'
         "        critical: yes\n"
     )
-    _write(tmp_path / "d" / "task.yaml", yaml_text)
+    _write(os.path.join(str(tmp_path), "d", "task.yaml"), yaml_text)
     with caplog.at_level(logging.WARNING, logger="devops_bench.tasks.loader"):
         tasks = load_from_tasks_dir(str(tmp_path))
     assert tasks == []
@@ -161,7 +163,7 @@ def test_yaml_1_2_booleans_stay_strings(tmp_path):
     # ``yes``/``no``/``off`` are plain strings under YAML 1.2; only
     # ``true``/``false`` are booleans.
     _write(
-        tmp_path / "t" / "task.yaml",
+        os.path.join(str(tmp_path), "t", "task.yaml"),
         'task_id: 1\ninfrastructure:\n  a: yes\n  b: "no"\n  c: true\n',
     )
     infra = load_from_tasks_dir(str(tmp_path))[0].infrastructure
@@ -171,9 +173,9 @@ def test_yaml_1_2_booleans_stay_strings(tmp_path):
 
 
 def test_load_single_yaml_file(tmp_path):
-    path = tmp_path / "case.yaml"
+    path = os.path.join(str(tmp_path), "case.yaml")
     _write(path, 'task_id: 11\nname: "single"\nprompt: "  hi  "\nexpected_output: "out"\n')
-    tasks = FileSystemTaskLoader().load_tasks(str(path))
+    tasks = load_tasks(path)
     assert len(tasks) == 1
     assert tasks[0].id == "11"
     assert tasks[0].name == "single"
@@ -181,12 +183,12 @@ def test_load_single_yaml_file(tmp_path):
 
 
 def test_load_single_json_file_object_with_goal_alias(tmp_path):
-    path = tmp_path / "case.json"
+    path = os.path.join(str(tmp_path), "case.json")
     _write(
         path,
         json.dumps({"task_id": 4, "name": "json-case", "goal": "json goal"}),
     )
-    tasks = FileSystemTaskLoader().load_tasks(str(path))
+    tasks = load_tasks(path)
     assert len(tasks) == 1
     assert tasks[0].id == "4"
     assert tasks[0].name == "json-case"
@@ -194,7 +196,7 @@ def test_load_single_json_file_object_with_goal_alias(tmp_path):
 
 
 def test_load_single_json_file_list(tmp_path):
-    path = tmp_path / "cases.json"
+    path = os.path.join(str(tmp_path), "cases.json")
     _write(
         path,
         json.dumps(
@@ -204,7 +206,7 @@ def test_load_single_json_file_list(tmp_path):
             ]
         ),
     )
-    tasks = FileSystemTaskLoader().load_tasks(str(path))
+    tasks = load_tasks(path)
     assert [t.name for t in tasks] == ["a", "b"]
     assert tasks[0].prompt == "ia"
     assert tasks[1].prompt == "gb"
@@ -213,41 +215,41 @@ def test_load_single_json_file_list(tmp_path):
 def test_single_file_malformed_yaml_raises_config_error(tmp_path):
     # A single malformed YAML spec surfaces a clean ConfigError rather than
     # leaking the underlying parser error.
-    path = tmp_path / "broken.yaml"
+    path = os.path.join(str(tmp_path), "broken.yaml")
     _write(path, "[unterminated")
     with pytest.raises(ConfigError):
-        FileSystemTaskLoader().load_tasks(str(path))
+        load_tasks(path)
 
 
 def test_single_file_json_list_non_dict_element_raises_config_error(tmp_path):
     # A JSON list whose elements are not all objects is rejected with a clean
     # ConfigError instead of crashing inside Task.from_dict.
-    path = tmp_path / "cases.json"
+    path = os.path.join(str(tmp_path), "cases.json")
     _write(path, json.dumps([{"task_id": 1}, 5]))
     with pytest.raises(ConfigError):
-        FileSystemTaskLoader().load_tasks(str(path))
+        load_tasks(path)
 
 
 def test_missing_directory_raises_config_error(tmp_path):
-    missing = tmp_path / "definitely-does-not-exist-xyz-123"
+    missing = os.path.join(str(tmp_path), "definitely-does-not-exist-xyz-123")
     with pytest.raises(ConfigError):
-        load_from_tasks_dir(str(missing))
+        load_from_tasks_dir(missing)
 
 
-def test_missing_directory_via_loader_raises_config_error(tmp_path):
-    missing = tmp_path / "definitely-does-not-exist-xyz-456"
+def test_missing_directory_via_load_tasks_raises_config_error(tmp_path):
+    missing = os.path.join(str(tmp_path), "definitely-does-not-exist-xyz-456")
     with pytest.raises(ConfigError):
-        FileSystemTaskLoader().load_tasks(str(missing))
+        load_tasks(missing)
 
 
 def test_parse_error_is_logged_and_skipped(tmp_path, caplog):
     # A valid task plus one with malformed YAML; the bad one is skipped.
     _write(
-        tmp_path / "good" / "task.yaml",
+        os.path.join(str(tmp_path), "good", "task.yaml"),
         'task_id: 1\nname: "good"\nprompt: "p"\nexpected_output: "e"\n',
     )
     _write(
-        tmp_path / "bad" / "task.yaml",
+        os.path.join(str(tmp_path), "bad", "task.yaml"),
         "task_id: 2\nname: [unterminated\n",
     )
 
@@ -262,11 +264,11 @@ def test_duplicate_task_id_logs_warning(tmp_path, caplog):
     # Two task.yaml with the same explicit task_id: the duplicate is logged as
     # a warning but both are still loaded (directory loading stays resilient).
     _write(
-        tmp_path / "first" / "task.yaml",
+        os.path.join(str(tmp_path), "first", "task.yaml"),
         'task_id: 7\nname: "first"\nprompt: "p"\n',
     )
     _write(
-        tmp_path / "second" / "task.yaml",
+        os.path.join(str(tmp_path), "second", "task.yaml"),
         'task_id: 7\nname: "second"\nprompt: "q"\n',
     )
 
@@ -287,6 +289,6 @@ def test_task_loader_cannot_be_instantiated():
 
 
 def test_filesystem_task_loader_loads_directory(tmp_path):
-    _write(tmp_path / "t" / "task.yaml", 'task_id: 1\nname: "t"\nprompt: "p"\n')
+    _write(os.path.join(str(tmp_path), "t", "task.yaml"), 'task_id: 1\nname: "t"\nprompt: "p"\n')
     tasks = FileSystemTaskLoader().load_tasks(str(tmp_path))
     assert [t.name for t in tasks] == ["t"]

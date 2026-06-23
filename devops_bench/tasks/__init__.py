@@ -14,7 +14,7 @@
 
 """Task contracts: the typed schema and loaders for benchmark tasks."""
 
-from devops_bench.tasks.loader import FileSystemTaskLoader, TaskLoader
+from devops_bench.tasks.loader import FileSystemTaskLoader, TaskLoader, load_tasks
 from devops_bench.tasks.schema import Constraint, DocumentationEntry, Task
 
 __all__ = [
@@ -23,4 +23,5 @@ __all__ = [
     "DocumentationEntry",
     "TaskLoader",
     "FileSystemTaskLoader",
+    "load_tasks",
 ]

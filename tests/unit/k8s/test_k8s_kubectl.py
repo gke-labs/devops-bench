@@ -76,14 +76,14 @@ def test_wait_custom_condition_without_optionals(mocker):
     assert mock_run.call_args.kwargs["extra_env"] is None
 
 
-def test_get_resource_parses_output_and_builds_argv(mocker):
+def test_get_json_parses_output_and_builds_argv(mocker):
     payload = {"items": [{"status": {"phase": "Running"}}]}
     mock_run = mocker.patch(
         "devops_bench.k8s.kubectl.run",
         return_value=_completed(stdout=json.dumps(payload)),
     )
 
-    result = kubectl.get_resource("pods", selector="app=web", namespace="default")
+    result = kubectl.get_json("pods", selector="app=web", namespace="default")
 
     assert result == payload
     argv = mock_run.call_args.args[0]
@@ -100,14 +100,14 @@ def test_get_resource_parses_output_and_builds_argv(mocker):
     ]
 
 
-def test_get_resource_with_name(mocker):
+def test_get_json_with_name(mocker):
     payload = {"status": {"readyReplicas": 3}}
     mock_run = mocker.patch(
         "devops_bench.k8s.kubectl.run",
         return_value=_completed(stdout=json.dumps(payload)),
     )
 
-    result = kubectl.get_resource("deployment", "my-dep")
+    result = kubectl.get_json("deployment", "my-dep")
 
     assert result == payload
     argv = mock_run.call_args.args[0]
@@ -121,6 +121,15 @@ def test_apply_builds_argv(mocker):
 
     argv = mock_run.call_args.args[0]
     assert argv == ["kubectl", "apply", "-f", "/manifests/app.yaml", "-n", "staging"]
+
+
+def test_scale_builds_argv(mocker):
+    mock_run = mocker.patch("devops_bench.k8s.kubectl.run", return_value=_completed())
+
+    kubectl.scale("deployment/web", 5)
+
+    argv = mock_run.call_args.args[0]
+    assert argv == ["kubectl", "scale", "--replicas=5", "deployment/web"]
 
 
 def test_rollout_status_with_timeout(mocker):
@@ -165,7 +174,7 @@ def test_kubeconfig_from_cluster_info(mocker):
     mock_run = mocker.patch("devops_bench.k8s.kubectl.run", return_value=_completed())
     cluster = ClusterInfo(name="c1", kubeconfig_path="/cluster/kc")
 
-    kubectl.wait("pod", timeout_sec=10, kubeconfig=cluster)
+    kubectl.scale("deployment/web", 2, kubeconfig=cluster)
 
     assert mock_run.call_args.kwargs["extra_env"] == {"KUBECONFIG": "/cluster/kc"}
 
@@ -179,14 +188,14 @@ def test_run_context_without_cluster_omits_kubeconfig(mocker):
     assert mock_run.call_args.kwargs["extra_env"] is None
 
 
-def test_get_resource_propagates_invalid_json(mocker):
+def test_get_json_propagates_invalid_json(mocker):
     mocker.patch(
         "devops_bench.k8s.kubectl.run",
         return_value=_completed(stdout="not json"),
     )
 
     with pytest.raises(json.JSONDecodeError):
-        kubectl.get_resource("pods")
+        kubectl.get_json("pods")
 
 
 def test_wait_propagates_subprocess_error(mocker):

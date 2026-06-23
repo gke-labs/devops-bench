@@ -15,8 +15,8 @@
 """Anthropic (Claude) adapter for the LLM client interface.
 
 Claude is reachable through three backends; this adapter selects one from the
-environment so the ``claude`` provider key (alias ``anthropic``) names the model
-family rather than a single transport:
+environment so the ``anthropic`` provider key names the model family rather than
+a single transport:
 
 - ``api`` — the first-party Anthropic API (``AsyncAnthropic``), the canonical
   default, selected when ``AGENT_API_KEY``/``ANTHROPIC_API_KEY`` is set.
@@ -44,7 +44,7 @@ except ImportError:  # pragma: no cover - exercised only without the SDK
     AsyncAnthropicBedrock = None
     AsyncAnthropicVertex = None
 
-__all__ = ["ClaudeClientAdapter"]
+__all__ = ["AnthropicClientAdapter"]
 
 _DEFAULT_MAX_TOKENS = 16000
 
@@ -57,11 +57,11 @@ _DEFAULT_MODELS = {
 }
 _BACKENDS = frozenset({"api", "vertex", "bedrock"})
 
-_log = get_logger("models.claude")
+_log = get_logger("models.anthropic")
 
 
-@MODELS.register("claude")
-class ClaudeClientAdapter(LLMClient):
+@MODELS.register("anthropic")
+class AnthropicClientAdapter(LLMClient):
     """Adapter for the Anthropic SDK across its three backends.
 
     The backend (first-party API, Vertex AI, or Bedrock) is chosen from the
@@ -138,7 +138,7 @@ class ClaudeClientAdapter(LLMClient):
             return AsyncAnthropicBedrock(aws_region=first_env("AWS_REGION", "AWS_DEFAULT_REGION"))
         # vertex
         return AsyncAnthropicVertex(
-            region=get_env("GCP_VERTEX_LOCATION", "global"),
+            region=get_env("GCP_VERTEX_LOCATION", "us-central1"),
             project_id=get_env("GCP_PROJECT_ID"),
         )
 

@@ -45,10 +45,10 @@ dependencies = [
 # Provider SDKs are optional: install only the extras for the providers you use.
 # Extra names match the keys accepted by ``get_model`` / ``AGENT_PROVIDER``.
 [project.optional-dependencies]
-google-genai = ["google-genai>=2.6.0"]
+gemini = ["google-genai>=2.6.0"]
 anthropic = ["anthropic>=0.104.1"]
-openai = ["openai>=1.0.0"]
-all = ["devops-bench[google-genai,anthropic,openai]"]
+ollama = ["openai>=1.0.0"]
+all = ["devops-bench[gemini,anthropic,ollama]"]
 
 [tool.hatch.version]
 path = "devops_bench/__init__.py"

@@ -53,7 +53,7 @@ class OllamaClientAdapter(LLMClient):
 
     def __init__(self, model_name: str | None = None, base_url: str | None = None) -> None:
         if AsyncOpenAI is None:
-            raise MissingDependencyError("the Ollama model adapter", "openai")
+            raise MissingDependencyError("the Ollama model adapter", "ollama")
 
         if not model_name:
             model_name = get_env("AGENT_MODEL", _DEFAULT_MODEL)

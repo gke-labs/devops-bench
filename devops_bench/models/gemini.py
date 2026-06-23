@@ -137,13 +137,13 @@ class GeminiClientAdapter(LLMClient):
 
     def __init__(self, model_name: str | None = None) -> None:
         if genai is None:
-            raise MissingDependencyError("the Gemini model adapter", "google-genai")
+            raise MissingDependencyError("the Gemini model adapter", "gemini")
 
         if not model_name:
             model_name = get_env("AGENT_MODEL", "gemini-3.1-pro-preview")
 
         project_id = get_env("GCP_PROJECT_ID")
-        location = get_env("GCP_VERTEX_LOCATION", "global")
+        location = get_env("GCP_VERTEX_LOCATION", "us-central1")
         api_key = get_env("AGENT_API_KEY")
 
         if api_key:

@@ -27,10 +27,10 @@ __all__ = ["LLMClient", "MODELS", "get_model"]
 
 MODELS: Registry[type[LLMClient]] = Registry("models")
 
-# Adapter modules are named by model family (``gemini``, ``claude``) and
-# self-register under that canonical key via ``@MODELS.register``; ``ollama`` is
-# the runtime exception. Company/runtime names are accepted as aliases here.
-_ALIASES = {"google": "gemini", "anthropic": "claude"}
+# Provider keys that do not match their adapter module name. Each adapter module
+# is named after its canonical provider key and self-registers under it via
+# ``@MODELS.register``; aliases are resolved to that canonical key here.
+_ALIASES = {"google": "gemini"}
 
 
 class LLMClient(ABC):
@@ -104,7 +104,7 @@ def get_model(
 
     Args:
         provider: Registry key such as ``"gemini"``/``"google"``,
-            ``"claude"``/``"anthropic"``, or ``"ollama"``. Case-insensitive.
+            ``"anthropic"``, or ``"ollama"``. Case-insensitive.
         model_name: Optional model override passed to the adapter; when omitted
             the adapter reads ``AGENT_MODEL`` (or its own default).
         **kwargs: Extra keyword arguments forwarded to the adapter constructor.
