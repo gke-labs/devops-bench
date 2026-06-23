@@ -20,11 +20,17 @@ no internal-schema parsing. ``tool_use``/``tool_result`` events fold into the
 canonical :class:`ToolCall` list; ``result`` events carry the final text and
 the aggregated token usage.
 
-Capability wiring: the allowed-tools list comes from the aggregated
-``config.capabilities.allowed_tools`` (across every bound MCP server) and the
-operator brief from ``config.capabilities.rules.text`` (written to a
-``GEMINI.md`` file in the run working directory before invocation, the CLI's
-native context-file mechanism).
+Capability wiring is delivered through the Gemini CLI's native workspace
+mechanisms, written into the per-run working directory before invocation:
+
+* **Tools** — ``config.capabilities.allowed_tools`` become ``--allowed-tools``
+  arguments, pre-approving them in headless mode.
+* **MCP servers** — command-bearing bindings become ``mcpServers`` entries in
+  ``<cwd>/.gemini/settings.json``.
+* **Skills** — ``config.capabilities.skills.paths`` are materialized under
+  ``<cwd>/.gemini/skills/<name>/SKILL.md``.
+* **Rules** — ``config.capabilities.rules.text`` is written to ``GEMINI.md``,
+  auto-loaded as the startup context.
 """
 
 from __future__ import annotations
@@ -33,20 +39,56 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from devops_bench.agents.base import AGENTS, AgentHarness
 from devops_bench.agents.config import AgentConfig
 from devops_bench.agents.result import AgentResult, ToolCall
+from devops_bench.agents.shared.cli_capabilities import (
+    build_mcp_servers,
+    materialize_skills,
+)
 from devops_bench.core import SubprocessError, get_logger
 from devops_bench.core.subprocess import run
+
+if TYPE_CHECKING:  # pragma: no cover - typing-only import
+    from devops_bench.agents.capabilities import McpBinding
 
 __all__ = ["GeminiCliAgent", "parse_stream_json"]
 
 # Filename the Gemini CLI auto-loads from its working directory as the
 # operator brief / startup context (its native equivalent of a system prompt).
 _GEMINI_RULES_FILE = "GEMINI.md"
+# Workspace config dir/files the CLI reads from its cwd. ``settings.json`` here
+# overrides the user-level ``~/.gemini/settings.json``; ``skills/`` is the
+# workspace skill-discovery root.
+_GEMINI_CONFIG_DIR = ".gemini"
+_GEMINI_SETTINGS_FILE = "settings.json"
+_GEMINI_SKILLS_DIR = "skills"
 
 _log = get_logger("agents.cli.gemini")
+
+
+def _build_settings(mcp_servers: tuple[McpBinding, ...], *, skills_enabled: bool) -> dict:
+    """Assemble the Gemini ``settings.json`` payload for a run.
+
+    Args:
+        mcp_servers: Bindings to render into ``mcpServers`` (empty-command
+            bindings are skipped by :func:`build_mcp_servers`).
+        skills_enabled: Whether any workspace skill was materialized; gates the
+            explicit ``skills.enabled`` flag so the benchmark does not depend on
+            the user-level default.
+
+    Returns:
+        A settings mapping, possibly empty (caller skips the write when empty).
+    """
+    settings: dict = {}
+    servers = build_mcp_servers(mcp_servers)
+    if servers:
+        settings["mcpServers"] = servers
+    if skills_enabled:
+        settings["skills"] = {"enabled": True}
+    return settings
 
 
 def _build_argv(target: str, prompt: str, allowed_tools: tuple[str, ...]) -> list[str]:
@@ -231,10 +273,11 @@ class GeminiCliAgent(AgentHarness):
     bound MCP server) selects between the ``--allowed-tools`` overlay and the
     ``-e=""`` extensions-disabled path.
 
-    ``__init__`` assigns ``self.mcp_servers`` and ``self.rules`` from the
-    granted config bindings, which is what makes
-    ``isinstance(agent, SupportsMcp / SupportsRules)`` return ``True`` for
-    orchestrator-side capability negotiation (the Protocols are structural).
+    ``__init__`` assigns ``self.mcp_servers``, ``self.skills`` and ``self.rules``
+    from the granted config bindings, which is what makes
+    ``isinstance(agent, SupportsMcp / SupportsSkills / SupportsRules)`` return
+    ``True`` for orchestrator-side capability negotiation (the Protocols are
+    structural).
 
     The full canonical trajectory is parsed from the official
     ``--output-format stream-json`` event stream; no session files are read
@@ -245,28 +288,47 @@ class GeminiCliAgent(AgentHarness):
         AgentHarness.__init__(self, config)
         caps = self.config.capabilities
         self.mcp_servers = caps.mcp_servers
+        self.skills = caps.skills
         self.rules = caps.rules
 
     def _execute(self, prompt: str) -> AgentResult:
         """Build argv, run the CLI, and parse the stream-json output.
 
-        When ``capabilities.rules.text`` is non-empty, the agent runs the
-        binary inside a per-run temp working directory and writes the rules
-        text to ``GEMINI.md`` there before invocation — the CLI auto-loads
-        that file as its startup context, which is the binary's native
-        delivery mechanism for an operator brief. The temp dir is cleaned up
-        when ``_execute`` returns.
+        The agent always runs the binary inside a per-run temp working
+        directory and lays down the granted capabilities there before
+        invocation, using the CLI's native workspace channels (all auto-loaded
+        from the cwd, so the user's ``~/.gemini`` stays untouched and concurrent
+        runs never race):
+
+        * ``GEMINI.md`` — the operator brief, when ``rules.text`` is set.
+        * ``.gemini/settings.json`` — ``mcpServers`` for each command-bearing
+          MCP binding, plus ``skills.enabled`` when skills were materialized.
+        * ``.gemini/skills/<name>/SKILL.md`` — one per discovered skill.
+
+        The temp dir is cleaned up when ``_execute`` returns.
         """
+        caps = self.config.capabilities
         target = os.path.expanduser(self.config.target or "gemini")
-        allowed_tools = self.config.capabilities.allowed_tools
-        argv = _build_argv(target, prompt, allowed_tools)
+        argv = _build_argv(target, prompt, caps.allowed_tools)
         env_overlay = _build_env(self.config)
-        rules_text = self.config.capabilities.rules.text
+        rules_text = caps.rules.text
 
         with tempfile.TemporaryDirectory(prefix="gemini-run-") as tmpdir:
+            workdir = Path(tmpdir)
             if rules_text:
-                (Path(tmpdir) / _GEMINI_RULES_FILE).write_text(
+                (workdir / _GEMINI_RULES_FILE).write_text(
                     rules_text, encoding="utf-8"
+                )
+
+            gemini_dir = workdir / _GEMINI_CONFIG_DIR
+            skill_names = materialize_skills(
+                gemini_dir / _GEMINI_SKILLS_DIR, caps.skills.paths
+            )
+            settings = _build_settings(caps.mcp_servers, skills_enabled=bool(skill_names))
+            if settings:
+                gemini_dir.mkdir(parents=True, exist_ok=True)
+                (gemini_dir / _GEMINI_SETTINGS_FILE).write_text(
+                    json.dumps(settings, indent=2), encoding="utf-8"
                 )
             try:
                 completed = run(

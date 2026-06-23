@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +26,8 @@ from devops_bench.agents import AGENTS, AgentConfig
 from devops_bench.agents.capabilities import (
     AgentRules,
     AllCapabilities,
+    McpBinding,
+    SkillBinding,
     SupportsMcp,
     SupportsRules,
     SupportsSkills,
@@ -32,7 +35,9 @@ from devops_bench.agents.capabilities import (
 from devops_bench.agents.cli import openclaw as oc_mod
 from devops_bench.agents.cli.openclaw import (
     OpenClawAgent,
+    _build_env,
     _build_local_command,
+    _build_openclaw_config,
     _oc_model_id,
     _pick_session_key,
     _strip_ansi,
@@ -179,7 +184,6 @@ def test_build_local_command_quotes_inputs_and_includes_model_set():
     cmd = _build_local_command(cfg, "hi 'world'", "operator", "/usr/local/bin/oc")
     # Prompt single-quote must be escaped, not break the shell line.
     assert "hi '\\''world'\\''" in cmd or "hi 'world'" not in cmd
-    assert "rm -rf" in cmd  # sessions wipe
     assert "NVM_DIR" in cmd  # nvm sourced for the node runtime
     # shlex.quote leaves alnum/`/`/`-`/`.` un-quoted; just match the canonical id.
     assert "models set google/gemini-2.5-pro" in cmd
@@ -390,19 +394,34 @@ def test_legacy_local_runner_is_gone():
 
 
 # ---------------------------------------------------------------------------
-# PR3 — capability negotiation: OpenClaw declares only what oc supports
+# Capability negotiation: OpenClaw wires MCP + skills via oc's native channels
 # ---------------------------------------------------------------------------
 
 
-def test_openclaw_satisfies_only_rules_protocol():
-    """The installed ``oc`` build exposes no in-agent MCP / skills wiring; the
-    agent therefore declares **only** :class:`SupportsRules`. Granting MCP or
-    skills to it would silently no-op — capability negotiation must refuse the
-    binding rather than waste it."""
+def test_openclaw_satisfies_mcp_skills_and_rules_protocols():
+    """OpenClaw declares MCP, Skills and Rules: it writes ``mcp.servers`` into an
+    isolated ``OPENCLAW_CONFIG_PATH``, materializes managed skills under
+    ``<OPENCLAW_STATE_DIR>/skills``, and prepends the operator brief to the
+    prompt."""
     agent = OpenClawAgent(AgentConfig())
     assert isinstance(agent, SupportsRules)
-    assert not isinstance(agent, SupportsMcp)
-    assert not isinstance(agent, SupportsSkills)
+    assert isinstance(agent, SupportsMcp)
+    assert isinstance(agent, SupportsSkills)
+
+
+def test_openclaw_agent_mirrors_capability_bindings_onto_mixin_attributes():
+    """The structural-Protocol attributes track the granted bindings."""
+    binding = McpBinding(name="gke", command=("gke-mcp",), tools=("t",))
+    skills = SkillBinding(paths=("/some/skills",))
+    caps = AllCapabilities(
+        mcp_servers=(binding,),
+        skills=skills,
+        rules=AgentRules(text="be a sre"),
+    )
+    agent = OpenClawAgent(AgentConfig(capabilities=caps))
+    assert agent.mcp_servers == (binding,)
+    assert agent.skills == skills
+    assert agent.rules == AgentRules(text="be a sre")
 
 
 def test_openclaw_agent_mirrors_rules_binding_onto_mixin_attribute():
@@ -478,3 +497,172 @@ def test_execute_does_not_prepend_rules_when_empty(monkeypatch, tmp_path):
     # inside single quotes in the `-m` segment — and no extra blank-line
     # prefix surrounds it.
     assert "-m 'just the prompt'" in cmd
+
+
+# ---------------------------------------------------------------------------
+# MCP server wiring: mcp.servers reach an isolated OPENCLAW_CONFIG_PATH.
+# ---------------------------------------------------------------------------
+
+
+def test_build_openclaw_config_wraps_servers_under_mcp():
+    """A launchable binding renders under the ``mcp.servers`` config path."""
+    cfg = _build_openclaw_config((McpBinding(name="gke", command=("gke-mcp",)),))
+    assert cfg == {"mcp": {"servers": {"gke": {"command": "gke-mcp"}}}}
+
+
+def test_build_openclaw_config_empty_without_launchable_server():
+    """No command-bearing binding → empty config (caller skips the write)."""
+    assert _build_openclaw_config(()) == {}
+    assert _build_openclaw_config((McpBinding(name="b", command=(), tools=("t",)),)) == {}
+
+
+def test_build_env_threads_api_key_by_provider():
+    """``config.api_key`` lands on the provider-specific env var(s)."""
+    google = _build_env(AgentConfig(api_key="k", provider="google"))
+    assert google["GEMINI_API_KEY"] == "k" and google["GOOGLE_API_KEY"] == "k"
+    anthropic = _build_env(AgentConfig(api_key="k", provider="anthropic"))
+    assert anthropic == {"ANTHROPIC_API_KEY": "k"}
+    assert _build_env(AgentConfig()) == {}
+
+
+def _empty_sessions_run(argv, **kwargs):
+    """Core-subprocess.run stub: ``oc sessions`` returns no rows."""
+    return _make_subprocess_result(stdout=json.dumps([]), returncode=0)
+
+
+def test_execute_writes_mcp_servers_into_isolated_config(monkeypatch, tmp_path):
+    """A command-bearing MCP binding lands in ``<cwd>/openclaw.json`` and
+    ``OPENCLAW_CONFIG_PATH`` is pointed at it (read inside the fake to beat
+    temp-dir cleanup)."""
+    captured: dict = {}
+
+    def fake_bash(cmd, **kwargs):
+        env = kwargs.get("env") or {}
+        cfg_path = env.get("OPENCLAW_CONFIG_PATH")
+        captured["cfg_path"] = cfg_path
+        captured["config"] = (
+            json.loads(Path(cfg_path).read_text())
+            if cfg_path and Path(cfg_path).exists()
+            else None
+        )
+        return _make_subprocess_result(stdout="ok", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_bash)
+    monkeypatch.setattr(oc_mod, "run", _empty_sessions_run)
+    caps = AllCapabilities(
+        mcp_servers=(McpBinding(name="gke", command=("gke-mcp",), tools=("mcp_gke_x",)),),
+    )
+    OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"), capabilities=caps)).run("p")
+    assert captured["cfg_path"], "OPENCLAW_CONFIG_PATH must be set when MCP is bound"
+    assert captured["config"] == {"mcp": {"servers": {"gke": {"command": "gke-mcp"}}}}
+
+
+def test_execute_writes_no_config_when_no_launchable_server(monkeypatch, tmp_path):
+    """No command-bearing MCP binding → no isolated config, env var unset."""
+    captured: dict = {}
+
+    def fake_bash(cmd, **kwargs):
+        env = kwargs.get("env") or {}
+        captured["has_cfg"] = "OPENCLAW_CONFIG_PATH" in env
+        return _make_subprocess_result(stdout="ok", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_bash)
+    monkeypatch.setattr(oc_mod, "run", _empty_sessions_run)
+    caps = AllCapabilities(
+        mcp_servers=(McpBinding(name="builtin", command=(), tools=("alpha",)),),
+    )
+    OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"), capabilities=caps)).run("p")
+    assert captured["has_cfg"] is False
+
+
+def test_execute_isolates_state_dir_and_drops_global_session_wipe(monkeypatch, tmp_path):
+    """``OPENCLAW_STATE_DIR`` points under the per-run cwd and the old global
+    ``rm -rf ~/.openclaw/.../sessions`` wipe is gone (state is fresh per run)."""
+    captured: dict = {}
+
+    def fake_bash(cmd, **kwargs):
+        env = kwargs.get("env") or {}
+        captured["state_dir"] = env.get("OPENCLAW_STATE_DIR")
+        captured["cwd"] = kwargs.get("cwd")
+        captured["cmd"] = cmd
+        return _make_subprocess_result(stdout="ok", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_bash)
+    monkeypatch.setattr(oc_mod, "run", _empty_sessions_run)
+    OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"))).run("p")
+    assert captured["state_dir"] == os.path.join(captured["cwd"], "state")
+    assert "rm -rf" not in captured["cmd"]
+
+
+def test_execute_threads_api_key_into_subprocess_env(monkeypatch, tmp_path):
+    """The model API key reaches the spawned ``oc`` process env."""
+    captured: dict = {}
+
+    def fake_bash(cmd, **kwargs):
+        captured["env"] = kwargs.get("env") or {}
+        return _make_subprocess_result(stdout="ok", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_bash)
+    monkeypatch.setattr(oc_mod, "run", _empty_sessions_run)
+    cfg = AgentConfig(target=str(tmp_path / "oc"), api_key="secret", provider="google")
+    OpenClawAgent(cfg).run("p")
+    assert captured["env"]["GEMINI_API_KEY"] == "secret"
+    assert captured["env"]["GOOGLE_API_KEY"] == "secret"
+
+
+def test_execute_materializes_skills_into_state_skills_dir(monkeypatch, tmp_path):
+    """Bound skill paths are copied to ``<cwd>/state/skills/<name>/SKILL.md``."""
+    src = tmp_path / "skills" / "my-skill"
+    src.mkdir(parents=True)
+    skill_text = "---\nname: my-skill\ndescription: do things\n---\nbody\n"
+    (src / "SKILL.md").write_text(skill_text)
+
+    captured: dict = {}
+
+    def fake_bash(cmd, **kwargs):
+        cwd = kwargs.get("cwd")
+        skill_path = os.path.join(cwd, "state", "skills", "my-skill", "SKILL.md")
+        captured["exists"] = os.path.exists(skill_path)
+        captured["text"] = Path(skill_path).read_text() if captured["exists"] else None
+        return _make_subprocess_result(stdout="ok", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_bash)
+    monkeypatch.setattr(oc_mod, "run", _empty_sessions_run)
+    caps = AllCapabilities(skills=SkillBinding(paths=(str(tmp_path / "skills"),)))
+    OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"), capabilities=caps)).run("p")
+    assert captured["exists"], "skill must be materialized before subprocess"
+    assert captured["text"] == skill_text
+
+
+def test_execute_warns_and_skips_missing_skill_paths(monkeypatch, tmp_path):
+    """A non-existent skill path is skipped (no crash, empty skills root)."""
+    captured: dict = {}
+
+    def fake_bash(cmd, **kwargs):
+        cwd = kwargs.get("cwd")
+        skills_root = os.path.join(cwd, "state", "skills")
+        captured["entries"] = (
+            sorted(os.listdir(skills_root)) if os.path.isdir(skills_root) else []
+        )
+        return _make_subprocess_result(stdout="ok", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_bash)
+    monkeypatch.setattr(oc_mod, "run", _empty_sessions_run)
+    caps = AllCapabilities(skills=SkillBinding(paths=("/no/such/skills/dir",)))
+    OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"), capabilities=caps)).run("p")
+    assert captured["entries"] == []
+
+
+def test_execute_cleans_up_temp_working_dir_after_run(monkeypatch, tmp_path):
+    """The per-run temp dir (state, config, skills) is removed after _execute."""
+    captured: dict = {}
+
+    def fake_bash(cmd, **kwargs):
+        captured["cwd"] = kwargs.get("cwd")
+        return _make_subprocess_result(stdout="ok", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_bash)
+    monkeypatch.setattr(oc_mod, "run", _empty_sessions_run)
+    OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"))).run("p")
+    assert captured["cwd"] is not None
+    assert not os.path.exists(captured["cwd"])

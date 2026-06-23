@@ -14,31 +14,30 @@
 
 """OpenClaw CLI agent harness driving the ``oc`` binary (local-only).
 
+Capability wiring is delivered through openclaw's native channels, laid down in
+a per-run temp dir:
+
+* **State isolation** — ``OPENCLAW_STATE_DIR`` points at ``<run>/state`` so
+  sessions and the skills root live in the per-run dir.
+* **MCP servers** — command-bearing bindings become ``mcp.servers`` entries in
+  ``<run>/openclaw.json``, selected via ``OPENCLAW_CONFIG_PATH``.
+* **Skills** — ``config.capabilities.skills.paths`` are materialized under
+  ``<OPENCLAW_STATE_DIR>/skills/<name>/SKILL.md``.
+* **Rules** — ``config.capabilities.rules.text`` is prepended to the prompt
+  (the ``oc`` build has no dedicated system-prompt flag).
+* **Model auth** — ``config.api_key`` is threaded into the provider env var
+  (``GEMINI_API_KEY``/``ANTHROPIC_API_KEY``/...) that ``oc agent --local`` reads.
+
 Trajectory extraction uses the official session commands documented in
-``docs/openclaw/sessions.md`` — *not* the debug-log ``sessionFile=`` scrape,
-and *not* ``sessions tail`` (which redacts tool args / result bodies):
+``docs/openclaw/sessions.md``: run ``oc agent --local``, locate the single
+session with ``oc sessions --json``, export it with
+``oc sessions export-trajectory``, and parse the bundle. On any extraction miss
+the failure is recorded on ``AgentResult.errors`` rather than returning a
+silent-empty trajectory.
 
-1. Wipe ``~/.openclaw/agents/<name>/sessions/*`` before the run so exactly
-   one fresh session exists afterward.
-2. Run ``oc agent --local --agent <name> -m <prompt>``.
-3. Locate the session: ``oc sessions --agent <name> --json`` (single row).
-4. Export the bundle: ``oc sessions export-trajectory --session-key <key>
-   --workspace <tmpdir> --json``.
-5. Parse the bundle's ``events.jsonl`` (dotted-``type`` events with a nested
-   ``data`` payload) into canonical :class:`ToolCall` entries, and pull the
-   final answer + token usage from its ``model.completed`` event.
-
-The ``oc`` binary is a custom alias on the user's host; on any extraction
-miss the failure is recorded on ``AgentResult.errors`` rather than returning
-a silent-empty trajectory.
-
-Capability wiring: ``capabilities.rules.text`` is **prepended to the prompt**
-(separated by a blank line) before invocation. The installed ``oc`` build has
-no dedicated rules / system-prompt flag, so prompt-prepending is the reliable,
-binary-agnostic delivery channel. The agent assigns only ``self.rules`` in
-``__init__`` (satisfying :class:`SupportsRules`) and leaves ``mcp_servers`` /
-``skills`` unset — granting MCP or skills bindings would silently no-op against
-the ``oc`` build.
+``__init__`` assigns ``self.rules``, ``self.mcp_servers`` and ``self.skills``
+from the granted bindings, so the agent structurally satisfies
+``SupportsRules`` / ``SupportsMcp`` / ``SupportsSkills``.
 """
 
 from __future__ import annotations
@@ -50,12 +49,20 @@ import shlex
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from devops_bench.agents.base import AGENTS, AgentHarness
 from devops_bench.agents.config import AgentConfig
 from devops_bench.agents.result import AgentResult, ToolCall
+from devops_bench.agents.shared.cli_capabilities import (
+    build_mcp_servers,
+    materialize_skills,
+)
 from devops_bench.core import SubprocessError, get_logger
 from devops_bench.core.subprocess import run
+
+if TYPE_CHECKING:  # pragma: no cover - typing-only import
+    from devops_bench.agents.capabilities import McpBinding
 
 __all__ = ["OpenClawAgent", "parse_trajectory_export"]
 
@@ -65,8 +72,15 @@ _log = get_logger("agents.cli.openclaw")
 # to the text the judge grades, so strip them before returning the output.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
+# Per-run layout under the temp working dir. ``state`` is openclaw's state root
+# (sessions + the managed skills tree); ``openclaw.json`` is the isolated config
+# carrying ``mcp.servers``.
+_OPENCLAW_STATE_DIRNAME = "state"
+_OPENCLAW_SKILLS_DIRNAME = "skills"
+_OPENCLAW_CONFIG_FILE = "openclaw.json"
 
-def _strip_ansi(text: str) -> str:
+
+def _strip_ansi(text):
     return _ANSI_RE.sub("", text)
 
 
@@ -98,13 +112,75 @@ def _oc_model_id(config: AgentConfig) -> str:
     return f"{provider}/{model}"
 
 
+def _build_openclaw_config(mcp_servers: tuple[McpBinding, ...]) -> dict:
+    """Assemble the isolated ``openclaw.json`` payload for a run.
+
+    Args:
+        mcp_servers: Bindings to render into ``mcp.servers`` (empty-command
+            bindings are skipped by :func:`build_mcp_servers`).
+
+    Returns:
+        A config mapping with an ``mcp.servers`` section, or an empty dict when
+        no binding carries a launch command (caller then skips the config write
+        and leaves ``OPENCLAW_CONFIG_PATH`` unset).
+    """
+    servers = build_mcp_servers(mcp_servers)
+    if not servers:
+        return {}
+    return {"mcp": {"servers": servers}}
+
+
+def _build_env(config: AgentConfig) -> dict[str, str]:
+    """Build the env overlay that gives ``oc agent --local`` its model API key.
+
+    ``oc agent --local`` reads the model provider's API key from the shell. The
+    benchmark's neutral ``config.api_key`` is mapped onto the provider-specific
+    variable(s) openclaw expects; the model itself is never hardcoded (it flows
+    from ``config.model`` via ``oc models set``).
+
+    Args:
+        config: Resolved :class:`AgentConfig` for this run.
+
+    Returns:
+        A mapping suitable for the subprocess environment overlay. The caller
+        adds ``OPENCLAW_STATE_DIR`` / ``OPENCLAW_CONFIG_PATH`` on top.
+    """
+    overlay: dict[str, str] = {}
+    if config.api_key:
+        provider = (config.provider or "google").strip().lower()
+        if provider in ("google", "gemini"):
+            overlay["GEMINI_API_KEY"] = config.api_key
+            overlay["GOOGLE_API_KEY"] = config.api_key
+        elif provider == "anthropic":
+            overlay["ANTHROPIC_API_KEY"] = config.api_key
+        elif provider == "openai":
+            overlay["OPENAI_API_KEY"] = config.api_key
+        else:
+            overlay["GEMINI_API_KEY"] = config.api_key
+    if config.extra_env:
+        overlay.update(config.extra_env)
+    return overlay
+
+
+def _oc_set_model_cmd(config: AgentConfig, oc_bin: str) -> str:
+    """Shell fragment that points oc at the configured model, or ``""``.
+
+    Chained with ``&&`` so a failed ``models set`` aborts the run (the non-zero
+    exit then surfaces on ``AgentResult.errors``) instead of silently falling
+    through to oc's stored default and invalidating the benchmark arm.
+    """
+    model_id = _oc_model_id(config)
+    if not model_id:
+        return ""
+    return f"{oc_bin} models set {shlex.quote(model_id)} && "
+
+
 def _prepend_rules(rules_text: str, prompt: str) -> str:
     """Return ``prompt`` with ``rules_text`` prepended as an operator brief.
 
-    Empty / whitespace-only rules pass the prompt through unchanged so a
-    default :class:`AgentRules` is indistinguishable from "no preamble". A
-    non-empty brief is separated from the prompt by a blank line so the
-    model sees two distinct sections.
+    Empty / whitespace-only rules pass the prompt through unchanged so a default
+    :class:`AgentRules` is indistinguishable from "no preamble". A non-empty
+    brief is separated from the prompt by a blank line.
 
     Args:
         rules_text: The bound rules text (``capabilities.rules.text``).
@@ -121,16 +197,18 @@ def _prepend_rules(rules_text: str, prompt: str) -> str:
 def _build_local_command(
     config: AgentConfig, prompt: str, agent_name: str, oc_bin: str
 ) -> str:
-    """Build the bash command that wipes sessions, sets the model, and runs ``oc``.
+    """Build the bash command that sets the model and runs ``oc agent --local``.
 
     Every interpolated value is ``shlex.quote``d so prompts/agent names
     containing single quotes, spaces, or newlines neither break parsing nor
     inject commands. ``bash -c`` is required so ``nvm.sh`` can be sourced to
-    expose the right Node toolchain before invoking ``oc``.
+    expose the right Node toolchain before invoking ``oc`` (a no-op when Node is
+    installed system-wide). Session state is isolated via ``OPENCLAW_STATE_DIR``
+    (set by the caller's env overlay), so no prior-session wipe is needed.
 
     Args:
         config: Resolved :class:`AgentConfig`.
-        prompt: Task prompt for the agent.
+        prompt: Task prompt for the agent (rules already prepended).
         agent_name: ``oc`` agent profile (e.g. ``"operator"``).
         oc_bin: Path to the ``oc`` binary.
 
@@ -138,22 +216,11 @@ def _build_local_command(
         A single bash command string ready for ``subprocess.run(shell=True)``.
     """
     quoted_oc = shlex.quote(oc_bin)
-    sessions_dir = os.path.expanduser(f"~/.openclaw/agents/{agent_name}/sessions")
-    model_id = _oc_model_id(config)
-    # Chain `models set` with `&&` so a failed model-set aborts the run; the
-    # bash non-zero exit then surfaces via `completed.returncode` and lands on
-    # `AgentResult.errors` rather than silently falling through to oc's stored
-    # default (which would invalidate the benchmark arm).
-    set_model = (
-        f"{quoted_oc} models set {shlex.quote(model_id)} && " if model_id else ""
-    )
     return (
-        # Wipe prior sessions so exactly one fresh session exists afterward.
-        f"rm -rf {shlex.quote(sessions_dir)}/* 2>/dev/null; "
         # Source nvm so the Node-based oc binary's runtime is available.
         'export NVM_DIR="$HOME/.nvm"; '
         '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
-        f"{set_model}"
+        f"{_oc_set_model_cmd(config, quoted_oc)}"
         f"{quoted_oc} --log-level debug agent --local "
         f"--agent {shlex.quote(agent_name)} -m {shlex.quote(prompt)}"
     )
@@ -329,29 +396,31 @@ class OpenClawAgent(AgentHarness):
     The binary path is resolved from ``config.target``, falling back to
     ``~/bin/oc`` and then ``"oc"`` on ``$PATH``. Model /
     provider flow from ``config.model`` / ``config.provider`` via an
-    ``oc models set <id>`` fragment prepended to the bash command — never
-    hardcoded. Trajectory is exported through the official
-    ``oc sessions export-trajectory`` command into a per-run temp workspace
-    and parsed into the canonical :class:`ToolCall` list.
+    ``oc models set <id>`` fragment — never hardcoded.
 
-    ``__init__`` assigns ``self.rules`` (satisfying :class:`SupportsRules`) so
-    the orchestrator can grant operator-brief text uniformly. The installed
-    ``oc`` build exposes no in-agent MCP or skills wiring, so
-    ``mcp_servers`` / ``skills`` are deliberately *not* assigned —
-    ``isinstance(agent, SupportsMcp / SupportsSkills)`` stays ``False`` rather
-    than granting a binding the agent silently ignores.
+    Capabilities are delivered through openclaw's native channels: MCP servers
+    via an isolated ``OPENCLAW_CONFIG_PATH`` (``mcp.servers``), skills via
+    ``<OPENCLAW_STATE_DIR>/skills``, and rules prepended to the prompt.
+    ``__init__`` assigns ``self.rules``, ``self.mcp_servers`` and
+    ``self.skills``, so the agent structurally satisfies ``SupportsRules`` /
+    ``SupportsMcp`` / ``SupportsSkills``.
 
     Args:
         config: Typed :class:`AgentConfig`; defaults are used when omitted.
-        agent_name: ``oc`` agent profile (defaults to ``"operator"``).
+        agent_name: ``oc`` agent profile (defaults to ``"main"``, openclaw's
+            built-in default agent, which exists in every config — including the
+            per-run isolated one written for MCP).
     """
 
     def __init__(
-        self, config: AgentConfig | None = None, *, agent_name: str = "operator"
+        self, config: AgentConfig | None = None, *, agent_name: str = "main"
     ) -> None:
         AgentHarness.__init__(self, config)
         self.agent_name = agent_name
-        self.rules = self.config.capabilities.rules
+        caps = self.config.capabilities
+        self.rules = caps.rules
+        self.mcp_servers = caps.mcp_servers
+        self.skills = caps.skills
 
     def _resolve_oc_bin(self) -> str:
         """Pick the ``oc`` binary path from config or fall back."""
@@ -361,43 +430,73 @@ class OpenClawAgent(AgentHarness):
         return candidate if os.path.exists(candidate) else "oc"
 
     def _execute(self, prompt: str) -> AgentResult:
-        """Run ``oc agent --local`` and extract the canonical trajectory.
+        """Run ``oc agent --local`` with the granted capabilities and extract the trajectory.
 
-        When ``capabilities.rules.text`` is non-empty, the rules are
-        **prepended to the prompt** (separated by a blank line) before being
-        passed to ``oc agent -m`` — the ``oc`` build exposes no dedicated rules
-        / system-prompt flag.
+        The granted capabilities are laid down in a per-run temp dir before
+        invocation:
+
+        * ``<run>/state`` — ``OPENCLAW_STATE_DIR`` (sessions + skills root).
+        * ``<run>/state/skills/<name>/SKILL.md`` — one per discovered skill.
+        * ``<run>/openclaw.json`` — ``mcp.servers`` for each command-bearing MCP
+          binding, selected via ``OPENCLAW_CONFIG_PATH``.
+
+        ``rules.text`` is prepended to the prompt; the model API key is threaded
+        into the provider env var.
         """
+        caps = self.config.capabilities
         oc_bin = self._resolve_oc_bin()
-        final_prompt = _prepend_rules(self.config.capabilities.rules.text, prompt)
-        command = _build_local_command(self.config, final_prompt, self.agent_name, oc_bin)
+        final_prompt = _prepend_rules(caps.rules.text, prompt)
 
-        try:
-            completed = subprocess.run(
-                command,
-                shell=True,  # noqa: S602 - bash needed for nvm; all values shlex.quoted
-                executable="/bin/bash",
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=self.config.timeout_sec,
+        with tempfile.TemporaryDirectory(prefix="oc-run-") as rundir:
+            workdir = Path(rundir)
+            state_dir = workdir / _OPENCLAW_STATE_DIRNAME
+            state_dir.mkdir(parents=True, exist_ok=True)
+
+            materialize_skills(state_dir / _OPENCLAW_SKILLS_DIRNAME, caps.skills.paths)
+
+            env_overlay = _build_env(self.config)
+            env_overlay["OPENCLAW_STATE_DIR"] = str(state_dir)
+
+            config_payload = _build_openclaw_config(caps.mcp_servers)
+            if config_payload:
+                config_path = workdir / _OPENCLAW_CONFIG_FILE
+                config_path.write_text(json.dumps(config_payload, indent=2))
+                env_overlay["OPENCLAW_CONFIG_PATH"] = str(config_path)
+
+            command = _build_local_command(self.config, final_prompt, self.agent_name, oc_bin)
+
+            try:
+                completed = subprocess.run(
+                    command,
+                    shell=True,  # noqa: S602 - bash needed for nvm; all values shlex.quoted
+                    executable="/bin/bash",
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=self.config.timeout_sec,
+                    cwd=str(workdir),
+                    env={**os.environ, **env_overlay},
+                )
+            except subprocess.TimeoutExpired as exc:
+                return AgentResult.errored(f"oc agent timed out after {exc.timeout}s")
+            except OSError as exc:
+                return AgentResult.errored(f"oc binary unavailable: {exc}")
+
+            stdout_text = _strip_ansi(completed.stdout or "")
+            errors: list[str] = []
+            metadata: dict = {}
+
+            if completed.returncode != 0:
+                stderr = (completed.stderr or "").strip()
+                errors.append(
+                    f"oc agent exited {completed.returncode}: {stderr or '<no stderr>'}"
+                )
+                metadata["returncode"] = completed.returncode
+
+            trajectory, tokens, bundle_output, export_errors = self._extract_trajectory(
+                oc_bin, env_overlay
             )
-        except subprocess.TimeoutExpired as exc:
-            return AgentResult.errored(f"oc agent timed out after {exc.timeout}s")
-        except OSError as exc:
-            return AgentResult.errored(f"oc binary unavailable: {exc}")
-
-        stdout_text = _strip_ansi(completed.stdout or "")
-        errors: list[str] = []
-        metadata: dict = {}
-
-        if completed.returncode != 0:
-            stderr = (completed.stderr or "").strip()
-            errors.append(f"oc agent exited {completed.returncode}: {stderr or '<no stderr>'}")
-            metadata["returncode"] = completed.returncode
-
-        trajectory, tokens, bundle_output, export_errors = self._extract_trajectory(oc_bin)
-        errors.extend(export_errors)
+            errors.extend(export_errors)
 
         # Bundle text is clean; bash stdout carries debug noise — fall back only if empty.
         output = bundle_output if bundle_output else stdout_text
@@ -411,9 +510,13 @@ class OpenClawAgent(AgentHarness):
         )
 
     def _extract_trajectory(
-        self, oc_bin: str
+        self, oc_bin: str, env_overlay: dict[str, str]
     ) -> tuple[list[dict], dict, str, list[str]]:
         """Run ``oc sessions`` + ``export-trajectory`` and parse the bundle.
+
+        ``env_overlay`` carries ``OPENCLAW_STATE_DIR`` (and ``OPENCLAW_CONFIG_PATH``
+        when MCP is configured) so the session commands read from the same
+        isolated state the agent turn wrote to.
 
         Returns:
             A ``(trajectory, tokens, output_text, errors)`` tuple. ``output_text``
@@ -427,6 +530,7 @@ class OpenClawAgent(AgentHarness):
                 [oc_bin, "sessions", "--agent", self.agent_name, "--json"],
                 check=False,
                 timeout=self.config.timeout_sec,
+                extra_env=env_overlay,
             )
         except SubprocessError as exc:
             errors.append(f"oc sessions failed: {exc}")
@@ -463,6 +567,7 @@ class OpenClawAgent(AgentHarness):
                     ],
                     check=False,
                     timeout=self.config.timeout_sec,
+                    extra_env=env_overlay,
                 )
             except SubprocessError as exc:
                 errors.append(f"oc export-trajectory failed: {exc}")
@@ -495,9 +600,9 @@ def _pick_session_key(sessions_json: str) -> str | None:
     """Return the single session key from ``oc sessions --json`` output, or ``None``.
 
     The output may be a list of rows or a wrapper dict with a ``sessions``
-    list (per ``docs/openclaw/sessions.md``). Because the run wiped the
-    sessions dir first, exactly one row is expected; if more than one is
-    present the first is taken (with a debug log).
+    list (per ``docs/openclaw/sessions.md``). Because each run uses fresh
+    isolated state, exactly one row is expected; if more than one is present
+    the first is taken (with a debug log).
 
     Args:
         sessions_json: Raw stdout from ``oc sessions --agent <name> --json``.

@@ -26,14 +26,17 @@ from devops_bench.agents.capabilities import (
     AgentRules,
     AllCapabilities,
     McpBinding,
+    SkillBinding,
     SupportsMcp,
     SupportsRules,
+    SupportsSkills,
 )
 from devops_bench.agents.cli import gemini as gemini_mod
 from devops_bench.agents.cli.gemini import (
     GeminiCliAgent,
     _build_argv,
     _build_env,
+    _build_settings,
     parse_stream_json,
 )
 from devops_bench.core.errors import SubprocessError
@@ -357,12 +360,13 @@ def test_legacy_session_glob_is_gone():
 # ---------------------------------------------------------------------------
 
 
-def test_gemini_agent_satisfies_mcp_and_rules_protocols():
-    """Gemini declares MCP + Rules (its binary launches MCP in-process and
-    auto-loads ``GEMINI.md``); skills are not declared because oc-style local
-    skills are not how Gemini loads context."""
+def test_gemini_agent_satisfies_mcp_skills_and_rules_protocols():
+    """Gemini declares MCP, Skills and Rules: it writes ``mcpServers`` into a
+    workspace ``settings.json``, materializes workspace skills under
+    ``.gemini/skills``, and auto-loads ``GEMINI.md``."""
     agent = GeminiCliAgent(AgentConfig())
     assert isinstance(agent, SupportsMcp)
+    assert isinstance(agent, SupportsSkills)
     assert isinstance(agent, SupportsRules)
 
 
@@ -402,12 +406,15 @@ def test_execute_disables_extensions_when_capabilities_have_no_mcp(monkeypatch):
 def test_gemini_agent_mirrors_capability_bindings_onto_mixin_attributes():
     """The structural-Protocol attributes track the granted bindings."""
     binding = McpBinding(name="x", command=(), tools=("t",))
+    skills = SkillBinding(paths=("/some/skills",))
     caps = AllCapabilities(
         mcp_servers=(binding,),
+        skills=skills,
         rules=AgentRules(text="be a sre"),
     )
     agent = GeminiCliAgent(AgentConfig(capabilities=caps))
     assert agent.mcp_servers == (binding,)
+    assert agent.skills == skills
     assert agent.rules == AgentRules(text="be a sre")
 
 
@@ -482,3 +489,105 @@ def test_execute_cleans_up_temp_working_dir_after_run(monkeypatch):
     # cwd was a real path during the run; after _execute returns it is gone.
     assert captured["cwd"] is not None
     assert not os.path.exists(captured["cwd"])
+
+
+# ---------------------------------------------------------------------------
+# MCP server wiring: settings.json mcpServers reach the binary's cwd.
+# ---------------------------------------------------------------------------
+
+
+def test_build_settings_combines_mcp_servers_and_skills_flag():
+    """Both knobs render; skills flag is gated on ``skills_enabled``."""
+    binding = McpBinding(name="gke", command=("gke-mcp",))
+    assert _build_settings((binding,), skills_enabled=True) == {
+        "mcpServers": {"gke": {"command": "gke-mcp"}},
+        "skills": {"enabled": True},
+    }
+    assert _build_settings((), skills_enabled=False) == {}
+
+
+def test_execute_writes_mcp_servers_into_workspace_settings(monkeypatch):
+    """A command-bearing MCP binding lands in ``<cwd>/.gemini/settings.json``."""
+    captured: dict = {}
+
+    def fake_run(argv, **kwargs):
+        settings_path = os.path.join(kwargs["cwd"], ".gemini", "settings.json")
+        captured["exists"] = os.path.exists(settings_path)
+        if captured["exists"]:
+            with open(settings_path) as f:
+                captured["settings"] = json.load(f)
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(gemini_mod, "run", fake_run)
+    caps = AllCapabilities(
+        mcp_servers=(McpBinding(name="gke", command=("gke-mcp",), tools=("mcp_gke_x",)),),
+    )
+    GeminiCliAgent(AgentConfig(target="gemini", capabilities=caps)).run("p")
+
+    assert captured["exists"], "settings.json must exist in cwd before subprocess"
+    assert captured["settings"]["mcpServers"] == {"gke": {"command": "gke-mcp"}}
+
+
+def test_execute_writes_no_settings_when_no_command_and_no_skills(monkeypatch):
+    """No launchable MCP server and no skills → no settings.json is written."""
+    captured: dict = {}
+
+    def fake_run(argv, **kwargs):
+        settings_path = os.path.join(kwargs["cwd"], ".gemini", "settings.json")
+        captured["exists"] = os.path.exists(settings_path)
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(gemini_mod, "run", fake_run)
+    # Binding carries tools (→ --allowed-tools) but no launch command.
+    caps = AllCapabilities(
+        mcp_servers=(McpBinding(name="builtin", command=(), tools=("alpha",)),),
+    )
+    GeminiCliAgent(AgentConfig(target="gemini", capabilities=caps)).run("p")
+    assert captured["exists"] is False
+
+
+def test_execute_materializes_skills_into_workspace(monkeypatch, tmp_path):
+    """Bound skill paths are copied to ``<cwd>/.gemini/skills/<name>/SKILL.md``
+    and ``skills.enabled`` is set in settings.json."""
+    src = tmp_path / "skills" / "my-skill"
+    src.mkdir(parents=True)
+    skill_text = "---\nname: my-skill\ndescription: do things\n---\nbody\n"
+    (src / "SKILL.md").write_text(skill_text)
+
+    captured: dict = {}
+
+    def fake_run(argv, **kwargs):
+        skill_path = os.path.join(kwargs["cwd"], ".gemini", "skills", "my-skill", "SKILL.md")
+        captured["skill_exists"] = os.path.exists(skill_path)
+        if captured["skill_exists"]:
+            with open(skill_path) as f:
+                captured["skill_text"] = f.read()
+        else:
+            captured["skill_text"] = None
+        settings_path = os.path.join(kwargs["cwd"], ".gemini", "settings.json")
+        with open(settings_path) as f:
+            captured["settings"] = json.load(f)
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(gemini_mod, "run", fake_run)
+    caps = AllCapabilities(skills=SkillBinding(paths=(str(tmp_path / "skills"),)))
+    GeminiCliAgent(AgentConfig(target="gemini", capabilities=caps)).run("p")
+
+    assert captured["skill_exists"], "skill must be materialized before subprocess"
+    assert captured["skill_text"] == skill_text
+    assert captured["settings"]["skills"] == {"enabled": True}
+
+
+def test_execute_warns_and_skips_missing_skill_paths(monkeypatch):
+    """A non-existent skill path is skipped (no settings.json, no crash)."""
+    captured: dict = {}
+
+    def fake_run(argv, **kwargs):
+        settings_path = os.path.join(kwargs["cwd"], ".gemini", "settings.json")
+        captured["exists"] = os.path.exists(settings_path)
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(gemini_mod, "run", fake_run)
+    caps = AllCapabilities(skills=SkillBinding(paths=("/no/such/skills/dir",)))
+    GeminiCliAgent(AgentConfig(target="gemini", capabilities=caps)).run("p")
+    assert captured["exists"] is False
