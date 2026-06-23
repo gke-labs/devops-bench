@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+#
+# Bastion startup script (runs as root on first boot via metadata_startup_script).
+#
+# Installs the system-wide toolchain the eval harness drives at runtime, plus the
+# openclaw `oc` binary. Mirrors the install steps in Dockerfile.harness (adapted
+# to Ubuntu apt + Node 22, which openclaw requires). Per-user setup (the repo,
+# the venv, and the openclaw API key) is done separately by scripts/bastion/.
+#
+# Logs to /var/log/bench-bastion-startup.log; on success it touches
+# /var/lib/bench-bastion-ready so callers can poll for readiness.
+set -euxo pipefail
+
+exec > >(tee -a /var/log/bench-bastion-startup.log) 2>&1
+echo "==> bench-bastion startup begin: $(date -u +%FT%TZ)"
+
+export DEBIAN_FRONTEND=noninteractive
+
+TOFU_VERSION="1.8.8"
+NODE_MAJOR="22"
+# Pin openclaw so VM rebuilds are reproducible; bump deliberately when adopting a
+# new release rather than tracking @latest.
+OPENCLAW_VERSION="2026.6.10"
+
+# Already provisioned (e.g. on VM restart)? Skip the heavy install.
+if [ -f /var/lib/bench-bastion-ready ]; then
+  echo "==> already provisioned; nothing to do"
+  exit 0
+fi
+
+echo "==> base packages"
+apt-get update -y
+apt-get install -y --no-install-recommends \
+  curl wget gnupg unzip ca-certificates git jq build-essential python3-venv python3-pip
+
+echo "==> OpenTofu ${TOFU_VERSION}"
+ARCH="$(dpkg --print-architecture)" # amd64 / arm64
+wget -q "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_${ARCH}.zip" -O /tmp/tofu.zip
+unzip -o /tmp/tofu.zip -d /usr/local/bin/
+rm -f /tmp/tofu.zip
+
+echo "==> Node.js ${NODE_MAJOR} (openclaw requires >=22)"
+curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+apt-get install -y --no-install-recommends nodejs
+
+echo "==> Google Cloud SDK + gke-gcloud-auth-plugin + kubectl"
+curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list
+apt-get update -y
+apt-get install -y --no-install-recommends \
+  google-cloud-cli google-cloud-cli-gke-gcloud-auth-plugin kubectl
+
+echo "==> openclaw (oc) ${OPENCLAW_VERSION}"
+npm install -g "openclaw@${OPENCLAW_VERSION}"
+# `oc` is this project's alias for the standard openclaw binary.
+ln -sf "$(command -v openclaw)" /usr/local/bin/oc
+
+echo "==> gke-mcp (GKE MCP server for the agent's MCP capability)"
+# Official prebuilt installer drops an arch-matched binary on PATH (no Go build).
+# Download to a file first, then execute: piping ``curl | bash`` can run a
+# truncated script if the connection drops mid-transfer.
+curl -fsSL https://raw.githubusercontent.com/GoogleCloudPlatform/gke-mcp/main/install.sh \
+  -o /tmp/gke-mcp-install.sh
+bash /tmp/gke-mcp-install.sh
+rm -f /tmp/gke-mcp-install.sh
+
+echo "==> versions"
+tofu version || true
+node --version || true
+gcloud --version | head -1 || true
+kubectl version --client 2>/dev/null | head -1 || true
+oc --version || true
+python3 --version || true
+
+touch /var/lib/bench-bastion-ready
+echo "==> bench-bastion startup complete: $(date -u +%FT%TZ)"
