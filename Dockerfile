@@ -1,6 +1,11 @@
 FROM python:3.11-slim
 
 # Install system dependencies
+# ARCH selects the OpenTofu archive (pass --build-arg ARCH=amd64|arm64). It
+# defaults to the build host's native architecture via dpkg, so the bundled tofu
+# matches the image and runs without emulation (e.g. on an arm64 podman machine).
+ARG ARCH
+ARG TOFU_VERSION=1.8.8
 RUN apt-get update && apt-get install -y \
     git \
     make \
@@ -11,9 +16,10 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
-    && wget https://github.com/opentofu/opentofu/releases/download/v1.8.8/tofu_1.8.8_linux_amd64.zip \
-    && unzip tofu_1.8.8_linux_amd64.zip -d /usr/local/bin/ \
-    && rm tofu_1.8.8_linux_amd64.zip \
+    && ARCH="${ARCH:-$(dpkg --print-architecture)}" \
+    && wget "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_${ARCH}.zip" \
+    && unzip "tofu_${TOFU_VERSION}_linux_${ARCH}.zip" -d /usr/local/bin/ \
+    && rm "tofu_${TOFU_VERSION}_linux_${ARCH}.zip" \
     && rm -rf /var/lib/apt/lists/*
 
 

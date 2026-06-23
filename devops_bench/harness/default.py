@@ -143,15 +143,26 @@ class DefaultHarness(Harness):
         reporter: ResultReporter | None = None,
         default_target_deployment: str = _DEFAULT_TARGET_DEPLOYMENT,
         default_namespace: str = _DEFAULT_NAMESPACE,
+        agent_type: str | None = None,
+        no_infra: bool | None = None,
+        no_teardown: bool | None = None,
     ) -> None:
         self.project_id = project_id
         self.cluster_name = cluster_name
         self._judge_model = judge_model
         self.results_root = results_root
-        self.agent_type = (get_env("BENCH_AGENT_TYPE", "cli") or "cli").lower()
-        # Single, harness-owned read of ``BENCH_USE_MCP``. The resolved boolean
-        # is threaded into both the AgentConfig capabilities and the metrics
-        # scoring call.
+        # Flag-driven config is injected by the caller; each falls back to its
+        # env var only when the caller passes ``None``.
+        resolved_agent_type = (
+            agent_type if agent_type is not None else get_env("BENCH_AGENT_TYPE", "cli")
+        )
+        self.agent_type = (resolved_agent_type or "cli").lower()
+        self.no_infra = no_infra if no_infra is not None else get_bool("BENCH_NO_INFRA")
+        self.no_teardown = (
+            no_teardown if no_teardown is not None else get_bool("BENCH_NO_TEARDOWN")
+        )
+        # Harness-owned single read of ``BENCH_USE_MCP``, threaded into the
+        # AgentConfig capabilities and the metrics scoring call.
         self.use_mcp: bool = get_bool("BENCH_USE_MCP", True)
         # Build the gated :class:`AgentConfig` once and hold the snapshot for
         # the lifetime of this harness, so every agent run and every record's
@@ -542,6 +553,10 @@ class DefaultHarness(Harness):
             without a ``KeyError``.
         """
         infra_config = task.infrastructure or {}
+        if self.no_infra:
+            # The DI'd no-infra flag routes through the existing "noop" deployer
+            # path so the harness never re-reads BENCH_NO_INFRA here.
+            infra_config = {**infra_config, "deployer": "noop"}
         deployer: Any | None = None
         scenario_manager: ScenarioManager | None = None
         scenario_thread: threading.Thread | None = None
@@ -851,7 +866,7 @@ class DefaultHarness(Harness):
             infra_config: Task infrastructure config (``teardown`` flag).
             name: Task name, for logging.
         """
-        if get_bool("BENCH_NO_TEARDOWN"):
+        if self.no_teardown:
             return
         if not infra_config.get("teardown", True):
             return

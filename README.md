@@ -110,15 +110,80 @@ To evaluate the results, use a capable LLM to score the agent's responses agains
 
 ### Building the Image Locally
 
-To build the `devops-bench` container image, run the following command from the project root:
+There are two images, both buildable with Docker or Podman interchangeably:
+
+- **`Dockerfile`** — the legacy image; runs `pkg/evaluator/evaluate.py` on Python 3.11 via `scripts/entrypoint.sh`.
+- **`Dockerfile.harness`** — the full eval-harness image; installs the packaged `devops-bench` console script and runs the refactored end-to-end pipeline (`devops_bench.run` / `devops_bench.cli`) on Python 3.12.
 
 ```bash
+# Legacy image
 docker build -t devops-bench:latest .
+
+# Full harness image
+docker build -f Dockerfile.harness -t devops-bench-harness:latest .
 ```
+
+#### Architecture / Podman on Apple silicon
+
+Both Dockerfiles take an `ARCH` build arg that selects the OpenTofu archive. It
+defaults to the build host's native architecture (`dpkg --print-architecture`),
+so a plain build produces a `tofu` binary that matches the image and runs without
+emulation — including on an arm64 `podman machine`. Override it only when building
+for a different architecture, and keep it consistent with `--platform`:
+
+```bash
+# Native build (Podman, Apple silicon): tofu is selected as arm64 automatically
+podman build -f Dockerfile.harness -t devops-bench-harness:latest .
+
+# Explicit arch (e.g. cross-building or pinning)
+podman build -f Dockerfile.harness --build-arg ARCH=arm64 -t devops-bench-harness:latest .
+```
+
+> Note: building the legacy image for `--platform=linux/amd64` on an Apple-silicon
+> `podman machine` lets it build, but the emulated amd64 `tofu` (a Go binary) can
+> crash under the VM's x86 emulation. Building natively (the default `ARCH`) avoids
+> this.
+
+#### Running the harness image
+
+The harness image forwards any arguments to the `devops-bench` CLI, so the task
+source and flags go straight after the image name:
+
+```bash
+podman run --rm \
+  -v "$(pwd)/results:/app/results" \
+  -e JUDGE_PROVIDER="google" \
+  -e JUDGE_MODEL="gemini-3.1-pro-preview" \
+  -e JUDGE_API_KEY="<YOUR_GEMINI_API_KEY>" \
+  devops-bench-harness:latest tasks/gcp/create-deployment/task.yaml --no-infra
+```
+
+You can also drive it purely via env vars by setting `BENCH_SOURCE` (or the
+legacy `BENCH_TASK_FILE`) and passing no positional argument.
 
 ### Running the Evaluation
 
 You can run the benchmark in two primary modes: **API Mode** (internal Python loop) or **CLI Mode** (e.g. external Gemini CLI binary).
+
+#### Running via the library/CLI entrypoint
+
+The package installs a `devops-bench` console script that wraps the pipeline. It
+reads the same `PROJECT_ID` / `CLUSTER_NAME` / `BENCH_*` / `JUDGE_*` env vars and
+lets flags override them:
+
+```bash
+devops-bench tasks/create-deployment/task.yaml --project $PROJECT --cluster $CLUSTER
+python -m devops_bench tasks/create-deployment/task.yaml --no-infra
+```
+
+The same pipeline is callable as a library; `BenchmarkResult.results_path` points
+at the run's `results.json`:
+
+```python
+from devops_bench.run import run_benchmark, BenchmarkConfig
+result = run_benchmark(BenchmarkConfig.from_env("tasks/create-deployment/task.yaml"))
+print(result.results_path)
+```
 
 #### Option 1: Running in API Mode
 This mode uses the internal Python runner.
