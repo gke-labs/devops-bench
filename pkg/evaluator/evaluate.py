@@ -41,7 +41,7 @@ from pkg.evaluator.loader import (
     parse_documentation_from_yaml,
 )
 import threading
-from pkg.manager.manager import ScenarioManager
+from pkg.manager.manager import ScenarioManager, pick_free_port
 from deployers.factory import get_deployer
 
 
@@ -814,7 +814,10 @@ def main():
 
                     if spec_list:
                         spec = spec_list[0]
-                        scenario_manager = ScenarioManager(target_deployment, namespace)
+                        local_port = pick_free_port() if parallel_enabled() else None
+                        scenario_manager = ScenarioManager(
+                            target_deployment, namespace, local_port=local_port
+                        )
                         t = threading.Thread(
                             target=scenario_manager.run_chaos_and_verification,
                             args=(spec, verification_spec_list),
