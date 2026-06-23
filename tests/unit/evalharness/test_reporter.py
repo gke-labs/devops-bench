@@ -147,6 +147,14 @@ def test_new_run_dir_returns_unique_path_under_root(tmp_path: Path) -> None:
     assert a.name.startswith("run_")
 
 
+def test_new_run_dir_records_last_run_dir(tmp_path: Path) -> None:
+    """``new_run_dir`` exposes the most recent dir via ``last_run_dir``."""
+    r = ResultReporter(results_root=tmp_path)
+    assert r.last_run_dir is None
+    d = r.new_run_dir()
+    assert r.last_run_dir == d
+
+
 def test_legacy_success_record_keys_are_emitted_verbatim(
     isolated_env: None,
 ) -> None:

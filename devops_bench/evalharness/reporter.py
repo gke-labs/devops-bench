@@ -49,6 +49,10 @@ class ResultReporter:
         results_root: Root directory under which per-run subdirectories are
             created. Defaults to ``"results"``.
         run_dir_prefix: Prefix for the timestamped subdirectory name.
+
+    Attributes:
+        last_run_dir: The most recent directory returned by
+            :meth:`new_run_dir`, or ``None`` if none has been created yet.
     """
 
     def __init__(
@@ -59,6 +63,7 @@ class ResultReporter:
     ) -> None:
         self.results_root = Path(results_root)
         self.run_dir_prefix = run_dir_prefix
+        self.last_run_dir: Path | None = None
 
     def new_run_dir(self) -> Path:
         """Create and return a fresh timestamped run directory under the root.
@@ -69,6 +74,7 @@ class ResultReporter:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = self.results_root / f"{self.run_dir_prefix}{timestamp}"
         run_dir.mkdir(parents=True, exist_ok=True)
+        self.last_run_dir = run_dir
         return run_dir
 
     def write(self, run_dir: str | os.PathLike[str], results: list[dict[str, Any]]) -> Path:

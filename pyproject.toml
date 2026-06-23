@@ -50,6 +50,9 @@ anthropic = ["anthropic>=0.104.1"]
 openai = ["openai>=1.0.0"]
 all = ["devops-bench[google-genai,anthropic,openai]"]
 
+[project.scripts]
+devops-bench = "devops_bench.cli:main"
+
 [tool.hatch.version]
 path = "devops_bench/__init__.py"
 

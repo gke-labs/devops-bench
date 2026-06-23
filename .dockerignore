@@ -1,0 +1,26 @@
+# Keep the build context small and reproducible (Podman and Docker honor this
+# file identically).
+
+# VCS and agent/worktree scratch
+.git
+.github
+.worktrees
+.claude
+
+# Third-party sources are cloned/built inside the image by scripts/setup_*.sh
+third_party
+
+# Local run artifacts
+results
+
+# Python caches and virtualenvs
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+.venv
+.ruff_cache
+.pytest_cache
+
+# Local env files
+.env
