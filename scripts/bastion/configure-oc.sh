@@ -13,21 +13,36 @@
 # both arms authenticate without baking the key into oc during provisioning.
 #
 # Usage:
-#   scripts/bastion/configure-oc.sh [--mcp|--no-mcp] [--skills|--no-skills]
+#   scripts/bastion/configure-oc.sh [--mcp|--no-mcp] [--skills|--no-skills] [--vertex]
+#
+# --vertex registers oc's built-in ``google-vertex`` provider in the global
+# config so the legacy arm can target ``google-vertex/<model>`` via the bastion
+# VM SA's ADC (no API keys). It writes the provider's ``api``/``baseUrl``/model
+# entries (without ``api: google-vertex`` oc would route the provider through the
+# OpenAI transport), allowlists the models for the agent, and pastes the ADC
+# marker. At run time the matrix still exports
+# GOOGLE_CLOUD_API_KEY=gcp-vertex-credentials (see _matrix_lib.sh BENCH_VERTEX),
+# which is what makes auth portable across parallel runs' isolated state dirs.
 #
 # Env overrides:
-#   GKE_MCP_BIN   path to the gke-mcp binary   (default: ~/gke-mcp)
-#   SECRETS_ENV   file exporting GEMINI_API_KEY (default: ~/secrets.env)
-#   SKILLS_SRC    dir of skill markdowns        (default: ~/devops-bench/skills)
-#   OC_SKILLS_DIR staging dir for <name>/SKILL.md (default: ~/oc-skills)
+#   GKE_MCP_BIN    path to the gke-mcp binary    (default: ~/gke-mcp)
+#   SECRETS_ENV    file exporting GEMINI_API_KEY  (default: ~/secrets.env)
+#   SKILLS_SRC     dir of skill markdowns         (default: ~/devops-bench/skills)
+#   OC_SKILLS_DIR  staging dir for <name>/SKILL.md (default: ~/oc-skills)
+#   VERTEX_MODELS  space-separated model ids to register under google-vertex
+#                  (default: "gemini-3.1-pro-preview gemini-3-flash-preview")
+#   OPENCLAW_AGENT oc agent profile for the auth marker (default: main)
 set -euo pipefail
 
 WANT_MCP=1
 WANT_SKILLS=1
+WANT_VERTEX=0
 GKE_MCP_BIN="${GKE_MCP_BIN:-${HOME}/gke-mcp}"
 SECRETS_ENV="${SECRETS_ENV:-${HOME}/secrets.env}"
 SKILLS_SRC="${SKILLS_SRC:-${HOME}/devops-bench/skills}"
 OC_SKILLS_DIR="${OC_SKILLS_DIR:-${HOME}/oc-skills}"
+VERTEX_MODELS="${VERTEX_MODELS:-gemini-3.1-pro-preview gemini-3-flash-preview}"
+OPENCLAW_AGENT="${OPENCLAW_AGENT:-main}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,6 +50,8 @@ while [ $# -gt 0 ]; do
     --no-mcp) WANT_MCP=0 ;;
     --skills) WANT_SKILLS=1 ;;
     --no-skills) WANT_SKILLS=0 ;;
+    --vertex) WANT_VERTEX=1 ;;
+    --no-vertex) WANT_VERTEX=0 ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -93,4 +110,41 @@ else
   echo "==> skills NOT installed (--no-skills)"
 fi
 
-echo "==> oc configured (mcp=${WANT_MCP} skills=${WANT_SKILLS}). 'oc mcp list' / 'oc skills list' to verify."
+# --- 4. Vertex provider (optional) ------------------------------------------ #
+if [ "${WANT_VERTEX}" = "1" ]; then
+  # Paste the ADC marker so `oc agent` works even outside the matrix (the matrix
+  # itself relies on the GOOGLE_CLOUD_API_KEY env marker for parallel-safe auth).
+  printf 'gcp-vertex-credentials\n' \
+    | oc models auth --agent "${OPENCLAW_AGENT}" paste-api-key --provider google-vertex >/dev/null \
+    && echo "==> oc google-vertex auth marker set (agent ${OPENCLAW_AGENT})"
+  # Ensure the provider routes through the google-vertex transport (api field) and
+  # the models are registered + allowlisted for the agent. Idempotent.
+  OC_CONFIG="${HOME}/.openclaw/openclaw.json" VERTEX_MODELS="${VERTEX_MODELS}" \
+  OPENCLAW_AGENT="${OPENCLAW_AGENT}" python3 - <<'PY'
+import json, os
+path = os.environ["OC_CONFIG"]
+models = os.environ["VERTEX_MODELS"].split()
+agent = os.environ["OPENCLAW_AGENT"]
+with open(path) as f:
+    cfg = json.load(f)
+prov = cfg.setdefault("models", {}).setdefault("providers", {}).setdefault("google-vertex", {})
+prov["api"] = "google-vertex"
+prov["baseUrl"] = "https://{location}-aiplatform.googleapis.com"
+existing = {m.get("id") for m in prov.get("models", []) if isinstance(m, dict)}
+prov.setdefault("models", [])
+for m in models:
+    if m not in existing:
+        prov["models"].append({"id": m, "name": m})
+# Allowlist google-vertex/<model> for the agent's per-run --model override.
+allow = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("models", {})
+for m in models:
+    allow.setdefault(f"google-vertex/{m}", {})
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"==> google-vertex provider registered + allowlisted: {', '.join(models)}")
+PY
+else
+  echo "==> google-vertex provider NOT registered (use --vertex for Vertex/ADC runs)"
+fi
+
+echo "==> oc configured (mcp=${WANT_MCP} skills=${WANT_SKILLS} vertex=${WANT_VERTEX}). 'oc mcp list' / 'oc skills list' to verify."
