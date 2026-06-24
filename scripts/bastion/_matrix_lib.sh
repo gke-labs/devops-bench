@@ -210,9 +210,14 @@ matrix_dispatch() {
     echo "echo ALL_DONE >\"\$HOME/${REMOTE_OUT}/.done\""
   } >"${runner}"
 
+  # Per-stamp runner path so two matrices (e.g. refactored + legacy) can be
+  # launched in parallel without clobbering each other's runner script.
+  local remote_runner="/tmp/matrix-runner-${STAMP}.sh"
   echo "==> uploading + launching remote runner (detached)"
-  push_file "${runner}" "/tmp/matrix-runner.sh"
-  remote_exec "chmod +x /tmp/matrix-runner.sh; nohup /tmp/matrix-runner.sh >\$HOME/${REMOTE_OUT}.out 2>&1 & echo launched pid=\$!"
+  push_file "${runner}" "${remote_runner}"
+  # Create the output dir (and its parent) BEFORE the nohup redirect — the
+  # ``>...${REMOTE_OUT}.out`` target dir must exist or the job never starts.
+  remote_exec "mkdir -p \$HOME/${REMOTE_OUT}; chmod +x ${remote_runner}; nohup ${remote_runner} >\$HOME/${REMOTE_OUT}.out 2>&1 & echo launched pid=\$!"
   echo "    (to re-attach if this exits: RESUME_STAMP=${STAMP} re-run the same command)"
 
   _poll_until_done "${#COMBOS[@]}"
