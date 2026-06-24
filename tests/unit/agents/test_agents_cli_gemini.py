@@ -140,7 +140,7 @@ def test_parse_stream_json_empty_input_returns_empty():
 def test_build_argv_disables_extensions_when_no_allowed_tools():
     argv = _build_argv("/bin/gemini", "hi", ())
     assert "--output-format" in argv and "stream-json" in argv
-    assert '-e=""' in argv
+    assert "--extensions=" in argv
     assert "--allowed-tools" not in argv
     assert argv[-2:] == ["-p", "hi"]
 
@@ -149,7 +149,7 @@ def test_build_argv_emits_one_allowed_tools_pair_per_tool():
     argv = _build_argv("/bin/gemini", "hi", ("a", "b"))
     pairs = [(argv[i], argv[i + 1]) for i in range(len(argv) - 1) if argv[i] == "--allowed-tools"]
     assert pairs == [("--allowed-tools", "a"), ("--allowed-tools", "b")]
-    assert '-e=""' not in argv
+    assert "--extensions=" not in argv
 
 
 def test_build_env_threads_api_key_and_model_into_gemini_vars():
@@ -386,11 +386,11 @@ def test_execute_pulls_allowed_tools_from_capabilities(monkeypatch):
     argv = captured["argv"]
     pairs = [(argv[i], argv[i + 1]) for i in range(len(argv) - 1) if argv[i] == "--allowed-tools"]
     assert pairs == [("--allowed-tools", "alpha"), ("--allowed-tools", "beta")]
-    assert '-e=""' not in argv  # tools present → extensions enabled
+    assert "--extensions=" not in argv  # tools present → extensions enabled
 
 
 def test_execute_disables_extensions_when_capabilities_have_no_mcp(monkeypatch):
-    """No MCP binding (no allowed tools) → ``-e=""`` argv (extensions off)."""
+    """No MCP binding (no allowed tools) → ``--extensions=`` argv (extensions off)."""
     captured: dict = {}
 
     def fake_run(argv, **kwargs):
@@ -399,7 +399,7 @@ def test_execute_disables_extensions_when_capabilities_have_no_mcp(monkeypatch):
 
     monkeypatch.setattr(gemini_mod, "run", fake_run)
     GeminiCliAgent(AgentConfig(target="gemini")).run("p")
-    assert '-e=""' in captured["argv"]
+    assert "--extensions=" in captured["argv"]
     assert "--allowed-tools" not in captured["argv"]
 
 

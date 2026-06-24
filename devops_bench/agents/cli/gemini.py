@@ -94,9 +94,11 @@ def _build_settings(mcp_servers: tuple[McpBinding, ...], *, skills_enabled: bool
 def _build_argv(target: str, prompt: str, allowed_tools: tuple[str, ...]) -> list[str]:
     """Build the ``gemini`` invocation for ``prompt``.
 
-    When ``allowed_tools`` is empty, extensions are disabled via ``-e=""`` —
-    the documented switch for the headless "no tools" arm; ``-e none`` does
-    *not* disable extensions despite reading like it should.
+    When ``allowed_tools`` is empty, extensions are disabled via
+    ``--extensions=`` — the headless "no tools" arm. The short ``-e=`` / ``-e=""``
+    forms print help and exit non-zero on gemini >= 0.47 (the literal value,
+    quotes included, reaches the parser since argv bypasses the shell), and
+    ``-e none`` loads an extension literally named "none" rather than disabling.
 
     Args:
         target: Path to the ``gemini`` binary (already user-expanded).
@@ -113,9 +115,9 @@ def _build_argv(target: str, prompt: str, allowed_tools: tuple[str, ...]) -> lis
         for tool in allowed_tools:
             argv.extend(["--allowed-tools", tool])
     else:
-        # `-e=""` disables extensions; `-e none` does not (it loads the
-        # extension literally named "none" and silently no-ops).
-        argv.append('-e=""')
+        # `--extensions=` disables extensions; `-e=`/`-e=""` print help + exit 1
+        # on gemini >= 0.47, and `-e none` loads an extension named "none".
+        argv.append("--extensions=")
     argv.extend(["-p", prompt])
     return argv
 
@@ -271,7 +273,7 @@ class GeminiCliAgent(AgentHarness):
     ``config.model`` / ``config.api_key`` via the env overlay — never
     hardcoded. ``config.capabilities.allowed_tools`` (aggregated across every
     bound MCP server) selects between the ``--allowed-tools`` overlay and the
-    ``-e=""`` extensions-disabled path.
+    ``--extensions=`` extensions-disabled path.
 
     ``__init__`` assigns ``self.mcp_servers``, ``self.skills`` and ``self.rules``
     from the granted config bindings, which is what makes
