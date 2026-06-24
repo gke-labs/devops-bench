@@ -152,6 +152,10 @@ bump `NAMESPACE` per run; or skip provisioning entirely with `--no-infra`.
 
 ## Parallel comparison runs (legacy vs refactored)
 
+> See [`docs/parallel-evals.md`](./parallel-evals.md) for the full parallel-eval
+> runbook: Vertex/ADC mode, gemini-CLI MCP setup, the matrix orchestration
+> mechanics, and a debugging table of every failure mode and fix.
+
 Both pipeline arms can run **concurrently on the bastion**, each provisioning its
 own cluster, via the per-run isolation (`--parallel` / `BENCH_PARALLEL=true`).
 Each run gets its own `KUBECONFIG`, `CLOUDSDK_CONFIG`, `TF_DATA_DIR`, OpenTofu
