@@ -188,7 +188,15 @@ matrix_dispatch() {
       # everything at Vertex. Location is global — the gemini-3.x *-preview models
       # 404 on regional endpoints (us-central1). The legacy judge defaults to
       # us-central1, so GCP_VERTEX_LOCATION must override it too.
-      echo 'unset AGENT_API_KEY GEMINI_API_KEY GOOGLE_API_KEY JUDGE_API_KEY GOOGLE_GENAI_API_KEY GOOGLE_CLOUD_API_KEY'
+      echo 'unset AGENT_API_KEY GEMINI_API_KEY GOOGLE_API_KEY JUDGE_API_KEY GOOGLE_GENAI_API_KEY'
+      # The literal marker tells oc's google-vertex provider "use ADC". Passing it
+      # via env (not `oc models auth paste-api-key`) is what makes it PORTABLE
+      # across oc's isolated per-run OPENCLAW_STATE_DIRs — a pasted profile lives
+      # only in the global agent sqlite store, which parallel runs don't share, so
+      # they'd fail with `No API key found for provider "google-vertex"`. The
+      # gemini CLI and the google-genai judge ignore it (they pick ADC from
+      # GOOGLE_GENAI_USE_VERTEXAI + project/location).
+      echo 'export GOOGLE_CLOUD_API_KEY=gcp-vertex-credentials'
       echo "export GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT='${GCP_PROJECT_ID}' GOOGLE_CLOUD_LOCATION='${GOOGLE_CLOUD_LOCATION:-global}' GCP_VERTEX_LOCATION='${GCP_VERTEX_LOCATION:-global}'"
     fi
     echo "OUT=\"\$HOME/${REMOTE_OUT}\"; mkdir -p \"\$OUT\""
