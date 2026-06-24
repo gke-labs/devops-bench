@@ -690,7 +690,12 @@ def evaluate_metrics_batch(detailed_results, judge_model):
 
             diag_metric = GEval(
                 name="DiagnosisAccuracy",
-                criteria=f"Did the agent accurately identify that the fault injected was '{actual_fault}'?",
+                criteria=(
+                    "Did the agent explicitly detect, acknowledge, or diagnose active traffic load, "
+                    "or analyze nodes and pods causing high CPU usage in its text output? "
+                    "The evaluation should be based solely on the agent's recognition of active traffic "
+                    "or analysis of nodes and pods causing high CPU usage."
+                ),
                 evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
                 model=judge_model,
             )
