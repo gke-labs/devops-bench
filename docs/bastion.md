@@ -219,6 +219,27 @@ MCP/skills from the global `~/.openclaw`, so set them once with
 `configure-oc.sh` beforehand). It's a thin throwaway companion (shared logic
 lives in `_matrix_lib.sh`); delete it when the legacy arm is retired.
 
+#### Surviving SSH drops / resuming
+
+The matrix runner is launched **detached** (`nohup`) on the bastion, so the runs
+themselves complete regardless of your SSH session. The local script only polls
+and copies results back, and it's hardened against drops:
+
+- SSH **keepalive** (`ServerAliveInterval`) on every call so brief blips don't
+  drop the connection.
+- The poll loop treats a failed check as "not finished yet" and retries — a
+  transient drop never aborts it.
+- The final pull **retries** a few times before giving up (and tells you the
+  results remain on the bastion if it still can't copy them).
+
+If the local process itself dies (terminal closed, laptop sleeps), the runs keep
+going on the bastion. Re-attach with the stamp the original invocation printed —
+this skips launching and just re-polls + pulls:
+
+```bash
+RESUME_STAMP=20260623_213512 ./scripts/bastion/run_matrix.sh        # or run_matrix_legacy.sh
+```
+
 ### MCP + skills for OpenClaw
 
 - **Refactored arm** reads `AGENT_MCP_SERVER` (the `gke-mcp` binary) and

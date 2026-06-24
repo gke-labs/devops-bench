@@ -16,6 +16,9 @@
 # Run config: GCP_PROJECT_ID (req unless DRY_RUN), GKE_CLUSTER_NAME, GCP_LOCATION,
 # AGENT_PROVIDER, JUDGE_PROVIDER, JUDGE_MODEL, MAX_PARALLEL, RESULTS_DIR,
 # GKE_MCP_BIN, SKILLS_PATHS, SKIP_SYNC, DRY_RUN, MATRIX_TASKS, MATRIX_MODELS.
+# RESUME_STAMP=<stamp>: skip launching; re-poll + pull an existing remote run
+#   (use the stamp printed by the original invocation) — survives a dead local
+#   process. SSH keepalive + a retrying pull keep brief drops from aborting.
 
 BASTION_VM="${BASTION_VM:-bench-bastion}"
 BASTION_ZONE="${BASTION_ZONE:-us-central1-a}"
@@ -45,18 +48,34 @@ _MATRIX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${_MATRIX_LIB_DIR}/../.." && pwd)"
 
 # --- SSH transport (mirrors sync-to-bastion.sh) ----------------------------- #
+# Keepalive so sessions ride out brief network blips instead of dropping.
+_SSH_KA=(-o ServerAliveInterval=30 -o ServerAliveCountMax=4 -o ConnectTimeout=30)
 if [ -n "${BASTION_SSH_HOST:-}" ] || [ "${BASTION_USE_GCPNODE:-}" = "1" ]; then
   SSH_HOST="${BASTION_SSH_HOST:-nic0.${BASTION_VM}.${BASTION_ZONE}.c.${BASTION_PROJECT}.internal.gcpnode.com}"
   SSH_USER="${BASTION_SSH_USER:-$(id -un)_google_com}"
   SSH_TARGET="${SSH_USER}@${SSH_HOST}"
-  remote_exec() { ssh -o BatchMode=yes "${SSH_TARGET}" "$1"; }
-  push_file()   { scp -o BatchMode=yes "$1" "${SSH_TARGET}:$2"; }
-  pull_dir()    { scp -o BatchMode=yes -r "${SSH_TARGET}:$1" "$2"; }
+  remote_exec() { ssh -o BatchMode=yes "${_SSH_KA[@]}" "${SSH_TARGET}" "$1"; }
+  push_file()   { scp -o BatchMode=yes "${_SSH_KA[@]}" "$1" "${SSH_TARGET}:$2"; }
+  pull_dir()    { scp -o BatchMode=yes "${_SSH_KA[@]}" -r "${SSH_TARGET}:$1" "$2"; }
 else
-  remote_exec() { gcloud compute ssh "${BASTION_VM}" --tunnel-through-iap --zone "${BASTION_ZONE}" --project "${BASTION_PROJECT}" --command "$1"; }
-  push_file()   { gcloud compute scp --tunnel-through-iap --zone "${BASTION_ZONE}" --project "${BASTION_PROJECT}" "$1" "${BASTION_VM}:$2"; }
-  pull_dir()    { gcloud compute scp --tunnel-through-iap --recurse --zone "${BASTION_ZONE}" --project "${BASTION_PROJECT}" "${BASTION_VM}:$1" "$2"; }
+  _GKA=(--ssh-flag="-o ServerAliveInterval=30" --ssh-flag="-o ServerAliveCountMax=4")
+  _GKA_SCP=(--scp-flag="-o ServerAliveInterval=30" --scp-flag="-o ServerAliveCountMax=4")
+  remote_exec() { gcloud compute ssh "${BASTION_VM}" --tunnel-through-iap --zone "${BASTION_ZONE}" --project "${BASTION_PROJECT}" "${_GKA[@]}" --command "$1"; }
+  push_file()   { gcloud compute scp --tunnel-through-iap --zone "${BASTION_ZONE}" --project "${BASTION_PROJECT}" "${_GKA_SCP[@]}" "$1" "${BASTION_VM}:$2"; }
+  pull_dir()    { gcloud compute scp --tunnel-through-iap --recurse --zone "${BASTION_ZONE}" --project "${BASTION_PROJECT}" "${_GKA_SCP[@]}" "${BASTION_VM}:$1" "$2"; }
 fi
+
+# Pull with a few retries — a drop during the final copy is otherwise fatal.
+pull_dir_retry() {
+  local src="$1" dst="$2" i
+  for i in 1 2 3 4 5; do
+    if pull_dir "${src}" "${dst}"; then return 0; fi
+    echo "    pull attempt ${i} failed; retrying in 15s..." >&2
+    sleep 15
+  done
+  echo "ERROR: could not pull ${src} after retries; results remain on the bastion at ~/${src}" >&2
+  return 1
+}
 
 sanitize() { echo "$1" | tr '/.+ ' '----' | tr -cd 'A-Za-z0-9_-'; }
 
@@ -69,9 +88,62 @@ resolve_tasks() {
   fi
 }
 
+# Poll until the remote .done marker appears. Resilient: a failed SSH check is
+# read as "not finished yet" and retried next tick, so brief drops don't abort
+# (the run itself is detached via nohup and unaffected). Arg: expected combo count.
+_poll_until_done() {
+  local expected="$1" done_n
+  echo "==> waiting for ${expected} run(s) (poll 60s; runs continue on the bastion if this exits)"
+  while true; do
+    if remote_exec "test -f \$HOME/${REMOTE_OUT}/.done" 2>/dev/null; then break; fi
+    done_n="$(remote_exec "ls \$HOME/${REMOTE_OUT}/*/status 2>/dev/null | wc -l" 2>/dev/null | tr -d '[:space:]' || echo 0)"
+    echo "    ${done_n}/${expected} finished... ($(date +%H:%M:%S))"
+    sleep 60
+  done
+}
+
+# Pull results (with retry) and summarize from the pulled dirs. Reads the local
+# <rid> subdirs rather than COMBOS, so it also serves RESUME_STAMP attach.
+_pull_and_summarize() {
+  mkdir -p "${RESULTS_DIR}"
+  echo "==> pulling results -> ${RESULTS_DIR}/${STAMP}"
+  pull_dir_retry "${REMOTE_OUT}" "${RESULTS_DIR}" || return 1
+  local LOCAL_OUT="${RESULTS_DIR}/${STAMP}"
+
+  echo "==> summary"
+  printf '%-56s %-8s %s\n' "COMBO" "EXIT" "results.json"
+  local d rid st rj
+  for d in "${LOCAL_OUT}"/*/; do
+    [ -d "$d" ] || continue
+    rid="$(basename "$d")"
+    st="$(cat "${d%/}/status" 2>/dev/null || echo '?')"
+    rj="$(find "${d}" -name results.json 2>/dev/null | head -1)"
+    printf '%-56s %-8s %s\n' "${rid}" "${st}" "${rj:-<none>}"
+  done
+  echo "==> done. results under ${LOCAL_OUT} (each combo provisioned + tore down its own cluster)"
+}
+
 # Run the COMBOS matrix. Arg: a human label for logging.
+#
+# Resume/attach: set RESUME_STAMP=<stamp> (from an earlier run's output) to skip
+# launching and just re-poll + pull an existing remote run — for when the local
+# process died after the bastion runner was already launched.
 matrix_dispatch() {
   local label="$1"
+
+  if [ -n "${RESUME_STAMP:-}" ]; then
+    STAMP="${RESUME_STAMP}"
+    REMOTE_OUT="matrix-runs/${STAMP}"
+    echo "==> RESUME: attaching to existing run ~/${REMOTE_OUT} on ${BASTION_VM}"
+    remote_exec "test -d \$HOME/${REMOTE_OUT}" 2>/dev/null \
+      || { echo "ERROR: no remote run at ~/${REMOTE_OUT} on ${BASTION_VM}" >&2; exit 2; }
+    local exp
+    exp="$(remote_exec "ls -d \$HOME/${REMOTE_OUT}/*/ 2>/dev/null | wc -l" 2>/dev/null | tr -d '[:space:]' || echo '?')"
+    _poll_until_done "${exp}"
+    _pull_and_summarize
+    return $?
+  fi
+
   echo "==> ${label} matrix: ${#COMBOS[@]} combo(s), MAX_PARALLEL=${MAX_PARALLEL}"
   printf '    %s\n' "${COMBOS[@]%%|*}"
 
@@ -141,29 +213,8 @@ matrix_dispatch() {
   echo "==> uploading + launching remote runner (detached)"
   push_file "${runner}" "/tmp/matrix-runner.sh"
   remote_exec "chmod +x /tmp/matrix-runner.sh; nohup /tmp/matrix-runner.sh >\$HOME/${REMOTE_OUT}.out 2>&1 & echo launched pid=\$!"
+  echo "    (to re-attach if this exits: RESUME_STAMP=${STAMP} re-run the same command)"
 
-  echo "==> waiting for ${#COMBOS[@]} run(s) (poll 60s; runs continue on the bastion if this exits)"
-  while true; do
-    if remote_exec "test -f \$HOME/${REMOTE_OUT}/.done" 2>/dev/null; then break; fi
-    local done_n
-    done_n="$(remote_exec "ls \$HOME/${REMOTE_OUT}/*/status 2>/dev/null | wc -l" 2>/dev/null | tr -d '[:space:]' || echo 0)"
-    echo "    ${done_n}/${#COMBOS[@]} finished... ($(date +%H:%M:%S))"
-    sleep 60
-  done
-
-  mkdir -p "${RESULTS_DIR}"
-  echo "==> pulling results -> ${RESULTS_DIR}/${STAMP}"
-  pull_dir "${REMOTE_OUT}" "${RESULTS_DIR}"
-  local LOCAL_OUT="${RESULTS_DIR}/${STAMP}"
-
-  echo "==> summary"
-  printf '%-56s %-8s %s\n' "COMBO" "EXIT" "results.json"
-  local c rid st rj
-  for c in "${COMBOS[@]}"; do
-    rid="${c%%|*}"
-    st="$(cat "${LOCAL_OUT}/${rid}/status" 2>/dev/null || echo '?')"
-    rj="$(find "${LOCAL_OUT}/${rid}" -name results.json 2>/dev/null | head -1)"
-    printf '%-56s %-8s %s\n' "${rid}" "${st}" "${rj:-<none>}"
-  done
-  echo "==> done. results under ${LOCAL_OUT} (each combo provisioned + tore down its own cluster)"
+  _poll_until_done "${#COMBOS[@]}"
+  _pull_and_summarize
 }
