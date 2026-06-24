@@ -54,6 +54,7 @@ module "k8s_config" {
   project_id               = var.project_id
   namespace                = var.namespace
   secret_rotation_sa_email = module.cluster.secret_rotation_sa_email
+  secret_id                = module.cluster.secret_id
 
   depends_on = [module.cluster]
 }

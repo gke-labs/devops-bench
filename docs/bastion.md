@@ -157,24 +157,28 @@ own cluster, via the per-run isolation (`--parallel` / `BENCH_PARALLEL=true`).
 Each run gets its own `KUBECONFIG`, `CLOUDSDK_CONFIG`, `TF_DATA_DIR`, OpenTofu
 state, and a run-unique cluster name; results go to per-run dirs.
 
-Launch the two arms with **distinct `RUN_ID` and `NAMESPACE`** (same key for the
-agent model + judge):
+Launch the two arms with **distinct `RUN_ID`** (the `NAMESPACE` can be the same —
+the stack random-suffixes its project-global GCP resources; see below). Same key
+for the agent model + judge:
 
 ```bash
 source ~/secrets.env   # GEMINI_API_KEY (mirrored to GOOGLE/AGENT/JUDGE_API_KEY)
+# One-time per mode: wire the LEGACY arm's global oc config (MCP + skills + key).
+scripts/bastion/configure-oc.sh --mcp --skills
+
 common=( GCP_PROJECT_ID=<proj> GKE_CLUSTER_NAME=secret-rot GCP_LOCATION=us-central1-a
          AGENT_PROVIDER=google AGENT_MODEL=gemini-3.1-pro-preview
          JUDGE_PROVIDER=google JUDGE_MODEL=gemini-3.1-pro-preview
          BENCH_PARALLEL=true BENCH_NO_TEARDOWN=true BENCH_USE_MCP=true
          AGENT_TARGET=oc OPENCLAW_BIN=oc OPENCLAW_AGENT=main )
 
-# Arm A — legacy (MCP+skills come from the GLOBAL ~/.openclaw config)
-env "${common[@]}" RUN_ID=legacy-$(date +%s) NAMESPACE=legacyrot \
+# Arm A — legacy (MCP+skills from the GLOBAL ~/.openclaw config set above)
+env "${common[@]}" RUN_ID=legacy-$(date +%s) \
     BENCH_AGENT_TYPE=cli OPENCLAW_LOCAL=true \
     python3 pkg/evaluator/evaluate.py complextasks/secret-rotation/task.yaml &
 
 # Arm B — refactored (MCP+skills via env -> isolated openclaw.json)
-env "${common[@]}" RUN_ID=refac-$(date +%s) NAMESPACE=refacrot \
+env "${common[@]}" RUN_ID=refac-$(date +%s) \
     BENCH_AGENT_TYPE=openclaw AGENT_MCP_SERVER="$HOME/gke-mcp" AGENT_SKILLS_PATHS="$HOME/oc-skills" \
     python3 -m devops_bench --parallel complextasks/secret-rotation/task.yaml \
       --project <proj> --cluster secret-rot --results-root results/refac &
@@ -188,30 +192,41 @@ wait
   `AGENT_SKILLS_PATHS` (a tree of `<name>/SKILL.md` files), writes an *isolated*
   `openclaw.json`, and materializes skills under its per-run state dir.
 - **Legacy arm** ignores those vars — it only uses the **global** `~/.openclaw`
-  config. Wire it once: `oc mcp add gke-mcp --command ~/gke-mcp` and
-  `oc skills install <dir> --global` for each skill dir. (Skill markdowns must be
-  named `SKILL.md` inside a per-skill directory; the repo's `skills/*-skill.md`
-  must be reshaped into `<name>/SKILL.md` first.)
+  config. Wire it (and the model key) idempotently with
+  `scripts/bastion/configure-oc.sh --mcp --skills`; run `--no-mcp --no-skills`
+  (or just don't run it) for a clean "no capabilities" legacy run. The script
+  reshapes the repo's `skills/*.md` into the `<name>/SKILL.md` layout oc expects.
 - The configured agent profile is **`main`** on current openclaw builds; set
   `OPENCLAW_AGENT=main` (both arms default to it).
 
-### Per-task isolation requirements
+### Identity model: BYO credentials
 
-The secret-rotation stack names resources by **namespace** (`sa-${namespace}`,
-`db-credentials-${namespace}`), so concurrent runs **must use distinct
-namespaces** — the run-unique *cluster name* alone is not enough.
+The agent runs as the operator-provided **bastion VM SA** (ambient ADC via the
+metadata server), assumed to already hold the broad infra permissions a task
+needs (e.g. Secret Manager + GKE admin). Infra stacks therefore grant the runner
+**nothing** — there is intentionally no per-run runner SA and no project IAM
+binding to a shared SA. (A least-privilege per-run runner identity is a tracked
+follow-up.) Ensure the bastion SA is broad enough once, out of band, e.g.:
 
-The stack also adds a **project-level** IAM binding (`openclaw-vm-sa` →
-`secretmanager.admin`, plus `container.admin`) that every run's state owns.
-Concurrent *creates* are idempotent, but every run's *destroy* removes that
-shared binding — so the first arm's teardown revokes `secretmanager.admin` from
-the VM SA and the second arm's teardown then fails to delete its own secret.
-Sequential teardown does **not** avoid this. Mitigations: re-grant the role
-between teardowns (`gcloud projects add-iam-policy-binding … --role=roles/secretmanager.admin`),
-or delete each GKE cluster directly and `tofu state rm` the in-cluster
-(helm/kubernetes) resources before destroying the rest, or hoist that
-project-level binding out of the per-run stack. Run with `BENCH_NO_TEARDOWN=true`
-and tear down deliberately afterwards.
+```bash
+gcloud projects add-iam-policy-binding <proj> \
+  --member="serviceAccount:openclaw-vm-sa@<proj>.iam.gserviceaccount.com" \
+  --role="roles/container.admin"   # + roles/secretmanager.admin (or roles/editor/owner)
+```
+
+### Per-task isolation: name collisions handled in-stack
+
+The secret-rotation stack derives project-global GCP names from `namespace`
+(`sa-${namespace}`, `db-credentials-${namespace}`). To let concurrent runs share
+the same namespace, the stack appends a **`random_id` suffix** to those names
+(`tf/prebuilt/secret-rotation/cluster/main.tf`) and threads the suffixed secret
+id to the ExternalSecret. So **no distinct `NAMESPACE` per run is required** — the
+run-unique cluster name + the random suffix keep everything separate. (The k8s
+namespace itself is cluster-scoped, so two clusters can reuse the same one.)
+
+Because no run grants a shared project-level IAM binding anymore, the earlier
+**teardown hazard is resolved** — one run's `tofu destroy` no longer revokes a
+permission another run needs.
 
 ### Known limitation: shared OpenTofu working directory
 
