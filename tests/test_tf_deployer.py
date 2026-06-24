@@ -98,7 +98,7 @@ def test_up_isolates_state_under_tf_data_dir(mock_run, tf_deployer_setup, monkey
     tf_deployer_setup.up()
 
     apply_argv = mock_run.call_args_list[1][0][0]
-    expected_state = str(tmp_path / "tf-data" / "terraform.tfstate")
+    expected_state = str((tmp_path / "tf-data").resolve().parent / "terraform.tfstate")
     assert "-state" in apply_argv
     assert apply_argv[apply_argv.index("-state") + 1] == expected_state
     # init does not carry -state.
@@ -111,7 +111,7 @@ def test_down_isolates_state_under_tf_data_dir(mock_run, tf_deployer_setup, monk
     tf_deployer_setup.down()
 
     destroy_argv = mock_run.call_args_list[1][0][0]
-    expected_state = str(tmp_path / "tf-data" / "terraform.tfstate")
+    expected_state = str((tmp_path / "tf-data").resolve().parent / "terraform.tfstate")
     assert destroy_argv[destroy_argv.index("-state") + 1] == expected_state
 
 

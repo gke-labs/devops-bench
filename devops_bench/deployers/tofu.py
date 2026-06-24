@@ -107,18 +107,21 @@ class TFDeployer(Deployer):
 
     @staticmethod
     def _state_flags() -> list[str]:
-        """Return ``-state`` flags redirecting state into ``TF_DATA_DIR``.
+        """Return ``-state`` flags placing per-run state beside ``TF_DATA_DIR``.
 
         When ``TF_DATA_DIR`` is set (the parallel-isolation path keys it to a
-        per-run dir), the local state file is placed alongside it so concurrent
-        runs of the same stack do not share or corrupt ``terraform.tfstate`` and
-        its lock. Returns an empty list when ``TF_DATA_DIR`` is unset, so a
-        single run keeps OpenTofu's default in-directory state.
+        per-run ``<run>/tf-data`` dir), the local state file is written to
+        ``<run>/terraform.tfstate`` — the *parent* of ``TF_DATA_DIR``, NOT
+        inside it. ``<TF_DATA_DIR>/terraform.tfstate`` is OpenTofu's reserved
+        backend-state path; writing the full resource state there makes a later
+        ``tofu init``/``output`` fail with "does not support state version 4".
+        Returns an empty list when ``TF_DATA_DIR`` is unset, so a single run
+        keeps OpenTofu's default in-directory state.
         """
         tf_data_dir = os.environ.get("TF_DATA_DIR")
         if not tf_data_dir or not tf_data_dir.strip():
             return []
-        return ["-state", str(Path(tf_data_dir) / "terraform.tfstate")]
+        return ["-state", str(Path(tf_data_dir).resolve().parent / "terraform.tfstate")]
 
     def up(self) -> None:
         tf_path = Path(self.tf_dir)
