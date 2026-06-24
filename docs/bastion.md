@@ -211,7 +211,13 @@ MATRIX_TASKS=ALL MATRIX_MODELS="gemini-3.1-pro" MATRIX_AGENT_CONFIGS="oc+mcp+ski
 
 `DRY_RUN=1` prints the expanded matrix + per-combo env without provisioning.
 It drives the refactored arm (per-run MCP/skills via env), so combos are fully
-independent; `gcli` configs require the `gemini` CLI on the bastion.
+independent. Both `oc` and `gemini` CLIs are installed by `vm-setup.sh`.
+
+For the **legacy** arm use `scripts/bastion/run_matrix_legacy.sh` — same harness,
+but **Task × Model only** (no AgentConfig dimension: the legacy arm reads
+MCP/skills from the global `~/.openclaw`, so set them once with
+`configure-oc.sh` beforehand). It's a thin throwaway companion (shared logic
+lives in `_matrix_lib.sh`); delete it when the legacy arm is retired.
 
 ### MCP + skills for OpenClaw
 

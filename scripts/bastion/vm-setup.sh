@@ -55,6 +55,19 @@ else
   echo "    NOTE: run 'openclaw onboard' to configure the agent model API key."
 fi
 
+# Gemini CLI (the 'gemini' agent target for gcli runs). oc is installed
+# system-wide by startup.sh; this finishes the other agent CLI. Node's global
+# prefix is root-owned, so install with sudo. Idempotent.
+echo "==> gemini CLI check"
+if command -v gemini >/dev/null 2>&1; then
+  echo "    gemini present: $(gemini --version 2>/dev/null | head -1)"
+else
+  echo "    installing @google/gemini-cli (sudo npm -g)..."
+  sudo npm install -g @google/gemini-cli \
+    && echo "    gemini installed: $(gemini --version 2>/dev/null | head -1)" \
+    || echo "    WARN: gemini CLI install failed; gcli agent runs will not work until it's installed."
+fi
+
 if [ ! -f "${ENV_FILE}" ]; then
   echo "==> writing ${ENV_FILE} template (fill in values, then 'source ~/bench.env')"
   cat > "${ENV_FILE}" <<'EOF'
