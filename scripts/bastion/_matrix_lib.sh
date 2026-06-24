@@ -19,6 +19,13 @@
 # RESUME_STAMP=<stamp>: skip launching; re-poll + pull an existing remote run
 #   (use the stamp printed by the original invocation) — survives a dead local
 #   process. SSH keepalive + a retrying pull keep brief drops from aborting.
+# BENCH_VERTEX=1: run agents + judges against Vertex AI via the bastion VM SA's
+#   ADC instead of the API-key endpoints. The runner unsets every API key from
+#   secrets.env and exports GOOGLE_GENAI_USE_VERTEXAI/GOOGLE_CLOUD_*/
+#   GCP_VERTEX_LOCATION (default location 'global'; override GOOGLE_CLOUD_LOCATION
+#   / GCP_VERTEX_LOCATION). For the legacy oc arm also set AGENT_PROVIDER=
+#   google-vertex so the model id becomes 'google-vertex/<model>'. Prereq: the oc
+#   google-vertex provider must be auth'd once (see docs/bastion.md).
 
 BASTION_VM="${BASTION_VM:-bench-bastion}"
 BASTION_ZONE="${BASTION_ZONE:-us-central1-a}"
@@ -175,6 +182,15 @@ matrix_dispatch() {
     echo "cd ~/${REMOTE_DIR}"
     echo 'source .venv/bin/activate'
     echo 'set -a; . ~/secrets.env; set +a'
+    if [ -n "${BENCH_VERTEX:-}" ]; then
+      # Vertex mode: drop every API key secrets.env exported so agents AND judges
+      # fall back to ADC (the bastion VM SA via the metadata server), then point
+      # everything at Vertex. Location is global — the gemini-3.x *-preview models
+      # 404 on regional endpoints (us-central1). The legacy judge defaults to
+      # us-central1, so GCP_VERTEX_LOCATION must override it too.
+      echo 'unset AGENT_API_KEY GEMINI_API_KEY GOOGLE_API_KEY JUDGE_API_KEY GOOGLE_GENAI_API_KEY GOOGLE_CLOUD_API_KEY'
+      echo "export GOOGLE_GENAI_USE_VERTEXAI=true GOOGLE_CLOUD_PROJECT='${GCP_PROJECT_ID}' GOOGLE_CLOUD_LOCATION='${GOOGLE_CLOUD_LOCATION:-global}' GCP_VERTEX_LOCATION='${GCP_VERTEX_LOCATION:-global}'"
+    fi
     echo "OUT=\"\$HOME/${REMOTE_OUT}\"; mkdir -p \"\$OUT\""
     echo "export GCP_PROJECT_ID='${GCP_PROJECT_ID}' GKE_CLUSTER_NAME='${GKE_CLUSTER_NAME}' GCP_LOCATION='${GCP_LOCATION}'"
     echo "export AGENT_PROVIDER='${AGENT_PROVIDER}' JUDGE_PROVIDER='${JUDGE_PROVIDER}' JUDGE_MODEL='${JUDGE_MODEL}'"
