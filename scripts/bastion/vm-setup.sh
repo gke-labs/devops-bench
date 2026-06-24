@@ -68,6 +68,30 @@ else
     || echo "    WARN: gemini CLI install failed; gcli agent runs will not work until it's installed."
 fi
 
+# Disable Gemini CLI folder-trust gating at the USER level. The gcli agent runs
+# in a fresh, untrusted per-run temp cwd; untrusted folders have their MCP
+# servers (e.g. gke-mcp) suppressed, and a workspace-level setting can't lift it
+# (untrusted folders ignore their own settings.json) — nor does the --skip-trust
+# flag. Setting it here lets gke-mcp connect for every run. Merge-preserving +
+# idempotent.
+echo "==> gemini folder-trust (~/.gemini/settings.json: security.folderTrust.enabled=false)"
+mkdir -p "${HOME}/.gemini"
+python3 - "${HOME}/.gemini/settings.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+    if not isinstance(cfg, dict):
+        cfg = {}
+except (FileNotFoundError, ValueError):
+    cfg = {}
+cfg.setdefault("security", {}).setdefault("folderTrust", {})["enabled"] = False
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"    wrote {path}")
+PY
+
 if [ ! -f "${ENV_FILE}" ]; then
   echo "==> writing ${ENV_FILE} template (fill in values, then 'source ~/bench.env')"
   cat > "${ENV_FILE}" <<'EOF'

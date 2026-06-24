@@ -142,6 +142,8 @@ def test_build_argv_disables_extensions_when_no_allowed_tools():
     assert "--output-format" in argv and "stream-json" in argv
     assert "--extensions=" in argv
     assert "--allowed-tools" not in argv
+    # Headless auto-approve so MCP/built-in tool calls never block on a prompt.
+    assert argv[argv.index("--approval-mode") + 1] == "yolo"
     assert argv[-2:] == ["-p", "hi"]
 
 
@@ -150,6 +152,7 @@ def test_build_argv_emits_one_allowed_tools_pair_per_tool():
     pairs = [(argv[i], argv[i + 1]) for i in range(len(argv) - 1) if argv[i] == "--allowed-tools"]
     assert pairs == [("--allowed-tools", "a"), ("--allowed-tools", "b")]
     assert "--extensions=" not in argv
+    assert argv[argv.index("--approval-mode") + 1] == "yolo"
 
 
 def test_build_env_threads_api_key_and_model_into_gemini_vars():

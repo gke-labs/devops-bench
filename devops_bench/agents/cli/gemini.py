@@ -94,23 +94,36 @@ def _build_settings(mcp_servers: tuple[McpBinding, ...], *, skills_enabled: bool
 def _build_argv(target: str, prompt: str, allowed_tools: tuple[str, ...]) -> list[str]:
     """Build the ``gemini`` invocation for ``prompt``.
 
-    When ``allowed_tools`` is empty, extensions are disabled via
-    ``--extensions=`` — the headless "no tools" arm. The short ``-e=`` / ``-e=""``
-    forms print help and exit non-zero on gemini >= 0.47 (the literal value,
-    quotes included, reaches the parser since argv bypasses the shell), and
-    ``-e none`` loads an extension literally named "none" rather than disabling.
+    ``--approval-mode yolo`` is always passed so the CLI auto-approves every tool
+    call (built-in *and* MCP) instead of blocking on interactive confirmation —
+    without it, MCP tool calls hang until the run hits its timeout. It is the
+    modern replacement for the now-deprecated ``--allowed-tools`` allowlist.
+
+    When ``allowed_tools`` is empty, gemini *extensions* are disabled via
+    ``--extensions=`` — this is orthogonal to MCP (servers come from
+    ``settings.json`` and stay available). The short ``-e=`` / ``-e=""`` forms
+    print help and exit non-zero on gemini >= 0.47 (the literal value, quotes
+    included, reaches the parser since argv bypasses the shell), and ``-e none``
+    loads an extension literally named "none" rather than disabling.
+
+    Note: MCP servers only load when the workspace is *trusted*. The per-run temp
+    cwd is untrusted by default, so the bastion sets
+    ``security.folderTrust.enabled = false`` in the user-level
+    ``~/.gemini/settings.json`` (``--skip-trust`` alone does not lift the MCP
+    gate). See ``scripts/bastion/vm-setup.sh``.
 
     Args:
         target: Path to the ``gemini`` binary (already user-expanded).
         prompt: Task prompt.
         allowed_tools: Pre-approved tool names; each yields a separate
-            ``--allowed-tools <name>`` pair so the CLI never blocks on
-            interactive confirmation in headless mode.
+            ``--allowed-tools <name>`` pair (redundant under yolo, kept for
+            callers that still pass an explicit allowlist).
 
     Returns:
         The argv list ready to hand to ``core.subprocess.run``.
     """
     argv = [target, "--output-format", "stream-json", "--skip-trust"]
+    argv.extend(["--approval-mode", "yolo"])
     if allowed_tools:
         for tool in allowed_tools:
             argv.extend(["--allowed-tools", tool])
