@@ -240,6 +240,26 @@ this skips launching and just re-polls + pulls:
 RESUME_STAMP=20260623_213512 ./scripts/bastion/run_matrix.sh        # or run_matrix_legacy.sh
 ```
 
+### Parallel agent support
+
+| Agent | Refactored arm | Legacy arm |
+|-------|----------------|------------|
+| OpenClaw (`oc`)  | ✅ parallel-safe | ✅ parallel-safe |
+| Gemini CLI (`gemini`) | ✅ parallel-safe | ❌ **not** parallel-safe |
+
+The **refactored** arm runs the Gemini CLI in a per-run temporary working
+directory (its own `.gemini/settings.json` + skills) and reconstructs the
+trajectory from the process **stdout** (`--output-format stream-json`), so it
+never touches shared user-level state — concurrent gemini runs are independent.
+
+The **legacy** Gemini runner instead reads the trajectory back from the shared
+`~/.gemini/tmp/.../chats` session directory and matches by a short session id,
+which can pick the wrong run's trajectory under concurrency. Legacy parallel
+support is therefore **OpenClaw-only by design**, which is why
+`run_matrix_legacy.sh` is hard-wired to `AGENT_TARGET=oc`. Run legacy gemini only
+one-at-a-time; for parallel gemini use the refactored matrix
+(`MATRIX_AGENT_CONFIGS="gcli..."`).
+
 ### MCP + skills for OpenClaw
 
 - **Refactored arm** reads `AGENT_MCP_SERVER` (the `gke-mcp` binary) and

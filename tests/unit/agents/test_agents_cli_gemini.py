@@ -591,3 +591,58 @@ def test_execute_warns_and_skips_missing_skill_paths(monkeypatch):
     caps = AllCapabilities(skills=SkillBinding(paths=("/no/such/skills/dir",)))
     GeminiCliAgent(AgentConfig(target="gemini", capabilities=caps)).run("p")
     assert captured["exists"] is False
+
+
+# ---------------------------------------------------------------------------
+# Parallel isolation: each run gets its own throwaway cwd, never a shared one.
+# This is what makes concurrent gemini runs safe on a single host — the binary
+# reads/writes its workspace `.gemini` from cwd, so two runs sharing a cwd would
+# clobber each other's settings/skills. The refactored arm also parses the
+# trajectory from stdout (see parse_stream_json tests), so it never touches the
+# shared `~/.gemini/tmp/.../chats` dir the legacy arm relies on.
+# ---------------------------------------------------------------------------
+
+
+def test_execute_runs_in_isolated_temp_cwd_not_user_home(monkeypatch):
+    """The cwd is a fresh temp dir (prefix ``gemini-run-``), not the process cwd
+    and not under the user's ``~/.gemini``."""
+    import tempfile
+
+    captured: dict = {}
+
+    def fake_run(argv, **kwargs):
+        captured["cwd"] = kwargs.get("cwd")
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(gemini_mod, "run", fake_run)
+    GeminiCliAgent(AgentConfig(target="gemini")).run("p")
+
+    cwd = captured["cwd"]
+    assert cwd is not None
+    assert os.path.basename(cwd).startswith("gemini-run-")
+    # Sandboxed under the OS temp root, and distinct from the process cwd.
+    assert os.path.realpath(cwd).startswith(os.path.realpath(tempfile.gettempdir()))
+    assert os.path.realpath(cwd) != os.path.realpath(os.getcwd())
+    # The user-level gemini config dir must never be used as the workspace.
+    assert os.path.expanduser("~/.gemini") not in os.path.realpath(cwd)
+
+
+def test_execute_uses_distinct_cwd_per_run(monkeypatch):
+    """Two runs never share a working directory — the core parallel-safety
+    invariant. Each ``_execute`` mints its own ``TemporaryDirectory``."""
+    cwds: list[str] = []
+
+    def fake_run(argv, **kwargs):
+        cwds.append(kwargs.get("cwd"))
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    monkeypatch.setattr(gemini_mod, "run", fake_run)
+    # Two separate agents and a re-run of one — all must get unique cwds.
+    GeminiCliAgent(AgentConfig(target="gemini")).run("p")
+    agent = GeminiCliAgent(AgentConfig(target="gemini"))
+    agent.run("p")
+    agent.run("p")
+
+    assert len(cwds) == 3
+    assert all(c is not None for c in cwds)
+    assert len(set(cwds)) == 3, f"cwds must be unique per run, got {cwds}"

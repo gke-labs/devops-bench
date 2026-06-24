@@ -8,6 +8,12 @@
 # This is a thin, throwaway companion to run_matrix.sh (the refactored matrix);
 # delete it when the legacy arm is retired — the shared _matrix_lib.sh stays.
 #
+# OpenClaw-only BY DESIGN, not just by default: the legacy Gemini runner reads
+# its trajectory from the shared ~/.gemini/tmp/.../chats dir keyed by a short
+# session id, which is NOT safe under concurrent runs. For parallel Gemini use
+# the refactored matrix (run_matrix.sh, MATRIX_AGENT_CONFIGS="gcli..."). See
+# docs/bastion.md "Parallel agent support".
+#
 # CUJs supported: one task x many models, and all tasks x one model. E.g.:
 #   MATRIX_TASKS="complextasks/secret-rotation/task.yaml" \
 #   MATRIX_MODELS="gemini-3.1-pro gemini-3.5-flash" \
