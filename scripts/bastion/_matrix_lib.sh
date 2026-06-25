@@ -118,6 +118,8 @@ task_extra_env() {
     # harness default differs: refactored "default" vs legacy "production"). The
     # value matches each stack's own namespace default.
     */multi-region-failover/*)      echo ";NAMESPACE=storefront" ;;
+    */secret-rotation/*)            echo ";NAMESPACE=secret-rotation" ;;
+    */cp-recovery/*)                echo ";NAMESPACE=cp-recovery" ;;
     */troubleshoot-unhealthy-pod/*) echo ";NAMESPACE=default" ;;
     */gitops-auto-revert/*)         echo ";NAMESPACE=default" ;;
     # No stack fixture (agent-created), but pin so legacy doesn't target a
