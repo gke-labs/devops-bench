@@ -291,6 +291,8 @@ gcloud secrets list --project <proj> | grep db-credentials
 | Judge silently fails / 404 on Vertex | legacy judge defaults to `us-central1`; `JUDGE_MODEL` default `gemini-3.1-pro` invalid on Vertex | set `GCP_VERTEX_LOCATION=global` and `JUDGE_MODEL=gemini-3.1-pro-preview` |
 | Standalone test sees stale code (`-e=""` after it was fixed) | bastion venv has an **installed** `devops_bench`; `python3 /tmp/x.py` imports it, not the synced source | run with `PYTHONPATH=$HOME/devops-bench`, or `python -m devops_bench` from the source dir (what the matrix does) |
 | Cluster re-create `409 already exists` (node SA) | `gke-nodes-<cluster>` SA is **not** random-suffixed; a failed teardown orphans it | delete orphan `gke-nodes-*` SAs; durable fix tracked (see below) |
+| `workloads` helm `context deadline exceeded` (~300s), empty results | each run makes a **fresh** GSA → cold Workload-Identity binding takes minutes to propagate, so ESO can't sync the secret in time | raised helm `timeout` to 900s in `secret-rotation/k8s_config/main.tf` (ESO retries every 10s, so it syncs once WI is live); durable fix = stable/static GSA |
+| tofu `Value for undeclared variable "namespace"` | `NAMESPACE` env is passed as a tofu `-var namespace=` to **every** stack, but only some declare it (`secret-rotation` does; `prebuilt/minimum` does not) | only set `NAMESPACE` for tasks whose stack declares it; unset it for `prebuilt/minimum` tasks (e.g. `create-deployment`) |
 | SSH `exit 255` mid-run | transient gcpnode/cert blip | retry; the detached run is unaffected, re-attach with `RESUME_STAMP` |
 
 ### SSH / environment gotchas
@@ -303,6 +305,10 @@ gcloud secrets list --project <proj> | grep db-credentials
   `-o ConnectTimeout`) so a hung relay fails fast; the matrix scripts already do.
 - Run long jobs under `nohup` (the matrix does). macOS has **no `timeout`**
   command — rely on SSH keepalive caps.
+- Laptop `gcloud` crashing with `ModuleNotFoundError: No module named 'OpenSSL'`:
+  a corp enterprise-cert config (`/etc/certificate_config.json`) makes gcloud need
+  `pyOpenSSL`, which its Python lacks. Prefix gcloud with
+  `CLOUDSDK_CONTEXT_AWARE_USE_CLIENT_CERTIFICATE=false` to bypass the client-cert path.
 
 ---
 

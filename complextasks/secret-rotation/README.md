@@ -92,3 +92,27 @@ docker run -it \
   -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
   devops-bench:latest
 ```
+
+## Parallel run on the bastion (Vertex)
+
+Full setup + troubleshooting: **[`docs/parallel-evals.md`](../../docs/parallel-evals.md)**. This is
+the reference (parallel-hardened) task. From your laptop:
+
+```bash
+BASTION_USE_GCPNODE=1 BASTION_VM=claw-ubuntu BASTION_ZONE=us-central1-a \
+BASTION_PROJECT=jessieliu-gke-dev BASTION_SSH_USER=jssl_google_com \
+REMOTE_DIR=devops-bench-eval SKIP_SYNC=1 \
+GCP_PROJECT_ID=jessieliu-gke-dev GKE_CLUSTER_NAME=secret-rot GCP_LOCATION=us-central1-a \
+AGENT_PROVIDER=google-vertex JUDGE_PROVIDER=google JUDGE_MODEL=gemini-3.1-pro-preview \
+BENCH_VERTEX=1 MAX_PARALLEL=2 \
+MATRIX_TASKS="complextasks/secret-rotation/task.yaml" \
+MATRIX_MODELS="gemini-3.1-pro-preview gemini-3.5-flash" \
+RESULTS_DIR=results/matrix \
+bash scripts/bastion/run_matrix_legacy.sh
+```
+
+Notes: this stack **does** use `NAMESPACE` (it declares the var). The `workloads` helm
+`timeout` is raised to **900s** (`k8s_config/main.tf`) to ride out cold per-run
+Workload-Identity propagation. Validated baseline (oc + mcp + skills, Vertex): **6/7** on
+both `gemini-3.1-pro-preview` and `gemini-3-flash-preview`.
+

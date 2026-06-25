@@ -30,7 +30,8 @@
 #   SKILLS_SRC     dir of skill markdowns         (default: ~/devops-bench/skills)
 #   OC_SKILLS_DIR  staging dir for <name>/SKILL.md (default: ~/oc-skills)
 #   VERTEX_MODELS  space-separated model ids to register under google-vertex
-#                  (default: "gemini-3.1-pro-preview gemini-3-flash-preview")
+#                  (default: "gemini-3.1-pro-preview gemini-3.5-flash gemini-3-flash-preview")
+#                  gemini-3.5-flash is Vertex-only (not in oc's bundled genai catalog).
 #   OPENCLAW_AGENT oc agent profile for the auth marker (default: main)
 set -euo pipefail
 
@@ -41,7 +42,7 @@ GKE_MCP_BIN="${GKE_MCP_BIN:-${HOME}/gke-mcp}"
 SECRETS_ENV="${SECRETS_ENV:-${HOME}/secrets.env}"
 SKILLS_SRC="${SKILLS_SRC:-${HOME}/devops-bench/skills}"
 OC_SKILLS_DIR="${OC_SKILLS_DIR:-${HOME}/oc-skills}"
-VERTEX_MODELS="${VERTEX_MODELS:-gemini-3.1-pro-preview gemini-3-flash-preview}"
+VERTEX_MODELS="${VERTEX_MODELS:-gemini-3.1-pro-preview gemini-3.5-flash gemini-3-flash-preview}"
 OPENCLAW_AGENT="${OPENCLAW_AGENT:-main}"
 
 while [ $# -gt 0 ]; do
