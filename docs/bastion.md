@@ -155,6 +155,52 @@ don't need it (see [`docs/parallel-evals.md`](./parallel-evals.md)).
   model key lives in openclaw's config on the VM (per your chosen API-key auth);
   promoting it to Secret Manager is a tracked follow-up.
 
+## Parallel & matrix runs (legacy vs refactored)
+
+Both pipeline arms can run **concurrently on the bastion**, each provisioning its
+own cluster, via per-run isolation (`--parallel` / `BENCH_PARALLEL=true`): each run
+gets its own `KUBECONFIG`, `CLOUDSDK_CONFIG`, `TF_DATA_DIR`, OpenTofu state, and a
+run-unique cluster name. The secret-rotation stack also random-suffixes its
+project-global GCP names, so parallel runs may share a `NAMESPACE` — the per-run
+bump above is only needed when several runs reuse one cluster.
+
+> **[`docs/parallel-evals.md`](./parallel-evals.md) is the canonical parallel-eval
+> runbook** — Vertex/ADC mode, gemini-CLI MCP setup, `run_matrix.sh` /
+> `run_matrix_legacy.sh` matrix orchestration, MCP + skills wiring, the
+> parallel-safety matrix, and a failure-mode → fix table. The rest of this section
+> is just the bastion quickstart; use that doc for everything else.
+
+Launch the two arms manually with **distinct `RUN_ID`** and the same agent/judge key:
+
+```bash
+source ~/secrets.env   # GEMINI_API_KEY (mirrored to GOOGLE/AGENT/JUDGE_API_KEY)
+scripts/bastion/configure-oc.sh --mcp --skills   # one-time: wire the LEGACY arm's global oc config
+
+common=( GCP_PROJECT_ID=<proj> GKE_CLUSTER_NAME=secret-rot GCP_LOCATION=us-central1-a
+         AGENT_PROVIDER=google AGENT_MODEL=gemini-3.1-pro-preview
+         JUDGE_PROVIDER=google JUDGE_MODEL=gemini-3.1-pro-preview
+         BENCH_PARALLEL=true BENCH_NO_TEARDOWN=true BENCH_USE_MCP=true
+         AGENT_TARGET=oc OPENCLAW_BIN=oc OPENCLAW_AGENT=main )
+
+# Arm A — legacy (MCP+skills from the GLOBAL ~/.openclaw config set above)
+env "${common[@]}" RUN_ID=legacy-$(date +%s) \
+    BENCH_AGENT_TYPE=cli OPENCLAW_LOCAL=true \
+    python3 pkg/evaluator/evaluate.py complextasks/secret-rotation/task.yaml &
+
+# Arm B — refactored (MCP+skills via env -> isolated openclaw.json)
+env "${common[@]}" RUN_ID=refac-$(date +%s) \
+    BENCH_AGENT_TYPE=openclaw AGENT_MCP_SERVER="$HOME/gke-mcp" AGENT_SKILLS_PATHS="$HOME/oc-skills" \
+    python3 -m devops_bench --parallel complextasks/secret-rotation/task.yaml \
+      --project <proj> --cluster secret-rot --results-root results/refac &
+wait
+# then: python3 scripts/compare_results.py --legacy <A>/results.json --refactor <B>/results.json
+```
+
+For the full matrix (Task × Model × AgentConfig) use `scripts/bastion/run_matrix.sh`
+(refactored) or `scripts/bastion/run_matrix_legacy.sh` (legacy, oc-only). See
+`docs/parallel-evals.md` for the matrix CUJs, the parallel-safety rules (legacy +
+gemini CLI is not parallel-safe), resume-after-drop, and Vertex setup.
+
 ## Known issues (appendix)
 
 Record issues found while using the bastion here, so they live in one place.
@@ -164,3 +210,4 @@ Record issues found while using the bastion here, so they live in one place.
 | Bastion SA is owner-equivalent (`editor` + `projectIamAdmin` + `serviceAccountAdmin`). | Anything running as the SA can grant itself any role and impersonate any SA. | Sandbox/non-prod projects only; scope down with `sa_roles`. Follow-up: ship a least-privilege default. |
 | Agent model key stored in openclaw's on-VM config. | Key sits in plaintext on the VM. | Keep the VM IAP-only. Follow-up: promote to Secret Manager. |
 | Static VM bills continuously. | Cost accrues while the VM exists. | `tofu destroy` (or stop the instance) when idle. |
+| Shared OpenTofu working directory. | Per-run isolation covers `TF_DATA_DIR` + state, but both arms run `tofu` in the same `tf/prebuilt/<stack>` dir, so `.terraform.lock.hcl` is shared. | Benign in practice (identical provider locks). Follow-up: per-run copy of the stack dir. |
