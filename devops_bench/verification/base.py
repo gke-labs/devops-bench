@@ -20,11 +20,15 @@ registers itself in the :data:`VERIFIERS` registry by its ``type`` literal.
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from devops_bench.core import Registry
+from devops_bench.k8s import poll_until
 
 __all__ = ["VERIFIERS", "VerificationResult", "BaseVerifier"]
 
@@ -89,3 +93,44 @@ class BaseVerifier(BaseModel, ABC):
             The structured verification result.
         """
         raise NotImplementedError
+
+    def _poll_to_result(
+        self,
+        check: Callable[[], tuple[bool, str, dict[str, Any] | None]],
+        timeout_sec: float,
+    ) -> VerificationResult:
+        """Poll ``check`` to a :class:`VerificationResult`.
+
+        Shared scaffolding for predicate-style verifiers: times the run, polls
+        ``check`` via :func:`devops_bench.k8s.poll_until`, and folds the last
+        observation into a result. Verifiers backed by a server-side watch
+        (e.g. ``kubectl wait``) build their result directly instead.
+
+        Args:
+            check: Evaluated once per poll, returning ``(success, reason, raw)``
+                where ``reason`` describes the latest observation and ``raw``
+                carries optional diagnostics.
+            timeout_sec: Maximum seconds to keep polling.
+
+        Returns:
+            A result whose ``success`` reflects whether the predicate held
+            before the timeout, carrying the last observed ``reason`` and
+            ``raw``.
+        """
+        start_time = time.monotonic()
+        last: dict[str, Any] = {"reason": "", "raw": None}
+
+        def predicate() -> bool:
+            success, reason, raw = check()
+            last["reason"] = reason
+            last["raw"] = raw
+            return success
+
+        converged = poll_until(predicate, timeout_sec=timeout_sec)
+        return VerificationResult(
+            success=converged,
+            elapsed_time=time.monotonic() - start_time,
+            reason=last["reason"],
+            name=self.name,
+            raw=last["raw"],
+        )

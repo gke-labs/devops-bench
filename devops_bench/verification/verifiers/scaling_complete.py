@@ -12,15 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Verifier that waits for a deployment to reach a minimum ready replica count."""
+"""Verifier that waits for a deployment to converge to a ready replica target."""
 
 from __future__ import annotations
 
-import time
 from typing import Any, Literal
 
 from devops_bench.core import SubprocessError, get_logger
-from devops_bench.k8s import get_resource, poll_until
+from devops_bench.k8s import get_resource
 from devops_bench.verification.base import VERIFIERS, BaseVerifier, VerificationResult
 
 __all__ = ["ScalingCompleteVerifier"]
@@ -30,67 +29,48 @@ _log = get_logger("verification.scaling_complete")
 
 @VERIFIERS.register("scaling_complete")
 class ScalingCompleteVerifier(BaseVerifier):
-    """Verify that a deployment has converged to a minimum ready replica count.
+    """Verify that a deployment has converged to a ready replica target.
 
     The deployment's ``status.readyReplicas`` is polled with exponential backoff
-    (via :func:`devops_bench.k8s.poll_until`) until it reaches ``min_replicas``
-    or the timeout elapses.
+    (via :func:`devops_bench.k8s.poll_until`) until it falls within
+    ``[min_replicas, max_replicas]`` or the timeout elapses. Leaving
+    ``max_replicas`` unset checks only the lower bound (scale-up); setting it
+    bounds the count from above as well, covering scale-down and optimization
+    targets where the deployment must shrink to or stay within a ceiling.
 
     Attributes:
         type: Discriminator literal, always ``"scaling_complete"``.
         deployment: Name of the deployment to inspect.
-        min_replicas: Ready replicas required for success.
+        min_replicas: Minimum ready replicas required for success.
+        max_replicas: Optional maximum ready replicas allowed for success; when
+            ``None`` only the lower bound is enforced.
         namespace: Optional namespace; defaults to the active one.
     """
 
     type: Literal["scaling_complete"] = "scaling_complete"
     deployment: str
     min_replicas: int = 1
+    max_replicas: int | None = None
     namespace: str | None = None
 
     def verify(self, timeout_sec: float) -> VerificationResult:
-        """Poll the deployment until it reaches ``min_replicas`` ready replicas.
+        """Poll the deployment until its ready replicas reach the target range.
 
         Args:
             timeout_sec: Maximum seconds to keep polling.
 
         Returns:
             A result reflecting the last observed scaling state; successful once
-            ready replicas meet or exceed ``min_replicas``.
+            ready replicas fall within ``[min_replicas, max_replicas]``.
         """
-        start_time = time.monotonic()
-        last: dict[str, dict[str, Any]] = {}
+        return self._poll_to_result(self._check_scaling, timeout_sec)
 
-        def predicate() -> bool:
-            success, raw = self._check_scaling()
-            last["raw"] = raw
-            return success
-
-        converged = poll_until(predicate, timeout_sec=timeout_sec)
-        raw = last.get("raw", {})
-        if converged:
-            return VerificationResult(
-                success=True,
-                elapsed_time=time.monotonic() - start_time,
-                reason=f"Scaling complete: {raw.get('reason')}",
-                name=self.name,
-                raw=raw,
-            )
-
-        return VerificationResult(
-            success=False,
-            elapsed_time=time.monotonic() - start_time,
-            reason=f"Timeout reached: {raw.get('reason')}",
-            name=self.name,
-            raw=raw,
-        )
-
-    def _check_scaling(self) -> tuple[bool, dict[str, Any]]:
-        """Read the deployment once and compare ready replicas to the minimum.
+    def _check_scaling(self) -> tuple[bool, str, dict[str, Any] | None]:
+        """Read the deployment once and compare ready replicas to the target.
 
         Returns:
-            A ``(success, raw)`` pair. ``raw`` always carries a ``reason`` and,
-            on success paths, the raw deployment document.
+            A ``(success, reason, raw)`` triple. ``raw`` carries the raw
+            deployment document once one could be read, else ``None``.
         """
         try:
             dep_data = get_resource(
@@ -102,20 +82,31 @@ class ScalingCompleteVerifier(BaseVerifier):
         except SubprocessError as exc:
             stderr = (exc.stderr or "").strip()
             _log.warning("Failed to get deployment %s: %s", self.deployment, stderr)
-            return False, {"reason": f"Failed to get deployment: {stderr}"}
+            return False, f"Failed to get deployment: {stderr}", None
         except ValueError:
             _log.warning("Failed to parse deployment JSON for %s", self.deployment)
-            return False, {"reason": "Failed to parse deployment JSON"}
+            return False, "Failed to parse deployment JSON", None
 
         # ``status`` may be explicitly null before the controller populates it.
         ready_replicas = (dep_data.get("status") or {}).get("readyReplicas", 0)
-        success = ready_replicas >= self.min_replicas
-        if success:
+        raw = {"deployment": dep_data}
+        if ready_replicas < self.min_replicas:
+            reason = (
+                f"Ready replicas ({ready_replicas}) < min replicas ({self.min_replicas})"
+            )
+            return False, reason, raw
+        if self.max_replicas is not None and ready_replicas > self.max_replicas:
+            reason = (
+                f"Ready replicas ({ready_replicas}) > max replicas ({self.max_replicas})"
+            )
+            return False, reason, raw
+        if self.max_replicas is None:
             reason = (
                 f"Ready replicas ({ready_replicas}) >= min replicas ({self.min_replicas})"
             )
         else:
             reason = (
-                f"Ready replicas ({ready_replicas}) < min replicas ({self.min_replicas})"
+                f"Ready replicas ({ready_replicas}) within bounds "
+                f"[{self.min_replicas}, {self.max_replicas}]"
             )
-        return success, {"reason": reason, "deployment": dep_data}
+        return True, reason, raw

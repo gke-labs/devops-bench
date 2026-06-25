@@ -85,6 +85,36 @@ def test_subprocess_error_is_reported_in_reason():
     assert "Failed to get deployment" in result.reason
 
 
+def test_success_when_ready_replicas_within_bounds():
+    # With both bounds set, a count inside [min, max] succeeds — the scale-down /
+    # optimization case where the deployment must shrink to a ceiling.
+    deployment = {"status": {"readyReplicas": 2}}
+    with patch(
+        "devops_bench.verification.verifiers.scaling_complete.get_resource",
+        return_value=deployment,
+    ):
+        result = ScalingCompleteVerifier(
+            deployment="web", min_replicas=1, max_replicas=3
+        ).verify(timeout_sec=5)
+
+    assert result.success is True
+    assert "within bounds [1, 3]" in result.reason
+
+
+def test_failure_when_ready_replicas_above_maximum():
+    deployment = {"status": {"readyReplicas": 5}}
+    with patch(
+        "devops_bench.verification.verifiers.scaling_complete.get_resource",
+        return_value=deployment,
+    ):
+        result = ScalingCompleteVerifier(
+            deployment="web", min_replicas=1, max_replicas=3
+        ).verify(timeout_sec=0)
+
+    assert result.success is False
+    assert "Ready replicas (5) > max replicas (3)" in result.reason
+
+
 def test_name_is_echoed_onto_result():
     deployment = {"status": {"readyReplicas": 5}}
     with patch(
