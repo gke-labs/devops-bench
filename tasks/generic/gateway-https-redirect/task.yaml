@@ -1,5 +1,10 @@
 task_id: 10
 name: "gateway-https-redirect"
+# Manifest-generation task: judged on the YAML produced by generate_manifest,
+# never applied to a cluster. deployer: noop skips provisioning so it does not
+# fall back to the default prebuilt/kind stack and is trivially parallel-safe.
+infrastructure:
+  deployer: "noop"
 prompt: "Configure an HTTP-to-HTTPS redirect on public-gw. All traffic coming in on port 80 should be redirected to port 443 with a 301 status code."
 expected_output: |
   critical requirements:

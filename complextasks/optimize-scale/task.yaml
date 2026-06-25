@@ -1,5 +1,22 @@
 task_id: 1
 name: "optimize-scale"
+# Provisions its own GKE cluster and pre-seeds the target workload the agent
+# must optimize (Deployment + Service named ${target_deployment_name}, with no
+# resource requests/limits and no HPA). Each run gets its own cluster, so the
+# fixture is collision-free. The stack's target_deployment_name/namespace MUST
+# match the harness {{TARGET_DEPLOYMENT_NAME}}/{{NAMESPACE}} placeholders; the
+# matrix orchestrator exports TARGET_DEPLOYMENT_NAME=scale-target and
+# NAMESPACE=default for this task so both arms substitute the same values
+# (see scripts/bastion/_matrix_lib.sh task_extra_env).
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/optimize-scale"
+  teardown: true
+  variables:
+    namespace: "default"
+    target_deployment_name: "scale-target"
+    node_count: 3
+    machine_type: "e2-standard-2"
 prompt: |
   Inspect the live deployment "{{TARGET_DEPLOYMENT_NAME}}" in the namespace "{{NAMESPACE}}" and optimize it based on the active cluster state and metrics.
 expected_output: |

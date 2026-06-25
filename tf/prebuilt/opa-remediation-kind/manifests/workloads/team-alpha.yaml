@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-alpha
+  labels:
+    owner: alpha-team
+    env: non-prod
+---
+# VIOLATION (security): runs privileged
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache
+  namespace: team-alpha
+  labels:
+    app: cache
+    owner: alpha-team
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache
+  template:
+    metadata:
+      labels:
+        app: cache
+    spec:
+      containers:
+        - name: cache
+          image: redis:7
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+---
+# VIOLATION (governance): no resource limits
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: team-alpha
+  labels:
+    app: web
+    owner: alpha-team
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.25

@@ -54,7 +54,7 @@ while IFS= read -r task; do
   for model in ${MATRIX_MODELS}; do
     for preset in ${MATRIX_AGENT_CONFIGS}; do
       cfg="$(agent_config_env "${preset}")" || exit 1
-      kvs="AGENT_MODEL=${model};AGENT_PROVIDER=${AGENT_PROVIDER};${cfg}"
+      kvs="AGENT_MODEL=${model};AGENT_PROVIDER=${AGENT_PROVIDER};${cfg}$(task_extra_env "${task}")"
       rid="$(sanitize "${tname}")__$(sanitize "${model}")__$(sanitize "${preset}")"
       COMBOS+=("${rid}|${task}|${kvs}|refactored")
     done

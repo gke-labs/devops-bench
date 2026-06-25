@@ -1,5 +1,10 @@
 task_id: 11
 name: "hpa-metric-filtering"
+# Manifest-generation task: judged on the YAML produced by generate_manifest,
+# never applied to a cluster. deployer: noop skips provisioning so it does not
+# fall back to the default prebuilt/kind stack and is trivially parallel-safe.
+infrastructure:
+  deployer: "noop"
 prompt: "Configure an AutoscalingMetric resource to scrape a Prometheus gauge named http_requests_total but ensure it only scales based on data points where the version label is set to v2."
 expected_output: |
   critical requirements:

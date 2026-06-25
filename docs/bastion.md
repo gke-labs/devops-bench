@@ -202,6 +202,14 @@ default, `BENCH_REMOTE=1` to sync + run on the bastion. See
 `docs/parallel-evals.md` for the matrix CUJs, the parallel-safety rules (legacy +
 gemini CLI is not parallel-safe), resume-after-drop, and Vertex setup.
 
+**kind-only exception: cp-recovery.** Every other task targets GKE, but
+`complextasks/cp-recovery` runs on a real multi-node **kind** cluster on the
+bastion host — it does control-plane surgery (restore a corrupted etcd member to
+quorum), which is impossible on GKE's Google-managed, node-inaccessible control
+plane. It is still parallel-safe: its kind cluster name derives from the
+run-token-prefixed cluster name (per-run unique Docker containers/nodes) and it
+uses the per-run `$KUBECONFIG`. It is the one task excluded from the all-GKE goal.
+
 ## Known issues (appendix)
 
 Record issues found while using the bastion here, so they live in one place.
@@ -211,6 +219,6 @@ Record issues found while using the bastion here, so they live in one place.
 | Bastion SA is owner-equivalent (`editor` + `projectIamAdmin` + `serviceAccountAdmin`). | Anything running as the SA can grant itself any role and impersonate any SA. | Sandbox/non-prod projects only; scope down with `sa_roles`. Follow-up: ship a least-privilege default. |
 | Agent model key stored in openclaw's on-VM config. | Key sits in plaintext on the VM. | Keep the VM IAP-only. Follow-up: promote to Secret Manager. |
 | Static VM bills continuously. | Cost accrues while the VM exists. | `tofu destroy` (or stop the instance) when idle. |
-| Shared OpenTofu working directory. | Per-run isolation covers `TF_DATA_DIR` + state, but both arms run `tofu` in the same `tf/prebuilt/<stack>` dir, so `.terraform.lock.hcl` is shared. | Benign in practice (identical provider locks). Follow-up: per-run copy of the stack dir. |
+| Shared OpenTofu working directory. | Per-run isolation covers `TF_DATA_DIR` + state, but both arms ran `tofu` in the same `tf/prebuilt/<stack>` dir, so `.terraform.lock.hcl` was shared. | **Resolved** — under `--parallel` both arms now copy the whole `tf/` tree into the per-run scratch dir and run `tofu` there (`devops_bench/deployers/tofu.py`, `deployers/tf/tf_deployer.py`); single runs unchanged. |
 | Shared VM-SA project IAM bindings clobber under concurrent GKE tasks. | A per-task GKE stack that grants a project role (e.g. `roles/container.admin`) to the shared VM SA via `google_project_iam_member` "owns" that binding in its own TF state; the first `tofu destroy` strips it while sibling runs still need it → mid-run `container.*` 403. | Don't manage shared-SA project bindings from per-task stacks; grant out-of-band (or use a role the stacks don't manage). Affects any concurrent GKE-task batch. |
 | Host capacity sums across concurrent runs (kind tasks). | Per-task READMEs size disk/inotify/clusters for **one** run; N concurrent kind runs use ~N×, and tasks where the agent spins up extra clusters use more (those get agent-chosen, **un-prefixed** names → docker-daemon collision risk). | Size the bastion for the concurrent batch, not a single run; avoid agent-side cluster creation in large matrices. See `docs/parallel-evals.md` for the per-run isolation gaps. |

@@ -1,0 +1,46 @@
+task_id: 15
+name: "gitops-auto-revert"
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/gitops-revert"
+  teardown: true
+  variables:
+    node_count: 3
+    machine_type: "e2-standard-2"
+prompt: "The deployment `hello-app` in namespace {{NAMESPACE}} is failing. It is managed via GitOps from the repository at `/app/results/gitops-repo-{{GKE_CLUSTER_NAME}}`. Fix the issue in the repository."
+expected_output: |
+  critical requirements:
+
+  - Confirm the 'hello-app' deployment in namespace '{{NAMESPACE}}' is in a failed state (e.g. ImagePullBackOff).
+  - Inspect git history at `/app/results/gitops-repo-{{GKE_CLUSTER_NAME}}` to identify the last working version of the image (tag `1.0`).
+  - Create a new branch (e.g., `fix-hello-app`) in `/app/results/gitops-repo-{{GKE_CLUSTER_NAME}}`.
+  - Modify `deployment.yaml` in the repository to revert the image tag to `1.0`.
+  - Commit the change to the new branch.
+
+  Expected Manifest Generated:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: hello-app
+    namespace: {{NAMESPACE}}
+  spec:
+    replicas: 2
+    selector:
+      matchLabels:
+        app: hello-app
+    template:
+      metadata:
+        labels:
+          app: hello-app
+      spec:
+        containers:
+        - name: hello-app
+          image: us-docker.pkg.dev/google-samples/containers/gke/hello-app:1.0
+          ports:
+          - containerPort: 8080
+documentation:
+  - doc_name: "GitOps Application Delivery"
+    url: "https://cloud.google.com/kubernetes-engine/docs/concepts/add-on/gitops"
+    constraints:
+      - text: "revert configuration in git"
+        critical: true

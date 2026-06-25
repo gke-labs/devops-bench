@@ -1,0 +1,129 @@
+task_id: 13
+name: "deploy-postgres-web-app"
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/minimum"
+  teardown: true
+  variables:
+    node_count: 3
+    machine_type: "e2-standard-2"
+prompt: "Deploy a Postgres-backed Python web app to namespace {{NAMESPACE}} in the cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}. The web app should have 2 replicas. Use standard public images for both the web app and the database."
+expected_output: |
+  critical requirements:
+
+  - Deploy a Postgres database using a standard postgres image in namespace `{{NAMESPACE}}`.
+  - Create a Service for the Postgres database to allow the web app to connect.
+  - Deploy a Python web app with 2 replicas using a standard image (e.g., `python:3.9-slim`) in namespace `{{NAMESPACE}}`.
+  - Configure the web app to connect to the Postgres database using environment variables.
+  - Create a Service to expose the web app (ClusterIP is sufficient).
+  - Configure Pod Security Standards: set `securityContext` with `runAsNonRoot: true` and `allowPrivilegeEscalation: false` for both deployments.
+  - Set resource requests and limits for both deployments.
+
+  Expected Manifest Generated:
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: postgres-db
+    namespace: {{NAMESPACE}}
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: postgres
+    template:
+      metadata:
+        labels:
+          app: postgres
+      spec:
+        containers:
+        - name: postgres
+          image: postgres:15
+          env:
+          - name: POSTGRES_PASSWORD
+            value: "password" # Placeholder
+          ports:
+          - containerPort: 5432
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999 # Postgres default non-root
+            allowPrivilegeEscalation: false
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: postgres-service
+    namespace: {{NAMESPACE}}
+  spec:
+    ports:
+    - port: 5432
+    selector:
+      app: postgres
+  ---
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: web-app
+    namespace: {{NAMESPACE}}
+  spec:
+    replicas: 2
+    selector:
+      matchLabels:
+        app: web-app
+    template:
+      metadata:
+        labels:
+          app: web-app
+      spec:
+        containers:
+        - name: web-app
+          image: python:3.9-slim
+          command: ["python", "-c", "import time; print('App started'); time.sleep(3600)"] # Placeholder
+          env:
+          - name: DB_HOST
+            value: "postgres-service"
+          ports:
+          - containerPort: 8080
+          resources:
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: web-app-service
+    namespace: {{NAMESPACE}}
+  spec:
+    ports:
+    - port: 8080
+    selector:
+      app: web-app
+    type: ClusterIP
+
+documentation:
+  - doc_name: "GKE Hardening Guide"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/hardening-your-cluster"
+    constraints:
+      - text: "runAsNonRoot: true"
+        critical: true
+      - text: "allowPrivilegeEscalation: false"
+        critical: true
+  - doc_name: "Pod Security Standards"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/pod-security-standards"
+    constraints:
+      - text: "restricted profile"
+        critical: false

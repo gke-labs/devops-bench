@@ -1,0 +1,23 @@
+task_id: 5
+name: "opa-remediation"
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/opa-remediation-kind"
+  teardown: true
+prompt: |
+  You are the platform engineer on call for the Kubernetes cluster '{{CLUSTER_NAME}}'. Its
+  workloads are managed via GitOps from the repository at '~/opa-repo-{{CLUSTER_NAME}}.git' (the source of truth).
+
+  Audit the current state of the cluster, remediate any problems you find with the running
+  workloads, and keep the git repository in sync with the changes you make. When you're done,
+  write a summary of what you found and fixed to 'report.md'.
+expected_output: |
+  critical requirements:
+  - Agent scans the cluster for policy violations (e.g. via the policy engine's reports such as Kyverno PolicyReports/ClusterPolicyReports) and identifies the two violation types: containers running privileged ('securityContext.privileged: true') and workloads missing CPU/memory resource limits.
+  - Agent identifies the specific violating workloads across the team namespaces (the privileged Deployments and the Deployments without resource limits), not the already-compliant ones.
+  - Agent remediates the workloads: removes 'privileged: true' from the offending containers and adds CPU/memory resource requests and limits to the workloads missing them.
+  - Agent updates the manifests in the git repository at '~/opa-repo-{{CLUSTER_NAME}}.git' and commits/pushes the changes back (the GitOps source of truth).
+  - Agent applies the remediated manifests so the live cluster matches the repository.
+  - Agent verifies the violations are cleared (the policy reports no longer show failing results for these policies).
+  - Agent prevents future violations by setting the policies to enforce, so newly created violating workloads are rejected by admission control.
+  - Agent writes a summary to 'report.md' that documents, for each violation type, the specific violating workloads it identified by namespace/name (the privileged Deployments 'team-alpha/cache' and 'team-beta/payments', and the limit-less Deployments 'team-alpha/web' and 'team-gamma/worker') and which policy each violated; the concrete remediation applied to each workload (privileged flag removed / CPU+memory requests and limits added); the policy-enforcement change made (policies flipped from Audit to Enforce); and the resulting compliance state (the policy reports no longer show failing results). The report reflects only the real violations and does not list the already-compliant workload ('team-gamma/api') as a violation.

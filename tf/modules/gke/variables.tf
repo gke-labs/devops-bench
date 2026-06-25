@@ -32,6 +32,12 @@ variable "enable_workload_identity" {
   default     = false
 }
 
+variable "kubernetes_version" {
+  description = "The Kubernetes version for the GKE cluster"
+  type        = string
+  default     = null
+}
+
 variable "agent_service_account" {
   description = "The service account email of the agent"
   type        = string

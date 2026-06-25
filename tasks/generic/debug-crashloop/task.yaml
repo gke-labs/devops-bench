@@ -1,0 +1,29 @@
+task_id: 1001
+name: "debug-crashloop"
+category: Dev
+difficulty: Easy
+task_class: investigation
+source: catalog#1
+# Investigation task: the agent must inspect the live cluster to find the root
+# cause. A fair run requires the cluster fixture below AND an MCP toolserver that
+# gives the agent kubectl access (see docs/task-generation/methodology.md §9).
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/kind"
+  teardown: true
+  # The broken workload fixture (frontend-crashloop.yaml) must be applied to the
+  # cluster before the agent runs. prebuilt/kind brings up a bare cluster only;
+  # apply the fixture manifest in this directory as part of provisioning.
+prompt: |
+  You are operating on GKE cluster "{{GKE_CLUSTER_NAME}}" in project
+  "{{GCP_PROJECT_ID}}", location "us-central1". The 'frontend' deployment in the
+  '{{NAMESPACE}}' namespace is unhealthy and its pod is stuck in CrashLoopBackOff.
+  Use your tools to investigate why the 'frontend' pod keeps restarting and show me
+  the relevant logs. Identify the root cause and tell me how to fix it.
+expected_output: |
+  critical requirements:
+
+  - Expected Tool Call: kubectl get pods (or describe pod) to observe the CrashLoopBackOff state.
+  - Inspects the failing container's logs (e.g. kubectl logs frontend-...) to gather evidence.
+  - Correctly identifies the root cause: the container exits on startup because a required environment variable (DATABASE_URL) is not set.
+  - Recommends a concrete fix: provide the missing DATABASE_URL environment variable to the container (e.g. via env, a ConfigMap, or a Secret) so the process can start.
