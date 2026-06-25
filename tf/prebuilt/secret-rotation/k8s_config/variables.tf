@@ -13,3 +13,8 @@ variable "secret_rotation_sa_email" {
   description = "GCP IAM Service Account Email for Workload Identity annotation"
 }
 
+variable "secret_id" {
+  type        = string
+  description = "Run-suffixed Secret Manager secret id the ExternalSecret references."
+}
+
