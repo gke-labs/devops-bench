@@ -26,7 +26,7 @@ locals {
   # destroy-time ``rm -rf`` wipe a concurrent run's repo. cluster_name is
   # run-token-prefixed, so this is unique per run. The task prompt references the
   # same path via the {{GKE_CLUSTER_NAME}} placeholder.
-  gitops_repo_path = "/app/results/gitops-repo-${var.cluster_name}"
+  gitops_repo_path = "~/gitops-repo-${var.cluster_name}"
 }
 
 module "gke" {

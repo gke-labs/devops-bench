@@ -113,6 +113,17 @@ resolve_tasks() {
 task_extra_env() {
   case "$1" in
     */optimize-scale/*) echo ";TARGET_DEPLOYMENT_NAME=scale-target;NAMESPACE=default" ;;
+    # Pre-seeded fixtures: pin NAMESPACE so the prompt's {{NAMESPACE}} resolves to
+    # the same namespace the stack deploys the fixture into, on BOTH arms (the
+    # harness default differs: refactored "default" vs legacy "production"). The
+    # value matches each stack's own namespace default.
+    */multi-region-failover/*)      echo ";NAMESPACE=storefront" ;;
+    */troubleshoot-unhealthy-pod/*) echo ";NAMESPACE=default" ;;
+    */gitops-auto-revert/*)         echo ";NAMESPACE=default" ;;
+    # No stack fixture (agent-created), but pin so legacy doesn't target a
+    # non-existent "production" namespace.
+    */deploy-postgres-web-app/*)    echo ";NAMESPACE=default" ;;
+    */debug-crashloop/*)            echo ";NAMESPACE=default" ;;
   esac
 }
 

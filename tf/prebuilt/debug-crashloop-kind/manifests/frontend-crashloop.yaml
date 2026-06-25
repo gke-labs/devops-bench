@@ -1,7 +1,7 @@
 # Fixture for the debug-crashloop task.
 # A deliberately broken 'frontend' deployment: the container's entrypoint requires
 # the DATABASE_URL environment variable and exits non-zero when it is absent,
-# producing a CrashLoopBackOff. Apply this to the task cluster before the agent runs.
+# producing a CrashLoopBackOff. Applied by setup.sh before the agent runs.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

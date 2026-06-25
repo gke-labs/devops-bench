@@ -7,8 +7,10 @@ variable "cluster_name" {
   type        = string
   description = <<-EOT
     Base name for the stack. The two regional GKE clusters are named
-    "<cluster_name>-east" (primary) and "<cluster_name>-west" (standby); the global
-    LB / Cloud SQL resources derive their names from it too. Supplied by the harness
+    "e-<cluster_name>" (primary, east) and "w-<cluster_name>" (standby, west) — the
+    region marker is a PREFIX, not a suffix, so it stays within the node-SA
+    name-truncation window (see locals in main.tf). The global LB / Cloud SQL
+    resources derive their names from it too. Supplied by the harness
     (GKE_CLUSTER_NAME); the "cluster_name" output returns the east cluster so the
     harness credentials it.
   EOT

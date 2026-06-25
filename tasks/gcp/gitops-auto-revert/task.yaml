@@ -7,13 +7,13 @@ infrastructure:
   variables:
     node_count: 3
     machine_type: "e2-standard-2"
-prompt: "The deployment `hello-app` in namespace {{NAMESPACE}} is failing. It is managed via GitOps from the repository at `/app/results/gitops-repo-{{GKE_CLUSTER_NAME}}`. Fix the issue in the repository."
+prompt: "The deployment `hello-app` in namespace {{NAMESPACE}} is failing. It is managed via GitOps from the repository at `~/gitops-repo-{{GKE_CLUSTER_NAME}}`. Fix the issue in the repository."
 expected_output: |
   critical requirements:
 
   - Confirm the 'hello-app' deployment in namespace '{{NAMESPACE}}' is in a failed state (e.g. ImagePullBackOff).
-  - Inspect git history at `/app/results/gitops-repo-{{GKE_CLUSTER_NAME}}` to identify the last working version of the image (tag `1.0`).
-  - Create a new branch (e.g., `fix-hello-app`) in `/app/results/gitops-repo-{{GKE_CLUSTER_NAME}}`.
+  - Inspect git history at `~/gitops-repo-{{GKE_CLUSTER_NAME}}` to identify the last working version of the image (tag `1.0`).
+  - Create a new branch (e.g., `fix-hello-app`) in `~/gitops-repo-{{GKE_CLUSTER_NAME}}`.
   - Modify `deployment.yaml` in the repository to revert the image tag to `1.0`.
   - Commit the change to the new branch.
 

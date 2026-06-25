@@ -202,13 +202,22 @@ default, `BENCH_REMOTE=1` to sync + run on the bastion. See
 `docs/parallel-evals.md` for the matrix CUJs, the parallel-safety rules (legacy +
 gemini CLI is not parallel-safe), resume-after-drop, and Vertex setup.
 
-**kind-only exception: cp-recovery.** Every other task targets GKE, but
-`complextasks/cp-recovery` runs on a real multi-node **kind** cluster on the
-bastion host — it does control-plane surgery (restore a corrupted etcd member to
-quorum), which is impossible on GKE's Google-managed, node-inaccessible control
-plane. It is still parallel-safe: its kind cluster name derives from the
-run-token-prefixed cluster name (per-run unique Docker containers/nodes) and it
-uses the per-run `$KUBECONFIG`. It is the one task excluded from the all-GKE goal.
+**kind-based tasks (run on the bastion host, not GKE).** A few tasks need
+node-level access that GKE's managed control plane doesn't allow, so they run on
+real **kind** clusters on the bastion:
+
+- `complextasks/cp-recovery` — control-plane surgery (restore a corrupted etcd
+  member to quorum); impossible on GKE's node-inaccessible control plane.
+- `complextasks/opa-remediation` — Kyverno policy remediation on a kind cluster.
+- `complextasks/migration-and-upgrade` — kind-based cluster upgrade; the agent
+  also spins a throwaway target-version kind cluster to validate manifests.
+- `tasks/generic/debug-crashloop` — investigation task on a small kind cluster.
+
+All are parallel-safe (kind cluster name derives from the run-token-prefixed
+cluster name → per-run-unique Docker containers/nodes; per-run `$KUBECONFIG`; and
+their GitOps repos are per-run paths). **Caveat:** these clusters all share one
+bastion host, so several concurrent kind tasks (cp-recovery is 4-node; migration
+runs two clusters) sum on the host's CPU/RAM/disk — keep `MAX_PARALLEL` modest.
 
 ## Known issues (appendix)
 

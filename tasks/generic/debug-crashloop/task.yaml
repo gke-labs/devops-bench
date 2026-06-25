@@ -9,17 +9,19 @@ source: catalog#1
 # gives the agent kubectl access (see docs/task-generation/methodology.md §9).
 infrastructure:
   deployer: "tofu"
-  stack: "prebuilt/kind"
+  stack: "prebuilt/debug-crashloop-kind"
   teardown: true
-  # The broken workload fixture (frontend-crashloop.yaml) must be applied to the
-  # cluster before the agent runs. prebuilt/kind brings up a bare cluster only;
-  # apply the fixture manifest in this directory as part of provisioning.
+  # The stack brings up the kind cluster AND applies the broken 'frontend' fixture
+  # (CrashLoopBackOff) into var.namespace, so the agent has a real failure to find.
+  # NAMESPACE is pinned to match in _matrix_lib.sh task_extra_env.
+  variables:
+    namespace: "default"
 prompt: |
-  You are operating on GKE cluster "{{GKE_CLUSTER_NAME}}" in project
-  "{{GCP_PROJECT_ID}}", location "us-central1". The 'frontend' deployment in the
-  '{{NAMESPACE}}' namespace is unhealthy and its pod is stuck in CrashLoopBackOff.
-  Use your tools to investigate why the 'frontend' pod keeps restarting and show me
-  the relevant logs. Identify the root cause and tell me how to fix it.
+  You are operating on the Kubernetes cluster "{{GKE_CLUSTER_NAME}}". The 'frontend'
+  deployment in the '{{NAMESPACE}}' namespace is unhealthy and its pod is stuck in
+  CrashLoopBackOff. Use your tools to investigate why the 'frontend' pod keeps
+  restarting and show me the relevant logs. Identify the root cause and tell me how
+  to fix it.
 expected_output: |
   critical requirements:
 
