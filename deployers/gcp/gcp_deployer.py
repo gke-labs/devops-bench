@@ -31,17 +31,28 @@ class GCPDeployer(Deployer):
         env["PATH"] = f"{self.bin_dir}:{env.get('PATH', '')}"
         return env
 
+    def _state_marker_path(self) -> Path:
+        """Path of the "did we create this cluster?" marker.
+
+        Placed under the per-run dir (``BENCH_RUN_DIR``) when isolation is
+        active so concurrent runs do not clobber each other's marker; falls back
+        to ``/tmp`` for single runs.
+        """
+        base = os.environ.get("BENCH_RUN_DIR", "").strip() or "/tmp"
+        return Path(base) / f"{self.project}-{self.location}-{self.cluster_name}_created"
+
     def up(self) -> None:
         # Check if cluster exists
         check_cmd = [
-            "gcloud", "container", "clusters", "describe", self.cluster_name, 
+            "gcloud", "container", "clusters", "describe", self.cluster_name,
             "--project", self.project, "--location", self.location
         ]
         print(f"Checking if cluster exists: {' '.join(check_cmd)}")
         result = subprocess.run(check_cmd, capture_output=True, text=True)
-        
-        state_file = Path(f"/tmp/{self.project}-{self.location}-{self.cluster_name}_created")
-        
+
+        state_file = self._state_marker_path()
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+
         if result.returncode == 0:
             print(f"Cluster {self.cluster_name} already exists. Getting credentials.")
             get_cred_cmd = [
@@ -74,7 +85,7 @@ class GCPDeployer(Deployer):
             state_file.write_text("true")
 
     def down(self) -> None:
-        state_file = Path(f"/tmp/{self.project}-{self.location}-{self.cluster_name}_created")
+        state_file = self._state_marker_path()
         created_by_us = True
         if state_file.exists():
             created_by_us = state_file.read_text().strip() == "true"
