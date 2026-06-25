@@ -28,6 +28,7 @@ from typing import Any
 
 from devops_bench.core import (
     ConfigError,
+    RunEnv,
     first_env,
     get_bool,
     get_env,
@@ -55,6 +56,11 @@ class BenchmarkConfig:
         judge_model: Override for ``JUDGE_MODEL`` used to build the judge.
         no_infra: Skip infrastructure provisioning (no project/cluster required).
         no_teardown: Skip teardown of provisioned infrastructure.
+        parallel: Enable per-run isolation (own kubeconfig / gcloud config /
+            tofu data dir and a run-unique cluster name) so multiple benchmark
+            processes can run concurrently on one host.
+        run_id: Explicit run id used for isolation and artifact naming; ``None``
+            falls back to ``RUN_ID`` env, then a generated PID/timestamp id.
     """
 
     source: str
@@ -67,6 +73,8 @@ class BenchmarkConfig:
     judge_model: str | None = None
     no_infra: bool = False
     no_teardown: bool = False
+    parallel: bool = False
+    run_id: str | None = None
 
     @classmethod
     def from_env(cls, source: str, *, env: Mapping[str, str] | None = None) -> BenchmarkConfig:
@@ -90,6 +98,8 @@ class BenchmarkConfig:
             judge_model=get_env("JUDGE_MODEL", env=env),
             no_infra=get_bool("BENCH_NO_INFRA", env=env),
             no_teardown=get_bool("BENCH_NO_TEARDOWN", env=env),
+            parallel=get_bool("BENCH_PARALLEL", env=env),
+            run_id=get_env("RUN_ID", env=env),
         )
 
 
@@ -131,6 +141,13 @@ def run_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
     project_id = config.project_id or "no-infra-project"
     cluster_name = config.cluster_name or "no-infra-cluster"
 
+    # Establish per-run isolation BEFORE any provisioning so every gcloud /
+    # kubectl / tofu / agent subprocess inherits the run-scoped kubeconfig,
+    # gcloud config, and tofu data dir. A no-op unless ``parallel`` is set.
+    run_env = RunEnv.create(parallel=config.parallel, run_id=config.run_id)
+    run_env.apply()
+    cluster_name = run_env.cluster_name(cluster_name)
+
     from devops_bench.evalharness import DefaultHarness, ResultReporter
     from devops_bench.tasks import FileSystemTaskLoader
 
@@ -144,7 +161,9 @@ def run_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
     if config.limit is not None:
         tasks = tasks[: config.limit]
 
-    reporter = ResultReporter(config.results_root)
+    reporter = ResultReporter(
+        config.results_root, run_id=run_env.run_id if run_env.isolated else None
+    )
     harness = DefaultHarness(
         project_id,
         cluster_name,

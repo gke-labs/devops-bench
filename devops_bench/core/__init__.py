@@ -28,10 +28,12 @@ from devops_bench.core.errors import (
 from devops_bench.core.logging import configure_logging, get_logger
 from devops_bench.core.registry import Registry
 from devops_bench.core.results import Result, Status
+from devops_bench.core.run_env import RunEnv
 
 __all__ = [
     "ClusterInfo",
     "RunContext",
+    "RunEnv",
     "Registry",
     "Result",
     "Status",

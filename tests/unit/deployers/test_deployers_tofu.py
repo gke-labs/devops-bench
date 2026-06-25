@@ -22,6 +22,7 @@ credential behavior is covered in ``tests/unit/providers``.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -80,7 +81,8 @@ def tf_deployer(stack_dir, provider):
     return TFDeployer(tf_dir=str(stack_dir), provider=provider, variables=variables)
 
 
-def test_up(mocker, tf_deployer, provider):
+def test_up(mocker, monkeypatch, tf_deployer, provider):
+    monkeypatch.delenv("TF_DATA_DIR", raising=False)
     mock_run = mocker.patch("devops_bench.deployers.tofu.run")
     tf_deployer.up()
 
@@ -106,7 +108,8 @@ def test_up(mocker, tf_deployer, provider):
     assert calls[1].kwargs["cwd"] == tf_deployer.tf_dir
 
 
-def test_down(mocker, tf_deployer, provider):
+def test_down(mocker, monkeypatch, tf_deployer, provider):
+    monkeypatch.delenv("TF_DATA_DIR", raising=False)
     mock_run = mocker.patch("devops_bench.deployers.tofu.run")
     tf_deployer.down()
 
@@ -130,6 +133,32 @@ def test_down(mocker, tf_deployer, provider):
     ]
 
 
+def test_up_isolates_state_beside_tf_data_dir(mocker, monkeypatch, tmp_path, tf_deployer):
+    monkeypatch.setenv("TF_DATA_DIR", str(tmp_path / "tf-data"))
+    mock_run = mocker.patch("devops_bench.deployers.tofu.run")
+    tf_deployer.up()
+
+    apply_argv = mock_run.call_args_list[1].args[0]
+    expected_state = str((tmp_path / "tf-data").resolve().parent / "terraform.tfstate")
+    assert "-state" in apply_argv
+    state_path = apply_argv[apply_argv.index("-state") + 1]
+    assert state_path == expected_state
+    # Must NOT be inside TF_DATA_DIR (that path is reserved by OpenTofu).
+    assert f"{os.sep}tf-data{os.sep}" not in state_path
+    # init carries no -state (it does not touch state).
+    assert "-state" not in mock_run.call_args_list[0].args[0]
+
+
+def test_down_isolates_state_beside_tf_data_dir(mocker, monkeypatch, tmp_path, tf_deployer):
+    monkeypatch.setenv("TF_DATA_DIR", str(tmp_path / "tf-data"))
+    mock_run = mocker.patch("devops_bench.deployers.tofu.run")
+    tf_deployer.down()
+
+    destroy_argv = mock_run.call_args_list[1].args[0]
+    expected_state = str((tmp_path / "tf-data").resolve().parent / "terraform.tfstate")
+    assert destroy_argv[destroy_argv.index("-state") + 1] == expected_state
+
+
 def _output_process(location):
     proc = MagicMock()
     proc.stdout = json.dumps(
@@ -141,7 +170,8 @@ def _output_process(location):
     return proc
 
 
-def test_get_cluster_info_parses_and_delegates(mocker, tf_deployer, provider):
+def test_get_cluster_info_parses_and_delegates(mocker, monkeypatch, tf_deployer, provider):
+    monkeypatch.delenv("TF_DATA_DIR", raising=False)
     mock_run = mocker.patch("devops_bench.deployers.tofu.run")
     mock_run.side_effect = [MagicMock(), _output_process("us-central1-a")]
 
@@ -160,6 +190,19 @@ def test_get_cluster_info_parses_and_delegates(mocker, tf_deployer, provider):
     assert info.name == "test-cluster"
     assert info.location == "us-central1-a"
     assert info.project == "test-project"
+
+
+def test_get_cluster_info_reads_isolated_state(mocker, monkeypatch, tmp_path, tf_deployer):
+    monkeypatch.setenv("TF_DATA_DIR", str(tmp_path / "tf-data"))
+    mock_run = mocker.patch("devops_bench.deployers.tofu.run")
+    mock_run.side_effect = [MagicMock(), _output_process("us-central1-a")]
+
+    tf_deployer.get_cluster_info()
+
+    output_argv = mock_run.call_args_list[1].args[0]
+    expected_state = str((tmp_path / "tf-data").resolve().parent / "terraform.tfstate")
+    assert output_argv[:3] == ["tofu", "output", "-json"]
+    assert output_argv[output_argv.index("-state") + 1] == expected_state
 
 
 def test_get_cluster_info_missing_name_raises(mocker, tf_deployer):

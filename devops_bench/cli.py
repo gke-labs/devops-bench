@@ -85,6 +85,20 @@ def build_parser() -> argparse.ArgumentParser:
         const=False,
         help="Force teardown even if BENCH_NO_TEARDOWN is set.",
     )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help=(
+            "Isolate this run (own kubeconfig / gcloud config / tofu data dir and "
+            "a run-unique cluster name) so it can run concurrently with others."
+        ),
+    )
+    parser.add_argument(
+        "--run-id",
+        dest="run_id",
+        default=None,
+        help="Explicit run id for isolation/artifact naming (default: RUN_ID env or generated).",
+    )
     return parser
 
 
@@ -112,6 +126,7 @@ def args_to_config(args: argparse.Namespace) -> BenchmarkConfig:
         "agent_type",
         "judge_provider",
         "judge_model",
+        "run_id",
     ):
         value = getattr(args, field)
         if value is not None:
@@ -124,6 +139,7 @@ def args_to_config(args: argparse.Namespace) -> BenchmarkConfig:
         no_teardown=(
             args.no_teardown if args.no_teardown is not None else base.no_teardown
         ),
+        parallel=args.parallel or base.parallel,
     )
 
 

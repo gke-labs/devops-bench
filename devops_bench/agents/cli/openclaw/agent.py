@@ -84,7 +84,7 @@ _OPENCLAW_CONFIG_FILE = "openclaw.json"
 
 
 def _oc_model_id(config: AgentConfig) -> str:
-    """Resolve the canonical ``provider/model`` id ``oc models set`` expects.
+    """Resolve the canonical ``provider/model`` id ``oc agent --model`` expects.
 
     Returns ``""`` when no model is configured (oc's stored default is left
     untouched). A model id already containing ``/`` passes through; otherwise
@@ -135,7 +135,7 @@ def _build_env(config: AgentConfig) -> dict[str, str]:
     ``oc agent --local`` reads the model provider's API key from the shell. The
     benchmark's neutral ``config.api_key`` is mapped onto the provider-specific
     variable(s) openclaw expects; the model itself is never hardcoded (it flows
-    from ``config.model`` via ``oc models set``).
+    from ``config.model`` via ``oc agent --model``).
 
     Args:
         config: Resolved :class:`AgentConfig` for this run.
@@ -161,17 +161,20 @@ def _build_env(config: AgentConfig) -> dict[str, str]:
     return overlay
 
 
-def _oc_set_model_cmd(config: AgentConfig, oc_bin: str) -> str:
-    """Shell fragment that points oc at the configured model, or ``""``.
+def _oc_model_flag(config: AgentConfig) -> str:
+    """Return ``--model <id> `` for ``oc agent``, or ``""`` when no model is set.
 
-    Chained with ``&&`` so a failed ``models set`` aborts the run (the non-zero
-    exit then surfaces on ``AgentResult.errors``) instead of silently falling
-    through to oc's stored default and invalidating the benchmark arm.
+    The model is selected per-run with ``oc agent --model`` rather than the
+    global ``oc models set``: the latter writes oc's *shared* config whenever no
+    isolated ``OPENCLAW_CONFIG_PATH`` is in play (e.g. MCP off), which both races
+    across concurrent runs and pollutes the operator's default model. An invalid
+    id still aborts the run via ``oc agent``'s own non-zero exit, which surfaces
+    on ``AgentResult.errors``.
     """
     model_id = _oc_model_id(config)
     if not model_id:
         return ""
-    return f"{oc_bin} models set {shlex.quote(model_id)} && "
+    return f"--model {shlex.quote(model_id)} "
 
 
 def _prepend_rules(rules_text: str, prompt: str) -> str:
@@ -219,9 +222,8 @@ def _build_local_command(
         # Source nvm so the Node-based oc binary's runtime is available.
         'export NVM_DIR="$HOME/.nvm"; '
         '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
-        f"{_oc_set_model_cmd(config, quoted_oc)}"
         f"{quoted_oc} --log-level debug agent --local "
-        f"--agent {shlex.quote(agent_name)} -m {shlex.quote(prompt)}"
+        f"--agent {shlex.quote(agent_name)} {_oc_model_flag(config)}-m {shlex.quote(prompt)}"
     )
 
 
@@ -231,8 +233,9 @@ class OpenClawAgent(AgentHarness):
 
     The binary path is resolved from ``config.target``, falling back to
     ``~/bin/oc`` and then ``"oc"`` on ``$PATH``. Model /
-    provider flow from ``config.model`` / ``config.provider`` via an
-    ``oc models set <id>`` fragment — never hardcoded.
+    provider flow from ``config.model`` / ``config.provider`` via the per-run
+    ``oc agent --model`` flag — never hardcoded, never the global
+    ``oc models set``.
 
     Capabilities are delivered through openclaw's native channels: MCP servers
     via an isolated ``OPENCLAW_CONFIG_PATH`` (``mcp.servers``), skills via
