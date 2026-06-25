@@ -23,7 +23,7 @@ from typing import Any
 
 from devops_bench.core import first_env, get_logger
 from devops_bench.models import LLMClient, get_model
-from devops_bench.models.loop import LoopResult, run_tool_loop
+from devops_bench.models.utils.loop import LoopResult, run_tool_loop
 
 __all__ = ["ChaosAgent", "ToolHandler"]
 
@@ -101,7 +101,7 @@ class ChaosAgent:
         )
 
     async def _dispatch(self, name: str, args: Any, call_id: str | None) -> str:
-        """Adapt :data:`~devops_bench.models.loop.ToolDispatcher` to the handler.
+        """Adapt :data:`~devops_bench.models.utils.loop.ToolDispatcher` to the handler.
 
         :func:`run_tool_loop` calls this once per function call. We forward to
         the fault's handler, contributing the only chaos-specific glue (the

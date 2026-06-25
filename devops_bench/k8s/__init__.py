@@ -15,6 +15,19 @@
 """Reusable Kubernetes primitives: kubectl wrappers and wait/poll conditions."""
 
 from devops_bench.k8s.conditions import poll_until
-from devops_bench.k8s.kubectl import apply, get_resource, rollout_status, wait
+from devops_bench.k8s.kubectl import (
+    apply,
+    get_resource,
+    port_forward,
+    rollout_status,
+    wait,
+)
 
-__all__ = ["apply", "get_resource", "poll_until", "rollout_status", "wait"]
+__all__ = [
+    "apply",
+    "get_resource",
+    "poll_until",
+    "port_forward",
+    "rollout_status",
+    "wait",
+]

@@ -38,6 +38,7 @@ from devops_bench.chaos.faults.generate_load import (
     run_chaos_command,
 )
 from devops_bench.core.context import RunContext
+from devops_bench.k8s import kubectl as k8s_kubectl
 
 
 def _make_ctx(env: dict[str, str] | None = None) -> RunContext:
@@ -198,8 +199,8 @@ def test_inject_opens_port_forward_and_points_url_at_local_tunnel():
         {_ENV_TARGET_DEPLOYMENT: "web-app", _ENV_TARGET_NAMESPACE: "prod"}
     )
     with (
-        patch.object(gl.subprocess, "Popen", return_value=proc) as popen_mock,
-        patch.object(gl.time, "sleep"),  # don't actually sleep the settle window
+        patch.object(k8s_kubectl.subprocess, "Popen", return_value=proc) as popen_mock,
+        patch.object(k8s_kubectl.time, "sleep"),  # don't actually sleep the settle window
         patch("devops_bench.chaos.agent.ChaosAgent", _StubAgent),
     ):
         result = fault.inject(ctx)
@@ -237,8 +238,8 @@ def test_inject_early_port_forward_exit_becomes_failed_result():
 
     ctx = _make_ctx({_ENV_TARGET_DEPLOYMENT: "web-app"})
     with (
-        patch.object(gl.subprocess, "Popen", return_value=dead),
-        patch.object(gl.time, "sleep"),
+        patch.object(k8s_kubectl.subprocess, "Popen", return_value=dead),
+        patch.object(k8s_kubectl.time, "sleep"),
         # The agent must never be constructed when the tunnel fails to come up.
         patch(
             "devops_bench.chaos.agent.ChaosAgent",
@@ -274,7 +275,7 @@ def test_inject_skips_port_forward_when_flagged():
         }
     )
     with (
-        patch.object(gl.subprocess, "Popen") as popen_mock,
+        patch.object(k8s_kubectl.subprocess, "Popen") as popen_mock,
         patch("devops_bench.chaos.agent.ChaosAgent", _StubAgent),
     ):
         result = fault.inject(ctx)
@@ -300,7 +301,7 @@ def test_inject_without_target_deployment_runs_against_existing_url():
             return "ok"
 
     with (
-        patch.object(gl.subprocess, "Popen") as popen_mock,
+        patch.object(k8s_kubectl.subprocess, "Popen") as popen_mock,
         patch("devops_bench.chaos.agent.ChaosAgent", _StubAgent),
     ):
         result = fault.inject(_make_ctx())

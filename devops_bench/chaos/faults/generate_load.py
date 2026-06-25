@@ -16,10 +16,11 @@
 
 This module owns every fortio-specific concern: the load-target schema, the SRE
 system prompt, the ``run_command`` tool descriptor, the shell-free argv
-executor, the ``kubectl port-forward`` lifecycle, and the typed
-:class:`GenerateLoadFault` node. The chaos agent is imported lazily inside
-:meth:`GenerateLoadFault.inject` so registering this fault does not pull the
-agent or :mod:`devops_bench.models` chain.
+executor, and the typed :class:`GenerateLoadFault` node; the ``kubectl
+port-forward`` tunnel is driven by :func:`devops_bench.k8s.port_forward`. The
+chaos agent is imported lazily inside :meth:`GenerateLoadFault.inject` so
+registering this fault does not pull the agent or :mod:`devops_bench.models`
+chain.
 """
 
 from __future__ import annotations
@@ -28,11 +29,9 @@ import contextlib
 import json
 import os
 import shlex
-import subprocess
 import textwrap
 import threading
 import time
-from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any, Literal
 
@@ -42,6 +41,7 @@ from devops_bench.chaos.base import FAULTS, ChaosResult, Fault
 from devops_bench.core import get_logger
 from devops_bench.core.context import RunContext
 from devops_bench.core.subprocess import run
+from devops_bench.k8s import port_forward
 
 __all__ = [
     "GenerateLoadFault",
@@ -66,9 +66,6 @@ _LOCAL_PORT = 8080
 # Single source of truth for the load target when a spec omits one. The local
 # port-forward URL the cluster workload is exposed on.
 _DEFAULT_TARGET_URL = f"http://localhost:{_LOCAL_PORT}"
-
-# Seconds to let ``kubectl port-forward`` establish the tunnel before load.
-_PORT_FORWARD_SETTLE_SEC = 3
 
 # ``RunContext.env`` keys naming the port-forward target the harness writes
 # onto the context before injection.
@@ -172,73 +169,6 @@ def run_chaos_command(
         return f"Stdout:\n{completed.stdout}\nStderr:\n{completed.stderr}"
     except Exception as exc:  # noqa: BLE001 - surface any failure back to the LLM
         return f"Error: {exc}"
-
-
-@contextlib.contextmanager
-def _port_forward(deployment: str, namespace: str, local_port: int) -> Iterator[None]:
-    """Hold a ``kubectl port-forward`` open for the body, then tear it down.
-
-    The port-forward is held open for the duration of load generation, so it
-    uses :func:`subprocess.Popen` directly rather than the one-shot
-    ``core.subprocess.run`` helper. ``stdout`` / ``stderr`` go to ``DEVNULL``
-    because nothing reads the pipes — ``PIPE`` would let ``kubectl`` block once
-    its output buffer fills under sustained load. The tunnel is always
-    terminated on exit, whether the body completes or raises, so it never
-    outlives the injection.
-
-    Args:
-        deployment: Name of the deployment to forward (``deployment/<name>``).
-        namespace: Namespace the deployment lives in.
-        local_port: Local port mapped to the same port on the workload.
-
-    Yields:
-        ``None`` once the tunnel has had time to settle.
-
-    Raises:
-        RuntimeError: If ``kubectl port-forward`` exits before the settle
-            window elapses (e.g. the deployment does not exist).
-    """
-    _log.info(
-        "establishing port-forward to deployment/%s on port %d...",
-        deployment,
-        local_port,
-    )
-    pf_cmd = [
-        "kubectl",
-        "port-forward",
-        f"deployment/{deployment}",
-        f"{local_port}:{local_port}",
-        "-n",
-        namespace,
-    ]
-    process = subprocess.Popen(
-        pf_cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    time.sleep(_PORT_FORWARD_SETTLE_SEC)
-    if process.poll() is not None:
-        # Reap the already-exited child before raising so it does not linger as
-        # a zombie waiting for ``wait()``. ``terminate`` is a no-op on a
-        # process that already exited; ``wait`` collects the exit status.
-        returncode = process.returncode
-        try:
-            process.wait(timeout=_PORT_FORWARD_SETTLE_SEC)
-        except Exception as exc:  # noqa: BLE001 - never mask the raise reason
-            _log.warning("error reaping early-exited port-forward: %s", exc)
-        raise RuntimeError(
-            f"kubectl port-forward exited early (code {returncode}) "
-            f"for deployment/{deployment} in {namespace!r}"
-        )
-
-    try:
-        yield
-    finally:
-        _log.info("terminating GKE port-forward...")
-        process.terminate()
-        process.wait()
-        _log.info("port-forward terminated.")
 
 
 class LoadTarget(BaseModel):
@@ -349,7 +279,9 @@ class GenerateLoadFault(Fault):
         # Open the fault's own tunnel only when a target deployment is named and
         # the caller did not opt out; otherwise run against the existing URL.
         if deployment and not skip_port_forward:
-            forward = _port_forward(deployment, namespace, _LOCAL_PORT)
+            forward = port_forward(
+                f"deployment/{deployment}", _LOCAL_PORT, namespace=namespace
+            )
             local_url: str | None = _DEFAULT_TARGET_URL
         else:
             forward = contextlib.nullcontext()
