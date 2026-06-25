@@ -34,7 +34,22 @@ echo "==> Waiting for Kyverno to be ready..."
 kubectl -n kyverno wait --for=condition=Available deploy --all --timeout=300s
 
 echo "==> Applying compliance policies (audit mode)..."
-kubectl apply -f "${MANIFESTS_DIR}/policies/"
+# The Kyverno admission webhook (mutate-policy.kyverno.svc) can take several seconds
+# to start serving *after* its deployment reports Available, so a plain apply can fail
+# with "failed calling webhook ... context deadline exceeded". Retry to ride it out.
+policy_applied=false
+for attempt in $(seq 1 12); do
+  if kubectl apply -f "${MANIFESTS_DIR}/policies/"; then
+    policy_applied=true
+    break
+  fi
+  echo "    policy apply attempt ${attempt} failed (Kyverno webhook not ready yet), retrying in 5s..."
+  sleep 5
+done
+if [ "${policy_applied}" != true ]; then
+  echo "ERROR: Kyverno policies failed to apply after retries" >&2
+  exit 1
+fi
 
 echo "==> Deploying team workloads (some violate the policies)..."
 kubectl apply -f "${MANIFESTS_DIR}/workloads/"

@@ -75,10 +75,38 @@ resource "kubernetes_deployment_v1" "target" {
       spec {
         container {
           name  = "web"
-          image = "registry.k8s.io/hpa-example"
+          image = "python:3.11-slim"
+
+          # CPU-burn HTTP server on port 8080. The chaos harness port-forwards
+          # `deployment/<target>` to a FIXED remote port 8080
+          # (devops_bench/chaos/faults/generate_load.py:_LOCAL_PORT, passed as
+          # remote_port), so the workload MUST listen on 8080 or the generated
+          # load never reaches it. (registry.k8s.io/hpa-example listens on :80 and
+          # would silently drop the spike — the run only "passes" because the
+          # agent's HPA minReplicas scales it independent of load.)
+          command = ["python3", "-c"]
+          args = [
+            <<-PY
+              import http.server, socketserver
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      total = 0
+                      for i in range(3_000_000):
+                          total += i * i
+                      self.send_response(200)
+                      self.end_headers()
+                      self.wfile.write(b"ok\n")
+                  def log_message(self, *a):
+                      pass
+              class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+              Server(("", 8080), Handler).serve_forever()
+            PY
+          ]
 
           port {
-            container_port = 80
+            container_port = 8080
           }
           # No resources block on purpose: adding requests/limits is the agent's
           # job. Resource-based HPA cannot target CPU without requests set.
@@ -108,8 +136,8 @@ resource "kubernetes_service_v1" "target" {
     }
 
     port {
-      port        = 80
-      target_port = 80
+      port        = 8080
+      target_port = 8080
     }
 
     type = "ClusterIP"
