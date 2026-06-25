@@ -3,118 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-Dimensional Agent & LLM Leaderboard</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>DevOps Bench Leaderboard</title>
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Local Stylesheet -->
-    <link rel="stylesheet" href="style.css">
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-start items-center p-4 sm:p-8 antialiased">
-
-    <main class="w-full max-w-6xl flex flex-col items-center gap-8">
-        
-        <!-- Table Card Wrapper -->
-        <div class="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-100 overflow-hidden">
-            
-            <!-- Header Banner / Context -->
-            <header class="px-6 pt-6 pb-5 border-b border-slate-100 bg-slate-50/50">
-                <div>
-                    <h1 class="text-sm font-semibold text-slate-500 flex items-center gap-2 uppercase tracking-wider">
-                        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                        </svg>
-                        Agent DevOps Benchmark
-                    </h1>
-                    <p class="text-xs text-slate-500 mt-1">Benchmarking model × harness pairings across DevOps tasks — the LLM and the agent runner driving it.</p>
-                </div>
-            </header>
-    
-            <!-- Filter Bar (dynamically populated) -->
-            <div id="filter-bar" class="px-6 py-4 bg-white border-b border-slate-100 flex flex-col gap-3">
-                <!-- Dynamically injected via JavaScript -->
-            </div>
-
-            <!-- Controls & Headers Row -->
-            <div class="px-6 py-4 bg-white border-b border-slate-100 hidden sm:grid grid-cols-12 gap-4 items-center font-semibold text-xs tracking-wider text-slate-500 select-none">
-
-                <!-- Benchmark Subject Header: model × harness (co-equal first-class).
-                     Mirrors the row's 1fr_auto_1fr sub-grid so MODEL/HARNESS sit over their entities.
-                     Harness config (augmentation + MCP) nests under the harness in each row. -->
-                <div class="col-span-7 sm:col-span-7 grid grid-cols-[1fr_auto_1fr] items-center gap-1 sm:gap-2">
-                    <span>MODEL</span>
-                    <span aria-hidden="true" class="flex items-center justify-center gap-1 px-0.5 sm:px-1 shrink-0">
-                        <span class="hidden sm:block h-px w-2.5"></span>
-                        <span class="flex items-center justify-center w-5 h-5 text-slate-300 font-normal">×</span>
-                        <span class="hidden sm:block h-px w-2.5"></span>
-                    </span>
-                    <span>HARNESS <span class="text-slate-300 font-normal normal-case tracking-normal">&amp; config</span></span>
-                </div>
-
-                <!-- Score & Pass@N Controls Column Header -->
-                <div class="col-span-5 sm:col-span-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
-                    <div class="flex items-center gap-1 min-w-[70px]">
-                        <span>SCORE</span>
-                        <div id="tooltip-trigger" tabindex="0" aria-describedby="score-tooltip-desc" aria-label="Score Explanation" class="group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 rounded-full">
-                            <svg aria-hidden="true" class="w-3.5 h-3.5 text-slate-500 hover:text-slate-700 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <div id="score-tooltip-desc" role="tooltip" class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2.5 bg-slate-900 text-white text-[11px] font-normal tracking-normal rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shadow-lg z-20 leading-relaxed">
-                                Calculated dynamically based on success rate metrics across all core task suites.
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Pass@N Toggle Buttons -->
-                    <div class="inline-flex p-0.5 bg-slate-100 rounded-lg text-[11px]">
-                        <button onclick="switchMetric('pass1')" id="btn-pass1" aria-pressed="true" class="px-2.5 py-1 font-medium rounded-md transition-all duration-200 bg-white text-slate-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
-                            Pass@1
-                        </button>
-                        <button onclick="switchMetric('pass5')" id="btn-pass5" aria-pressed="false" class="px-2.5 py-1 font-medium rounded-md transition-all duration-200 text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
-                            Pass@5
-                        </button>
-                        <button onclick="switchMetric('passMax')" id="btn-passMax" aria-pressed="false" class="px-2.5 py-1 font-medium rounded-md transition-all duration-200 text-slate-600 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
-                            Pass^5
-                        </button>
-                    </div>
-                </div>
-
-            </div>
-    
-            <!-- Leaderboard Rows Container -->
-            <div id="leaderboard-rows" class="divide-y divide-slate-100">
-                <!-- Dynamically injected via JavaScript -->
-            </div>
-    
-        </div>
-    
-        <!-- Trend Performance Chart Card -->
-        <section class="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-100 p-6 flex flex-col">
-            <div class="mb-4">
-                <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                    <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                    </svg>
-                    Accuracy Performance Trend Over Time
-                </h2>
-                <p class="text-[10px] text-slate-500 mt-1">Comparing agent configuration success rates across historical run iterations.</p>
-            </div>
-            <div class="chart-container flex-grow">
-                <canvas id="trendChart" role="img" aria-label="Accuracy Performance Trend Over Time Chart comparing different setups across historical runs"></canvas>
-                <!-- Accessible Screen Reader-only table -->
-                <table id="trend-chart-table" class="sr-only"></table>
-            </div>
-        </section>
-
-    </main>
-
-    <!-- Local Scripts: shared data first, then the leaderboard view -->
-    <script src="data.js"></script>
-    <script src="app.js"></script>
+<body class="bg-slate-50 text-slate-800 min-h-screen antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

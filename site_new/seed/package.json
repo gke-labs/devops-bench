@@ -1,0 +1,14 @@
+{
+  "name": "devops-bench-site-seed",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Seeds the local Firestore emulator with mock leaderboard data for site_new.",
+  "scripts": {
+    "seed": "node seed.mjs",
+    "seed:test": "FIRESTORE_DATABASE_ID=leaderboard-test node seed.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Security rules for the devops-bench leaderboard.
+//
+// The dashboard is a public, READ-ONLY view of the derived read-model. So:
+//   - models / harnesses / setups : world-readable (the UI fetches these)
+//   - results (raw source of truth): NOT client-readable — the UI never touches
+//     it, and raw per-iteration data shouldn't be exposed to the browser
+//   - all writes: denied. Seeding goes through the Admin SDK, which bypasses
+//     these rules, so the client never needs write access.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /models/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /harnesses/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /setups/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Raw results: no client access at all.
+    match /results/{id} {
+      allow read, write: if false;
+    }
+
+    // Everything else: locked down.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
