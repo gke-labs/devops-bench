@@ -2,20 +2,36 @@ import json
 import threading
 import time
 import subprocess
+import socket
+import contextlib
 import datetime
 from pkg.agents.chaos.chaos import ChaosAgent
 from pkg.agents.verifier.verifier import VerifierAgent
+
+# Default local port; concurrent runs override it with a free port so two
+# port-forwards on one host do not contend for the same local port.
+_DEFAULT_LOCAL_PORT = 8080
+# The workload's in-cluster port (remote side of the port-forward) stays fixed.
+_REMOTE_PORT = 8080
 
 def log(msg):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     print(f"[{timestamp}] {msg}", flush=True)
 
+def pick_free_port():
+    """Return an ephemeral TCP port currently free on the loopback interface."""
+    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(("", 0))
+        return sock.getsockname()[1]
+
 class ScenarioManager:
     """Manages GKE port-forwarding, schedules chaos agent load spikes, and aggregates telemetry."""
-    
-    def __init__(self, target_deployment, namespace):
+
+    def __init__(self, target_deployment, namespace, local_port=None):
         self.target_deployment = target_deployment
         self.namespace = namespace
+        self.local_port = local_port or _DEFAULT_LOCAL_PORT
+        self.local_service_url = f"http://localhost:{self.local_port}"
         self.chaos_active_event = threading.Event()
         self.chaos_agent = ChaosAgent()
         self.chaos_agent.chaos_active_event = self.chaos_active_event
@@ -90,30 +106,30 @@ class ScenarioManager:
             log(f"[ScenarioManager] Waiting for trigger delay of {delay}s...")
             time.sleep(delay)
         
-        # 1. Establish kubectl port-forward to local port 8080
-        log(f"[ScenarioManager] Establishing port-forward to deployment/{self.target_deployment} on port 8080...")
+        # 1. Establish kubectl port-forward to the (possibly per-run) local port
+        log(f"[ScenarioManager] Establishing port-forward to deployment/{self.target_deployment} on local port {self.local_port}...")
         pf_cmd = [
-            "kubectl", "port-forward", 
-            f"deployment/{self.target_deployment}", 
-            "8080:8080", 
+            "kubectl", "port-forward",
+            f"deployment/{self.target_deployment}",
+            f"{self.local_port}:{_REMOTE_PORT}",
             "-n", self.namespace
         ]
-        
+
         self.pf_process = subprocess.Popen(
-            pf_cmd, 
-            stdout=subprocess.PIPE, 
+            pf_cmd,
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
-        
+
         # Give it 3 seconds to establish the tunnel
         time.sleep(3)
-        
+
         # 2. Redirect Chaos Agent load generation to localhost
         local_action = action.copy()
         local_action["target"] = local_action.get("target", {}).copy()
-        local_action["target"]["service_url"] = "http://localhost:8080"
-        
-        log(f"[ScenarioManager] Triggering chaos action: generate_load on http://localhost:8080")
+        local_action["target"]["service_url"] = self.local_service_url
+
+        log(f"[ScenarioManager] Triggering chaos action: generate_load on {self.local_service_url}")
         try:
             self.chaos_agent.inject_fault(local_action)
         except Exception as e:

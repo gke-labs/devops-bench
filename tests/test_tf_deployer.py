@@ -14,6 +14,13 @@ if str(project_root) not in sys.path:
 from deployers.tf.tf_deployer import TFDeployer
 
 
+@pytest.fixture(autouse=True)
+def _clear_isolation_env(monkeypatch):
+    """Default tests assert state-flag-free argv; clear TF_DATA_DIR so the
+    parallel-isolation path does not leak in from the ambient environment."""
+    monkeypatch.delenv("TF_DATA_DIR", raising=False)
+
+
 @pytest.fixture
 def tf_deployer_setup():
     variables = {
@@ -83,6 +90,29 @@ def test_down(mock_run, tf_deployer_setup):
         "-var", "location=us-central1-a",
         "-var", "node_count=3"
     ]
+
+
+@patch('subprocess.run')
+def test_up_isolates_state_under_tf_data_dir(mock_run, tf_deployer_setup, monkeypatch, tmp_path):
+    monkeypatch.setenv("TF_DATA_DIR", str(tmp_path / "tf-data"))
+    tf_deployer_setup.up()
+
+    apply_argv = mock_run.call_args_list[1][0][0]
+    expected_state = str((tmp_path / "tf-data").resolve().parent / "terraform.tfstate")
+    assert "-state" in apply_argv
+    assert apply_argv[apply_argv.index("-state") + 1] == expected_state
+    # init does not carry -state.
+    assert "-state" not in mock_run.call_args_list[0][0][0]
+
+
+@patch('subprocess.run')
+def test_down_isolates_state_under_tf_data_dir(mock_run, tf_deployer_setup, monkeypatch, tmp_path):
+    monkeypatch.setenv("TF_DATA_DIR", str(tmp_path / "tf-data"))
+    tf_deployer_setup.down()
+
+    destroy_argv = mock_run.call_args_list[1][0][0]
+    expected_state = str((tmp_path / "tf-data").resolve().parent / "terraform.tfstate")
+    assert destroy_argv[destroy_argv.index("-state") + 1] == expected_state
 
 
 @patch('subprocess.run')

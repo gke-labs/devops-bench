@@ -1,7 +1,7 @@
 import json
 import unittest
 from unittest.mock import MagicMock, patch
-from pkg.manager.manager import ScenarioManager
+from pkg.manager.manager import ScenarioManager, pick_free_port
 from pkg.agents.verifier.base import VerificationResult
 
 class TestScenarioManager(unittest.TestCase):
@@ -10,6 +10,21 @@ class TestScenarioManager(unittest.TestCase):
         # Avoid side-effects during init
         with patch("pkg.manager.manager.ChaosAgent"), patch("pkg.manager.manager.VerifierAgent"):
             self.manager = ScenarioManager("my-deployment", "my-namespace")
+
+    def test_default_local_port(self):
+        self.assertEqual(self.manager.local_port, 8080)
+        self.assertEqual(self.manager.local_service_url, "http://localhost:8080")
+
+    def test_custom_local_port(self):
+        with patch("pkg.manager.manager.ChaosAgent"), patch("pkg.manager.manager.VerifierAgent"):
+            manager = ScenarioManager("d", "ns", local_port=34567)
+        self.assertEqual(manager.local_port, 34567)
+        self.assertEqual(manager.local_service_url, "http://localhost:34567")
+
+    def test_pick_free_port_in_range(self):
+        port = pick_free_port()
+        self.assertIsInstance(port, int)
+        self.assertTrue(1 <= port <= 65535)
 
     @patch("pkg.manager.manager.ScenarioManager._inject_chaos_with_delay")
     def test_run_chaos_and_verification_success(self, mock_inject):

@@ -12,6 +12,13 @@ if str(project_root) not in sys.path:
 from deployers.gcp.gcp_deployer import GCPDeployer
 
 
+@pytest.fixture(autouse=True)
+def _clear_isolation_env(monkeypatch):
+    """Keep the marker path under /tmp for default tests by clearing the
+    per-run dir env that the parallel-isolation path would otherwise use."""
+    monkeypatch.delenv("BENCH_RUN_DIR", raising=False)
+
+
 @pytest.fixture
 def gcp_deployer_setup():
     project = "test-project"
@@ -114,6 +121,20 @@ def test_down(mock_run, gcp_deployer_setup):
             env = kwargs.get('env')
             assert env is not None
             assert deployer.bin_dir in env['PATH']
+
+
+def test_state_marker_defaults_to_tmp(gcp_deployer_setup):
+    deployer = gcp_deployer_setup["deployer"]
+    marker = deployer._state_marker_path()
+    assert marker == Path("/tmp/test-project-us-central1-a-test-cluster_created")
+
+
+def test_state_marker_honors_per_run_dir(gcp_deployer_setup, monkeypatch, tmp_path):
+    monkeypatch.setenv("BENCH_RUN_DIR", str(tmp_path))
+    deployer = gcp_deployer_setup["deployer"]
+    marker = deployer._state_marker_path()
+    assert marker.parent == tmp_path
+    assert marker.name == "test-project-us-central1-a-test-cluster_created"
 
 
 def test_get_cluster_info(gcp_deployer_setup):
