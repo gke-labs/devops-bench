@@ -8,7 +8,9 @@ description: >
   across four lenses — correctness, parallel-safety across the eval matrix axes,
   task/stack conventions, and docs conventions — and returns ranked, actionable
   findings. The parallel-safety lens is the emphasis: it hunts for shared state
-  that makes a task fail when many runs execute at once.
+  that makes a task fail when many runs execute at once. This skill is
+  review-only: it analyzes statically and may run unit tests, linting, and
+  formatting checks, but it NEVER runs benchmark evals or provisions infra.
 ---
 
 # devops-bench comprehensive review
@@ -34,6 +36,32 @@ they are the source of truth; don't reconstruct them from memory:**
 
 Work the phases in order. Default to **precision**: every finding should name a
 concrete failure (inputs/state -> wrong outcome), not a style preference.
+
+---
+
+## Scope & guardrails — review only, never run evals
+
+This skill **analyzes and reports**. It does **not** execute the benchmark, and it
+finds parallel-run hazards by **reading and reasoning** about the task/stack/
+scripts — never by launching runs to observe a collision.
+
+**May run** (only to validate the code under review):
+- Unit / integration tests for the changed code (`pytest` / the repo's runner).
+- Linting (`ruff`) and formatting **checks** (e.g. `ruff format --check`) — report
+  violations; do not reformat or modify files as part of a review.
+
+**Must NOT run — out of scope, stop and report instead:**
+- Benchmark evaluations or the eval matrix: `pkg/evaluator/evaluate.py`,
+  `python -m devops_bench`, `scripts/bastion/run_matrix*.sh`, or any agent/judge
+  invocation.
+- Infrastructure provisioning or teardown: `tofu`/`terraform apply|destroy|plan|
+  init`, `gcloud ... create/delete`, `kind create/delete cluster`, `kubectl
+  apply/delete`.
+- Anything that spends cloud resources or calls a model/agent API.
+
+If reviewing a change would seem to *require* running it (e.g. "does this task
+actually pass?"), do not run it — report what static analysis shows and state that
+an actual eval run is out of scope for this skill.
 
 ---
 
@@ -96,13 +124,18 @@ ones get cut, not here.
   new precondition, changed return shape, new exception, or timing/ordering
   dependency break a call site?
 
+If the changed code has unit/integration tests, you **may** run them (and `ruff`)
+to corroborate a finding — see Scope & guardrails. Do not run anything that
+provisions infra or starts an eval.
+
 ### Lens B — parallel-safety across the matrix axes (the emphasis)
 
 The eval matrix runs **Task × Model × AgentConfig** concurrently, often N on one
 host. `RunEnv` gives each run its own isolation; a change is unsafe when it
-introduces state shared *outside* that isolation. First ground yourself in what
-isolation actually covers (verify against `run_env.py` / `docs/parallel-evals.md`,
-don't assume):
+introduces state shared *outside* that isolation. Establish this **by static
+analysis** — read the stack/scripts/prompt and reason about shared state; do not
+run concurrent evals to find out. First ground yourself in what isolation actually
+covers (verify against `run_env.py` / `docs/parallel-evals.md`, don't assume):
 
 **Per-run isolation covers:** `KUBECONFIG`, `CLOUDSDK_CONFIG`, `TF_DATA_DIR` (+ TF
 state beside it), a run-token-prefixed **cluster name** (short token, prefixed and
@@ -180,7 +213,8 @@ already covered by `RunEnv` — that is the distinction maintainers act on.
   requirements (nothing in-cluster should *name* the fix — the agent must discover
   it).
 - **Solvability:** there is a real path to success (a manual-solve in the README
-  or an equivalent), and the fault is injected from outside the cluster.
+  or an equivalent), and the fault is injected from outside the cluster. Assess
+  this by reading the stack/scripts — do not provision to check.
 - **Substrate parity:** kind stacks declare `kubeconfig_path`/`cluster_name`/
   `location` and emit `cluster_location = "local"`; GKE stacks return
   `cluster_name`/`cluster_location` the deployer expects. New stack variables the
@@ -226,7 +260,7 @@ convention violation only when you can quote the exact rule and the exact line.
 Dedup candidates that point at the same line/mechanism. For each survivor, decide
 one of three states (run an independent verifier sub-agent for non-obvious ones;
 for parallel-safety, the verifier should try to *refute* by finding the isolation
-that already covers it):
+that already covers it — by reading code, not by running evals):
 
 - **CONFIRMED** — name the inputs/state and the wrong output/crash; quote the line.
 - **PLAUSIBLE** — mechanism is real, trigger depends on env/config/composition
@@ -257,4 +291,5 @@ Do **not** dump raw JSON. Write a readable review:
 
 Scale effort to the ask: a quick "is this parallel-safe?" wants the B-lens
 checklist and a verdict; "comprehensive review" wants all lenses and a fuller
-findings list. If nothing survives verification, say so plainly.
+findings list. If nothing survives verification, say so plainly. Remember the
+scope guardrail: present findings; never run the benchmark to produce them.
