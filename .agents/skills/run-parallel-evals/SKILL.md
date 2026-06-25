@@ -55,6 +55,21 @@ confirm scale. Then run with `DRY_RUN=1` and show the expanded matrix.
 Note the parallel-safety rule (see `docs/parallel-evals.md`): **legacy + gemini
 CLI is not parallel-safe** — for parallel gemini, use the refactored arm.
 
+**Pre-flight the matrix tasks for parallel hazards** before a real run — a doomed
+combo wastes a cluster + ~30 min. Skim each selected task's stack/scripts (or run
+the `devops-bench-review` skill on it) against the per-run isolation gaps in
+`docs/parallel-evals.md` (known-issues appendix). The ones that bite a matrix:
+- a task that seeds a fixed `$HOME` repo (`~/<task>-repo.git`) and `rm -rf`s it —
+  unsafe once the matrix repeats that task across models/configs;
+- a multi-cluster stack whose node-SA name collapses under the run-token prefix;
+- a per-task stack that grants a project role to the shared VM SA (teardown
+  clobber across concurrent GKE combos);
+- duplicate `task_id`s among the selected tasks (ambiguous reporting);
+- host capacity: sum kind clusters / disk / inotify across `MAX_PARALLEL`.
+
+Never run two of the **same** combo at once — run-id-derived cluster names are
+reused (safe only because the prior run tore down first).
+
 ---
 
 ## Phase 2 — Credentials & environment
@@ -231,6 +246,18 @@ Then **verify teardown is clean** (Phase 3 GCP checks — zero leftover clusters
 `gke-nodes-*` / `sa-secret-rotation-*` / `db-credentials-*`) and report any
 residue you couldn't remove.
 
+**Record any new failure mode** — this capture step is part of the run, not
+optional. If a combo failed in a way **not** already in the
+`docs/parallel-evals.md` failure-mode table or known-issues appendix (or the
+`docs/bastion.md` appendix for bastion-host / VM-SA issues), append it so the next
+run benefits:
+- a **symptom → root cause → fix** row in the failure-mode table for an
+  operational flake;
+- a known-issues bullet/row for a **structural** gap (isolation, naming, capacity).
+
+Keep it terse, don't duplicate an existing entry, and follow the docs conventions
+(scope + user-guide, GFM, not journal-like, no model scores).
+
 End with: total combos, passed/failed counts, best performer, the headline score
 table, and the list of failures with their root cause + fix.
 
@@ -244,5 +271,7 @@ table, and the list of failures with their root cause + fix.
 - Always confirm clean teardown — orphaned `gke-nodes-*` SAs silently break the
   next run with `409`.
 - Cap retries (≤2/combo) and surface anything still failing rather than looping.
+- Capture every **new** failure mode in the `docs/parallel-evals.md` /
+  `docs/bastion.md` appendices (see Phase 6) so learnings accrue across runs.
 - Prefer leaving the run detached + re-attaching via `RESUME_STAMP` over holding a
   fragile foreground SSH session.
