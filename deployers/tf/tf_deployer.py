@@ -34,6 +34,23 @@ class TFDeployer(Deployer):
 
         self.variables = variables or {}
 
+    @staticmethod
+    def _state_flags() -> list:
+        """Return ``-state`` flags placing per-run state beside ``TF_DATA_DIR``.
+
+        When ``TF_DATA_DIR`` is set (the parallel-isolation path keys it to a
+        per-run ``<run>/tf-data`` dir), the local state file is written to
+        ``<run>/terraform.tfstate`` — the *parent* of ``TF_DATA_DIR``, NOT
+        inside it. ``<TF_DATA_DIR>/terraform.tfstate`` is OpenTofu's reserved
+        backend-state path; writing the resource state there makes a later
+        ``tofu init``/``output`` fail with "does not support state version 4".
+        Empty when ``TF_DATA_DIR`` is unset (default in-dir state).
+        """
+        tf_data_dir = os.environ.get("TF_DATA_DIR", "").strip()
+        if not tf_data_dir:
+            return []
+        return ["-state", str(Path(tf_data_dir).resolve().parent / "terraform.tfstate")]
+
     def _run_cmd(
         self, cmd: list, cwd: str, capture: bool = False
     ) -> subprocess.CompletedProcess:
@@ -56,7 +73,7 @@ class TFDeployer(Deployer):
 
         self._run_cmd(["tofu", "init", "-input=false"], cwd=self.tf_dir)
 
-        cmd = ["tofu", "apply", "-auto-approve", "-input=false"]
+        cmd = ["tofu", "apply", "-auto-approve", "-input=false", *self._state_flags()]
         for k, v in self.variables.items():
             cmd.extend(["-var", f"{k}={v}"])
 
@@ -74,7 +91,7 @@ class TFDeployer(Deployer):
 
         self._run_cmd(["tofu", "init", "-input=false"], cwd=self.tf_dir)
 
-        cmd = ["tofu", "destroy", "-auto-approve", "-input=false"]
+        cmd = ["tofu", "destroy", "-auto-approve", "-input=false", *self._state_flags()]
         for k, v in self.variables.items():
             cmd.extend(["-var", f"{k}={v}"])
 
@@ -84,7 +101,9 @@ class TFDeployer(Deployer):
         self._run_cmd(["tofu", "init", "-input=false"], cwd=self.tf_dir)
 
         result = self._run_cmd(
-            ["tofu", "output", "-json"], cwd=self.tf_dir, capture=True
+            ["tofu", "output", "-json", *self._state_flags()],
+            cwd=self.tf_dir,
+            capture=True,
         )
         outputs = json.loads(result.stdout)
 

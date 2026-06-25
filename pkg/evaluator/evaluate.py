@@ -34,13 +34,14 @@ from pkg.agents.runner.api.llm_adapters import (
 
 from pkg.agents.runner.api.api import run_api_agent
 from pkg.agents.runner.gcli import run_cli_agent
+from pkg.runenv import RunEnv, parallel_enabled
 from pkg.evaluator.loader import (
     load_from_tasks_dir,
     safe_parse_yaml,
     parse_documentation_from_yaml,
 )
 import threading
-from pkg.manager.manager import ScenarioManager
+from pkg.manager.manager import ScenarioManager, pick_free_port
 from deployers.factory import get_deployer
 
 
@@ -306,6 +307,13 @@ def load_configuration_context():
     if not project_id or not cluster_name:
         print("Error: PROJECT_ID (or GCP_PROJECT_ID) and CLUSTER_NAME (or GKE_CLUSTER_NAME) must be set.")
         sys.exit(1)
+
+    # Establish per-run isolation BEFORE any provisioning so every gcloud /
+    # kubectl / tofu / agent subprocess inherits the run-scoped kubeconfig,
+    # gcloud config, and tofu data dir. A no-op unless BENCH_PARALLEL is set.
+    run_env = RunEnv.create(parallel=parallel_enabled())
+    run_env.apply()
+    cluster_name = run_env.cluster_name(cluster_name)
 
     bench_use_mcp = os.environ.get("BENCH_USE_MCP", "true")
     mcp_server_path = os.environ.get("MCP_SERVER_PATH", "third_party/gke-mcp/gke-mcp")
@@ -754,7 +762,14 @@ def main():
     detailed_results = []
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = f"results/run_{timestamp}"
+    run_name = f"run_{timestamp}"
+    # The timestamp has 1-second resolution; append the (process-unique) run id
+    # so two evaluator processes started in the same second do not collide on a
+    # single results/run_<ts>/ directory.
+    run_id = os.environ.get("RUN_ID")
+    if run_id:
+        run_name = f"{run_name}_{re.sub(r'[^A-Za-z0-9_-]', '-', run_id)}"
+    run_dir = f"results/{run_name}"
     os.makedirs(run_dir, exist_ok=True)
 
     for item in eval_data:
@@ -806,7 +821,10 @@ def main():
 
                     if spec_list:
                         spec = spec_list[0]
-                        scenario_manager = ScenarioManager(target_deployment, namespace)
+                        local_port = pick_free_port() if parallel_enabled() else None
+                        scenario_manager = ScenarioManager(
+                            target_deployment, namespace, local_port=local_port
+                        )
                         t = threading.Thread(
                             target=scenario_manager.run_chaos_and_verification,
                             args=(spec, verification_spec_list),
