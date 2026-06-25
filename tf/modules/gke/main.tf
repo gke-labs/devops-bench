@@ -1,5 +1,10 @@
+# account_id is capped at 30 chars, so we can't fit a long cluster name. Truncating
+# the name alone is unsafe: names that share a prefix but differ only in a suffix past
+# the cutoff (e.g. "<base>-east" vs "<base>-west" when <base> is long) would collapse to
+# the same account_id and collide. Append a short hash of the *full* cluster name so the
+# id stays unique per cluster regardless of where the readable part is truncated.
 resource "google_service_account" "gke_nodes" {
-  account_id   = "gke-nodes-${trim(substr(var.cluster_name, 0, 15), "-")}"
+  account_id   = "gke-nodes-${trim(substr(var.cluster_name, 0, 9), "-")}-${substr(md5(var.cluster_name), 0, 6)}"
   display_name = "GKE Node Service Account for ${var.cluster_name}"
 }
 

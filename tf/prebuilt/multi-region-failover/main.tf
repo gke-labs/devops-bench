@@ -23,6 +23,12 @@ provider "google" {
 locals {
   # The agent runs as this SA; the east module grants it project-wide container.admin
   # (which reaches both clusters). West passes "" so we don't create a duplicate binding.
+  #
+  # CAUTION (parallel runs): this defaults to the shared openclaw-vm-sa. The
+  # roles/container.admin binding is project-wide and keyed only on (member, role), so two
+  # concurrent GKE tasks granting it to the same SA share one binding -- and whichever
+  # tears down first revokes it out from under the other. For parallel runs, give each run
+  # its own agent SA via var.agent_service_account.
   agent_sa = var.agent_service_account != "" ? var.agent_service_account : "openclaw-vm-sa@${var.project_id}.iam.gserviceaccount.com"
 
   east_cluster = "${var.cluster_name}-east"
