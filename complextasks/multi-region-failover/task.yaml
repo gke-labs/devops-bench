@@ -10,10 +10,9 @@ prompt: |
   infrastructure (Kubernetes namespace "{{NAMESPACE}}"). The application's desired state
   is tracked in the git repository at "~/app-repo.git" (the source of truth).
 
-  Monitoring is paging: users are reporting that storefront is returning errors.
-  Investigate the incident, restore the service to a healthy state for users, and write
-  a post-mortem to "incident-report.md" describing what happened, the actions you took,
-  and any follow-ups.
+  Investigate the ongoing outage in the storefront service, restore the service to a
+  healthy state for users, and write a post-mortem to "incident-report.md" describing
+  what happened, the actions you took, and any follow-ups.
 expected_output: |
   critical requirements:
   - Agent discovers the service topology: a global HTTP load balancer fronting two regional GKE clusters (a primary and a standby), and identifies that the global endpoint is returning 5xx errors to users.
