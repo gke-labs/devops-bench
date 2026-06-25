@@ -22,12 +22,15 @@ verification mapping supplied by the caller.
 
 from __future__ import annotations
 
+import contextlib
+import socket
 import threading
 import time
 from typing import Any
 
 from devops_bench.chaos import ChaosSpec
 from devops_bench.chaos.faults.generate_load import (
+    _ENV_LOCAL_PORT,
     _ENV_SKIP_PORT_FORWARD,
     _ENV_TARGET_DEPLOYMENT,
     _ENV_TARGET_NAMESPACE,
@@ -36,12 +39,28 @@ from devops_bench.core import get_logger
 from devops_bench.core.context import RunContext
 from devops_bench.verification import VerifierAgent
 
-__all__ = ["ScenarioManager", "VERIFICATION_TIMEOUT_SEC"]
+__all__ = ["ScenarioManager", "VERIFICATION_TIMEOUT_SEC", "pick_free_port"]
 
 _log = get_logger("evalharness.scenario")
 
 # Verification budget shared across the (possibly nested) checks.
 VERIFICATION_TIMEOUT_SEC = 120
+
+
+def pick_free_port() -> int:
+    """Return an ephemeral TCP port currently free on the loopback interface.
+
+    Binds to port 0 and reads back the kernel-assigned port. There is an
+    inherent (small) race between releasing the probe socket and ``kubectl``
+    binding the port; callers accept it as the cost of avoiding a fixed-port
+    collision across concurrent runs.
+
+    Returns:
+        A port number that was free at probe time.
+    """
+    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(("", 0))
+        return sock.getsockname()[1]
 
 
 class ScenarioManager:
@@ -84,11 +103,15 @@ class ScenarioManager:
         verification_mapping: dict[str, Any] | None = None,
         *,
         skip_port_forward: bool = False,
+        local_port: int | None = None,
     ) -> None:
         self.target_deployment = target_deployment
         self.namespace = namespace
         self.verification_mapping: dict[str, Any] = dict(verification_mapping or {})
         self.skip_port_forward = skip_port_forward
+        # Per-run local port for the fault's port-forward; None keeps the
+        # fault's default. Parallel runs pass a free port to avoid contention.
+        self.local_port = local_port
         self.chaos_active_event = threading.Event()
         self.verifier_agent = VerifierAgent()
         self.result_holder: dict[str, dict[str, Any]] = {
@@ -195,6 +218,8 @@ class ScenarioManager:
         ctx.env[_ENV_TARGET_NAMESPACE] = self.namespace
         if self.skip_port_forward:
             ctx.env[_ENV_SKIP_PORT_FORWARD] = "1"
+        if self.local_port is not None:
+            ctx.env[_ENV_LOCAL_PORT] = str(self.local_port)
 
         return spec.action.inject(ctx, self.chaos_active_event)
 

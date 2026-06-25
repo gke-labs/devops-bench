@@ -60,7 +60,9 @@ _LOAD_MARKER = "fortio load"
 # Wall-clock ceiling for a single chaos command.
 _COMMAND_TIMEOUT = 40
 
-# Local port the cluster workload is exposed on for chaos load generation.
+# The workload's in-cluster (remote) port for chaos load generation, and the
+# default local side of the port-forward. Parallel runs override only the local
+# side via ``_ENV_LOCAL_PORT`` so two concurrent forwards do not contend.
 _LOCAL_PORT = 8080
 
 # Single source of truth for the load target when a spec omits one. The local
@@ -72,6 +74,9 @@ _DEFAULT_TARGET_URL = f"http://localhost:{_LOCAL_PORT}"
 _ENV_TARGET_DEPLOYMENT = "CHAOS_TARGET_DEPLOYMENT"
 _ENV_TARGET_NAMESPACE = "CHAOS_TARGET_NAMESPACE"
 _ENV_SKIP_PORT_FORWARD = "CHAOS_SKIP_PORT_FORWARD"
+# Optional per-run local port the harness allocates for parallel isolation; the
+# fault binds the port-forward's local side here and points the load URL at it.
+_ENV_LOCAL_PORT = "CHAOS_LOCAL_PORT"
 
 
 def build_system_instruction(target_url: str = _DEFAULT_TARGET_URL) -> str:
@@ -274,15 +279,21 @@ class GenerateLoadFault(Fault):
         deployment = env.get(_ENV_TARGET_DEPLOYMENT)
         namespace = env.get(_ENV_TARGET_NAMESPACE, "default")
         skip_port_forward = bool(env.get(_ENV_SKIP_PORT_FORWARD))
+        # Parallel runs pass a free local port so two concurrent forwards do not
+        # contend; the remote (workload) side stays ``_LOCAL_PORT``.
+        local_port = int(env.get(_ENV_LOCAL_PORT) or _LOCAL_PORT)
 
         start = time.monotonic()
         # Open the fault's own tunnel only when a target deployment is named and
         # the caller did not opt out; otherwise run against the existing URL.
         if deployment and not skip_port_forward:
             forward = port_forward(
-                f"deployment/{deployment}", _LOCAL_PORT, namespace=namespace
+                f"deployment/{deployment}",
+                local_port,
+                remote_port=_LOCAL_PORT,
+                namespace=namespace,
             )
-            local_url: str | None = _DEFAULT_TARGET_URL
+            local_url: str | None = f"http://localhost:{local_port}"
         else:
             forward = contextlib.nullcontext()
             local_url = None

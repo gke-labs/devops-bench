@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -104,6 +105,24 @@ class TFDeployer(Deployer):
             flags.extend(["-var", f"{key}={_format_var(value)}"])
         return flags
 
+    @staticmethod
+    def _state_flags() -> list[str]:
+        """Return ``-state`` flags placing per-run state beside ``TF_DATA_DIR``.
+
+        When ``TF_DATA_DIR`` is set (the parallel-isolation path keys it to a
+        per-run ``<run>/tf-data`` dir), the local state file is written to
+        ``<run>/terraform.tfstate`` — the *parent* of ``TF_DATA_DIR``, NOT
+        inside it. ``<TF_DATA_DIR>/terraform.tfstate`` is OpenTofu's reserved
+        backend-state path; writing the full resource state there makes a later
+        ``tofu init``/``output`` fail with "does not support state version 4".
+        Returns an empty list when ``TF_DATA_DIR`` is unset, so a single run
+        keeps OpenTofu's default in-directory state.
+        """
+        tf_data_dir = os.environ.get("TF_DATA_DIR")
+        if not tf_data_dir or not tf_data_dir.strip():
+            return []
+        return ["-state", str(Path(tf_data_dir).resolve().parent / "terraform.tfstate")]
+
     def up(self) -> None:
         tf_path = Path(self.tf_dir)
         if not tf_path.exists():
@@ -112,7 +131,14 @@ class TFDeployer(Deployer):
         self.provider.ensure_account_credentials()
         run(["tofu", "init", "-input=false"], cwd=self.tf_dir, capture=False)
 
-        cmd = ["tofu", "apply", "-auto-approve", "-input=false", *self._var_flags()]
+        cmd = [
+            "tofu",
+            "apply",
+            "-auto-approve",
+            "-input=false",
+            *self._state_flags(),
+            *self._var_flags(),
+        ]
         run(cmd, cwd=self.tf_dir, capture=False)
 
     def down(self) -> None:
@@ -124,7 +150,14 @@ class TFDeployer(Deployer):
         self.provider.ensure_account_credentials()
         run(["tofu", "init", "-input=false"], cwd=self.tf_dir, capture=False)
 
-        cmd = ["tofu", "destroy", "-auto-approve", "-input=false", *self._var_flags()]
+        cmd = [
+            "tofu",
+            "destroy",
+            "-auto-approve",
+            "-input=false",
+            *self._state_flags(),
+            *self._var_flags(),
+        ]
         run(cmd, cwd=self.tf_dir, capture=False)
 
     def get_cluster_info(self) -> ClusterInfo:
@@ -141,7 +174,11 @@ class TFDeployer(Deployer):
         """
         run(["tofu", "init", "-input=false"], cwd=self.tf_dir, capture=False)
 
-        result = run(["tofu", "output", "-json"], cwd=self.tf_dir, capture=True)
+        result = run(
+            ["tofu", "output", "-json", *self._state_flags()],
+            cwd=self.tf_dir,
+            capture=True,
+        )
         try:
             outputs = json.loads(result.stdout)
         except json.JSONDecodeError as exc:

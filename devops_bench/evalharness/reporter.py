@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,10 @@ class ResultReporter:
         results_root: Root directory under which per-run subdirectories are
             created. Defaults to ``"results"``.
         run_dir_prefix: Prefix for the timestamped subdirectory name.
+        run_id: Optional run identifier appended to the run-dir name. The
+            timestamp alone has 1-second resolution, so two processes started
+            in the same second would otherwise collide on one directory;
+            appending the (process-unique) run id keeps concurrent runs apart.
 
     Attributes:
         last_run_dir: The most recent directory returned by
@@ -60,19 +65,27 @@ class ResultReporter:
         results_root: str | os.PathLike[str] = "results",
         *,
         run_dir_prefix: str = "run_",
+        run_id: str | None = None,
     ) -> None:
         self.results_root = Path(results_root)
         self.run_dir_prefix = run_dir_prefix
+        self.run_id = run_id
         self.last_run_dir: Path | None = None
 
     def new_run_dir(self) -> Path:
         """Create and return a fresh timestamped run directory under the root.
 
+        When a ``run_id`` was supplied it is appended (filesystem-sanitized) so
+        concurrent runs sharing a start-second do not collide on one directory.
+
         Returns:
             The absolute path of the newly created directory.
         """
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_dir = self.results_root / f"{self.run_dir_prefix}{timestamp}"
+        name = f"{self.run_dir_prefix}{timestamp}"
+        if self.run_id:
+            name = f"{name}_{re.sub(r'[^A-Za-z0-9_-]', '-', self.run_id)}"
+        run_dir = self.results_root / name
         run_dir.mkdir(parents=True, exist_ok=True)
         self.last_run_dir = run_dir
         return run_dir

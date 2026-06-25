@@ -177,35 +177,22 @@ def test_oc_model_id_defaults_to_google():
     assert _oc_model_id(AgentConfig(model="gemini-2.5-pro")) == "google/gemini-2.5-pro"
 
 
-def test_build_local_command_quotes_inputs_and_includes_model_set():
+def test_build_local_command_quotes_inputs_and_passes_model_flag():
     cfg = AgentConfig(model="gemini-2.5-pro", provider="gemini")
-    cmd = _build_local_command(cfg, "hi 'world'", "operator", "/usr/local/bin/oc")
+    cmd = _build_local_command(cfg, "hi 'world'", "main", "/usr/local/bin/oc")
     # Prompt single-quote must be escaped, not break the shell line.
     assert "hi '\\''world'\\''" in cmd or "hi 'world'" not in cmd
     assert "NVM_DIR" in cmd  # nvm sourced for the node runtime
-    # shlex.quote leaves alnum/`/`/`-`/`.` un-quoted; just match the canonical id.
-    assert "models set google/gemini-2.5-pro" in cmd
+    # Per-run model override, not the global `oc models set` (no shared config write).
+    assert "--model google/gemini-2.5-pro" in cmd
+    assert "models set" not in cmd
     assert "agent --local" in cmd
-    assert "--agent operator" in cmd
+    assert "--agent main" in cmd
 
 
-def test_build_local_command_chains_models_set_with_and(monkeypatch):
-    """A failed `models set` must abort the run, never fall through to the stored default.
-
-    The fragment is chained with `&&` (not `;`) so bash short-circuits on
-    failure; the agent then sees a non-zero return code and records it on
-    AgentResult.errors instead of silently running the wrong model arm.
-    """
-    cfg = AgentConfig(model="gemini-2.5-pro", provider="gemini")
-    cmd = _build_local_command(cfg, "p", "operator", "/usr/local/bin/oc")
-    # The model-set fragment immediately precedes the agent invocation; the
-    # only join between them must be `&&`.
-    assert "models set google/gemini-2.5-pro && " in cmd
-    assert "models set google/gemini-2.5-pro; " not in cmd
-
-
-def test_build_local_command_omits_model_set_when_no_model_configured():
-    cmd = _build_local_command(AgentConfig(), "prompt", "operator", "/usr/local/bin/oc")
+def test_build_local_command_omits_model_flag_when_no_model_configured():
+    cmd = _build_local_command(AgentConfig(), "prompt", "main", "/usr/local/bin/oc")
+    assert "--model" not in cmd
     assert "models set" not in cmd
 
 

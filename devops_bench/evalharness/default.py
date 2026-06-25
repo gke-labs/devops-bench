@@ -45,7 +45,11 @@ from devops_bench.deployers.factory import get_deployer
 from devops_bench.evalharness.artifacts import collect_generated_files, snapshot_dir
 from devops_bench.evalharness.base import Harness
 from devops_bench.evalharness.reporter import ResultReporter
-from devops_bench.evalharness.scenario import VERIFICATION_TIMEOUT_SEC, ScenarioManager
+from devops_bench.evalharness.scenario import (
+    VERIFICATION_TIMEOUT_SEC,
+    ScenarioManager,
+    pick_free_port,
+)
 from devops_bench.tasks import Task
 from devops_bench.verification import VerificationSpec
 
@@ -162,6 +166,10 @@ class DefaultHarness(Harness):
         )
         # Resolved once so capabilities and scoring observe the same value.
         self.use_mcp: bool = get_bool("BENCH_USE_MCP", True)
+        # When running concurrently with other benchmark processes, allocate a
+        # free local port for the chaos port-forward instead of the fixed
+        # default so two scenarios on one host do not contend for the same port.
+        self.parallel: bool = get_bool("BENCH_PARALLEL", False)
         # Build the gated :class:`AgentConfig` once and hold the snapshot for
         # the lifetime of this harness, so every agent run and every record's
         # ``capabilities_granted`` field reads the same object.
@@ -475,11 +483,13 @@ class DefaultHarness(Harness):
             return None
 
         spec = chaos_specs[0]
+        local_port = pick_free_port() if self.parallel else None
         scenario_manager = ScenarioManager(
             self.target_deployment,
             self.namespace,
             verification_mapping=verification_mapping,
             skip_port_forward=skip_port_forward,
+            local_port=local_port,
         )
         thread = threading.Thread(
             target=scenario_manager.run_chaos_and_verification,

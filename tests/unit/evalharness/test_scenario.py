@@ -33,7 +33,7 @@ from devops_bench.chaos import ChaosResult, ChaosSpec
 from devops_bench.chaos.faults.generate_load import GenerateLoadFault
 from devops_bench.chaos.triggers.time_delay import TimeTrigger
 from devops_bench.core.context import RunContext
-from devops_bench.evalharness.scenario import ScenarioManager
+from devops_bench.evalharness.scenario import ScenarioManager, pick_free_port
 from devops_bench.verification import VerificationResult, VerifierAgent
 
 
@@ -145,6 +145,66 @@ def test_scenario_threads_port_forward_target_onto_ctx_env() -> None:
     assert captured["env"][_ENV_SKIP_PORT_FORWARD] == "1"
     # The manager leaves the action's in-cluster URL alone — no rewrite seam.
     assert captured["service_url"] == "http://example.svc.cluster.local"
+
+
+def test_scenario_threads_custom_local_port_onto_ctx_env() -> None:
+    """A per-run ``local_port`` is threaded onto ``ctx.env`` for the fault.
+
+    Connectivity lives in the fault, so the manager hands it the per-run local
+    port via ``CHAOS_LOCAL_PORT``; the fault binds the port-forward's local side
+    there. No port is threaded when ``local_port`` is None (default behavior).
+    """
+    from devops_bench.chaos.faults.generate_load import _ENV_LOCAL_PORT
+
+    spec = _build_spec(verify_key=None)
+    captured: dict[str, Any] = {}
+
+    def fake_inject(self: GenerateLoadFault, ctx: RunContext, event):
+        captured["env"] = dict(ctx.env)
+        return ChaosResult(success=True, injected_fault=self.type, elapsed_time=0.0)
+
+    with (
+        patch.object(TimeTrigger, "wait", lambda self, ctx: None),
+        patch.object(GenerateLoadFault, "inject", fake_inject),
+    ):
+        manager = ScenarioManager(
+            target_deployment="dep",
+            namespace="ns",
+            skip_port_forward=True,
+            local_port=34567,
+        )
+        assert manager.local_port == 34567
+        manager.run_chaos_and_verification(spec, _build_ctx())
+
+    assert captured["env"][_ENV_LOCAL_PORT] == "34567"
+
+
+def test_scenario_omits_local_port_env_by_default() -> None:
+    """Without a per-run port, no ``CHAOS_LOCAL_PORT`` is threaded (fault default)."""
+    from devops_bench.chaos.faults.generate_load import _ENV_LOCAL_PORT
+
+    spec = _build_spec(verify_key=None)
+    captured: dict[str, Any] = {}
+
+    def fake_inject(self: GenerateLoadFault, ctx: RunContext, event):
+        captured["env"] = dict(ctx.env)
+        return ChaosResult(success=True, injected_fault=self.type, elapsed_time=0.0)
+
+    with (
+        patch.object(TimeTrigger, "wait", lambda self, ctx: None),
+        patch.object(GenerateLoadFault, "inject", fake_inject),
+    ):
+        ScenarioManager(
+            target_deployment="dep", namespace="ns", skip_port_forward=True
+        ).run_chaos_and_verification(spec, _build_ctx())
+
+    assert _ENV_LOCAL_PORT not in captured["env"]
+
+
+def test_pick_free_port_returns_distinct_usable_ports() -> None:
+    port = pick_free_port()
+    assert isinstance(port, int)
+    assert 1 <= port <= 65535
 
 
 def test_scenario_resolves_verify_against_mapping() -> None:

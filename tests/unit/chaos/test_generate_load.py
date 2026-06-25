@@ -227,6 +227,43 @@ def test_inject_opens_port_forward_and_points_url_at_local_tunnel():
     assert result.output == "spike complete"
 
 
+def test_inject_uses_custom_local_port_for_parallel_runs():
+    """``CHAOS_LOCAL_PORT`` binds the local side of the forward and the load URL.
+
+    Parallel runs pass a free local port so two concurrent forwards do not
+    contend; the remote (workload) side stays 8080.
+    """
+    from devops_bench.chaos.faults.generate_load import _ENV_LOCAL_PORT
+
+    fault = GenerateLoadFault(
+        target=LoadTarget(service_url="http://example.svc.cluster.local", qps=50)
+    )
+    proc = _live_popen()
+    captured: dict = {}
+
+    class _StubAgent:
+        def __init__(self, **kwargs):
+            captured["system_instruction"] = kwargs["system_instruction"]
+
+        def run(self, goal: str) -> str:
+            captured["url_during_run"] = fault.target.service_url
+            return "spike complete"
+
+    ctx = _make_ctx(
+        {_ENV_TARGET_DEPLOYMENT: "web-app", _ENV_LOCAL_PORT: "34567"}
+    )
+    with (
+        patch.object(k8s_kubectl.subprocess, "Popen", return_value=proc) as popen_mock,
+        patch.object(k8s_kubectl.time, "sleep"),
+        patch("devops_bench.chaos.agent.ChaosAgent", _StubAgent),
+    ):
+        fault.inject(ctx)
+
+    # Local side is the per-run port; remote side stays the workload's 8080.
+    assert popen_mock.call_args.args[0][3] == "34567:8080"
+    assert captured["url_during_run"] == "http://localhost:34567"
+
+
 def test_inject_early_port_forward_exit_becomes_failed_result():
     """A port-forward that dies in the settle window yields a failed ChaosResult."""
     fault = GenerateLoadFault(
