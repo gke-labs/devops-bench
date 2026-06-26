@@ -60,13 +60,13 @@ whatever your harness provides, and degrade gracefully if it lacks one:
 
 | Capability used below | Claude Code | Antigravity (`agy` CLI / 2.0 IDE) | Other / fallback |
 |---|---|---|---|
-| **Sub-task** (delegate to another model) | `Agent` tool (`model:`, `subagent_type:`) | spawn a **subagent** programmatically (`name` / `description` / `system_prompt` / `enable_mcp_tools` / `enable_write_tools` / `enable_subagent_tools`; built-in `browser_subagent`), nested in the Agent Manager — or non-interactive `agy -p --model …` per task | Codex subagent/`task`; **none? main agent does it inline** |
+| **Sub-task** (delegate to another model) | `Agent` tool (`model:`, `subagent_type:`) | `invoke_subagent` (launch) / `define_subagent` (custom role) / `manage_subagents` (list·track·stop) / `send_message` (coordinate), nested in the Agent Manager — or non-interactive `agy -p --model …` per task | Codex subagent/`task`; **none? main agent does it inline** |
 | **Model tiers** (low / mid / main) | Haiku / Sonnet / Opus | `Gemini 3.5 Flash (Medium)` / `3.1 Pro (Low)` or `Flash (High)` / `3.1 Pro (High)` — pick via `/models` (in-session) or `--model` (launch) | Codex mini / standard · or whatever the harness exposes |
-| **Background run** (non-blocking sub-task) | `run_in_background` | **Background Agents** (Agent Manager) / async subagents; `run_command` with `RunPersistent` for a detached terminal | the harness's async job — else poll inline each tick |
-| **Timer / wake** (re-engage on a cadence) | `ScheduleWakeup` / cron | **Scheduled tasks** (cron-style agent triggers) | the harness's scheduler — else `sleep` between checks in a loop |
-| **Durable state** (checkpoint across resets) | task list | **Artifacts** (task-list / implementation-plan) + the Knowledge base | a notes file in the run dir / repo |
+| **Background run** (non-blocking sub-task) | `run_in_background` | concurrent `invoke_subagent` + `manage_task` (track / cancel background tasks); Background Agents in the Agent Manager | the harness's async job — else poll inline each tick |
+| **Timer / wake** (re-engage on a cadence) | `ScheduleWakeup` / cron | `schedule` — a timer or recurring cron ("Scheduled tasks") | the harness's scheduler — else `sleep` between checks in a loop |
+| **Durable state** (checkpoint across resets) | task list | **Artifacts** (task-list / plan) — or a notes file via `write_to_file` | a notes file in the run dir / repo |
 | **Isolated worktree** (unlimited mode) | `EnterWorktree` | `run_command` → `git worktree add` (agents also scope per **project/workspace**) | `git worktree add` + a branch |
-| **Ask the user** | `AskUserQuestion` | a `PreToolUse` hook returning `ask` / Artifact feedback / `request-review` approval | a plain question in chat |
+| **Ask the user** | `AskUserQuestion` | `ask_question` (multi-choice dialog) / `ask_permission` | a plain question in chat |
 | **Keepalive** (don't stop early) | the bg job-list classifier reads your text | background agents run async (no idle-stop) — but **quota is the governor**: watch `/usage`, ~3–5 parallel subagents | any idle-timeout / completion classifier — keep emitting progress |
 
 Throughout this skill and its `references/`, tool names like `Agent` or
@@ -74,7 +74,7 @@ Throughout this skill and its `references/`, tool names like `Agent` or
 equivalent. Durable run state lives on the **bastion** (`RESUME_STAMP`), so even a
 bare harness (one shell, no sub-tasks, no scheduler) can drive a run by polling.
 
-**Antigravity tool names** (per the [hooks docs](https://antigravity.google/docs/hooks); these are what the column above maps to and what you match in `.agents/hooks.json`): commands `run_command`; read/search `view_file` · `list_dir` · `grep_search` · `codebase_search` · `view_code_item`; edit `write_to_file` · `replace_file_content` · `multi_replace_file_content`; browser `browser_subagent`. Hooks fire on `PreToolUse` / `PostToolUse` / `PreInvocation` / `PostInvocation` / `Stop`, matched by tool name.
+**Antigravity tools** (the actual agent tool set, confirmed from a live Antigravity instance — the public [hooks docs](https://antigravity.google/docs/hooks) render client-side): files `view_file` · `list_dir` · `grep_search` · `write_to_file` · `replace_file_content` · `multi_replace_file_content`; exec `run_command` · `ask_permission` · `list_permissions`; web `search_web` · `read_url_content`; subagents/background `invoke_subagent` · `define_subagent` · `manage_subagents` · `send_message` · `manage_task` · `schedule`; interaction `ask_question` · `generate_image`. Hooks match these by tool name on `PreToolUse` / `PostToolUse` (config in `.agents/hooks.json`).
 
 ---
 
