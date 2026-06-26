@@ -30,8 +30,9 @@ they are the source of truth; don't reconstruct them from memory:**
 - The isolation primitive itself: `devops_bench/core/run_env.py` (`RunEnv`) and
   its legacy mirror `pkg/runenv.py`. Confirm what it actually isolates before
   asserting a collision is or isn't covered.
-- Governing `CLAUDE.md` files (user `~/.claude/CLAUDE.md`, repo root, and any in a
-  directory that is an ancestor of a changed file) — quote the exact rule when you
+- Governing **agent-instruction files** — whichever your harness uses (`CLAUDE.md`,
+  `AGENTS.md`, `GEMINI.md`), at user level and at the repo root, plus any in a
+  directory that is an ancestor of a changed file — quote the exact rule when you
   flag a violation.
 
 Work the phases in order. Default to **precision**: every finding should name a
@@ -247,9 +248,10 @@ Apply the repo's documentation conventions:
   the underlying mechanism is the deeper fix (e.g. fixing repo-path isolation once
   in `RunEnv` + a prompt token, instead of per-task patches).
 
-### Lens F — code conventions (CLAUDE.md)
+### Lens F — code conventions (agent-instruction files)
 
-For Python, enforce the user's Google-style docstring rules (purpose; `Args`/
+For Python, enforce the docstring rules from the governing agent-instruction file
+(e.g. the user's Google-style rules: purpose; `Args`/
 `Returns`/`Attributes`; `Raises`; concise, no implementation narration). Flag a
 convention violation only when you can quote the exact rule and the exact line.
 
@@ -258,7 +260,8 @@ convention violation only when you can quote the exact rule and the exact line.
 ## Phase 3 — Verify candidates
 
 Dedup candidates that point at the same line/mechanism. For each survivor, decide
-one of three states (run an independent verifier sub-agent for non-obvious ones;
+one of three states (run an independent verifier pass for non-obvious ones — a
+sub-task/subagent if your harness supports one, otherwise re-check it yourself;
 for parallel-safety, the verifier should try to *refute* by finding the isolation
 that already covers it — by reading code, not by running evals):
 

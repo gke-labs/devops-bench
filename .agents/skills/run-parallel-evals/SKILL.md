@@ -48,11 +48,38 @@ the request calls for them, and don't pull both in for a plain run.
 Resolve the mode in Phase 1 (ask if it's ambiguous for a long/expensive matrix). If
 neither special mode applies, ignore the reference files entirely.
 
+
+---
+
+## Harness portability
+
+This skill is **agent/harness-agnostic** — it runs under any coding agent (Claude
+Code, Antigravity/Gemini, Codex, …). It needs only a **shell that can `ssh` the
+bastion**; everything else is an optimization. Map each capability used below to
+whatever your harness provides, and degrade gracefully if it lacks one:
+
+| Capability used below | Claude Code | Other harnesses / fallback |
+|---|---|---|
+| **Sub-task** (delegate to another model) | `Agent` tool (`model:`, `subagent_type:`) | the harness's subagent/`task` mechanism or a CLI delegation — **none? the main agent does it inline** |
+| **Model tiers** (low / mid / main) | Haiku / Sonnet / Opus | Gemini Flash / Flash–Pro / Pro · Codex mini / standard · or whatever the harness exposes |
+| **Background run** (non-blocking sub-task) | `run_in_background` | the harness's async job — else poll inline each tick |
+| **Timer / wake** (re-engage on a cadence) | `ScheduleWakeup` / cron | the harness's scheduler — else `sleep` between checks in a loop |
+| **Durable state** (checkpoint across resets) | task list | a notes file in the run dir / repo |
+| **Isolated worktree** (unlimited mode) | `EnterWorktree` | `git worktree add` + a branch |
+| **Ask the user** | `AskUserQuestion` | a plain question in chat |
+| **Keepalive** (don't stop early) | the bg job-list classifier reads your text | any idle-timeout / completion classifier — keep emitting progress, don't signal completion until done |
+
+Throughout this skill and its `references/`, tool names like `Agent` or
+`ScheduleWakeup` are **examples**, not requirements — substitute your harness's
+equivalent. Durable run state lives on the **bastion** (`RESUME_STAMP`), so even a
+bare harness (one shell, no sub-tasks, no scheduler) can drive a run by polling.
+
 ---
 
 ## Phase 1 — Gather the matrix spec
 
-Determine exactly what to run. Use **AskUserQuestion** for anything not given;
+Determine exactly what to run. Ask the user (your harness's clarify path — see *Harness portability*) for
+anything not given;
 do not guess on dimensions that cost clusters/time. You need:
 
 1. **Tasks** — `MATRIX_TASKS` (space-separated `*/task.yaml` paths, or `ALL`).
@@ -107,7 +134,7 @@ Check it exists and has the needed keys (names only — **never print key values
 ssh <bastion> 'grep -oE "^[A-Z_]+=" ~/secrets.env | sort -u'
 ```
 
-If a required key is missing, **ask the user for it via AskUserQuestion** (or have
+If a required key is missing, **ask the user for it** (your harness's clarify path) (or have
 them paste it with the `!` prefix so it isn't echoed), then append it to
 `~/secrets.env` on the VM. Treat keys as secrets: don't log them, don't commit
 them, redact in any summary.
@@ -170,8 +197,8 @@ MATRIX_AGENT_CONFIGS="..." RESULTS_DIR="results/<label>" \
 ```
 
 **Capture the `STAMP`** each wrapper prints (`RESUME_STAMP=<stamp>`). It is your
-handle for monitoring, retry, and re-attach. Record it (and the combo list) in a
-TaskList so you survive a context reset. Remote outputs live at
+handle for monitoring, retry, and re-attach. Record it (and the combo list) in durable state (a
+task list or a notes file) so you survive a context reset. Remote outputs live at
 `~/matrix-runs/<stamp>/<rid>/` (`run.log`, `status`); a `~/matrix-runs/<stamp>/.done`
 marker appears when all combos finish.
 
@@ -305,7 +332,8 @@ table, and the list of failures with their root cause + fix.
   `docs/bastion.md` appendices (see Phase 6) so learnings accrue across runs.
 - Prefer leaving the run detached + re-attaching via `RESUME_STAMP` over holding a
   fragile foreground SSH session.
-- **Don't let the background classifier stop the job mid-run.** A long detached
+- **Don't let an idle timeout / completion classifier stop the job mid-run** (if
+  your harness has one). A long detached
   matrix has quiet stretches; never emit a completion / `result:` / "done" /
   "failed" line until *every* combo is terminal and summarized. Each check-in, emit
   a one-line "still working: N running / M done / K flaked" status and schedule the
