@@ -14,7 +14,6 @@ from deepeval.tracing import observe
 _PF_PROCESS = None
 _STDOUT_LOG = None
 _STDERR_LOG = None
-@observe()
 def _ensure_port_forward(local_port: int):
     """Lazily establishes a background kubectl port-forward if the local port is closed."""
     global _PF_PROCESS, _STDOUT_LOG, _STDERR_LOG
