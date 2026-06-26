@@ -31,7 +31,7 @@ from devops_bench.core import get_logger
 
 __all__ = ["ResultReporter"]
 
-_log = get_logger("harness.reporter")
+_log = get_logger("evalharness.reporter")
 
 _RESULTS_FILENAME = "results.json"
 

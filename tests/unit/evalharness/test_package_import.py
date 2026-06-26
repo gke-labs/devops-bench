@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""``import devops_bench.harness`` keeps the provider SDK chain lazy (§8 revised).
+"""``import devops_bench.evalharness`` keeps the provider SDK chain lazy (§8 revised).
 
 The orchestrator is the only layer allowed to consume every component, so it
 sits structurally close to the heavy optional dependencies. Light init is now a
@@ -47,7 +47,7 @@ def _run_in_subprocess(snippet: str) -> str:
 
 
 def test_importing_harness_pulls_no_provider_sdk() -> None:
-    """A bare ``import devops_bench.harness`` does not pull a provider SDK.
+    """A bare ``import devops_bench.evalharness`` does not pull a provider SDK.
 
     ``deepeval`` / ``mcp`` are permitted eagerly now; only the provider model
     SDKs must stay out until the judge / agent actually run.
@@ -55,7 +55,7 @@ def test_importing_harness_pulls_no_provider_sdk() -> None:
     output = _run_in_subprocess(
         """
         import sys
-        import devops_bench.harness  # noqa: F401
+        import devops_bench.evalharness  # noqa: F401
         forbidden = {
             "anthropic",
             "google.genai",
@@ -68,12 +68,12 @@ def test_importing_harness_pulls_no_provider_sdk() -> None:
         """
     )
     leaked = [name for name in output.strip().split(",") if name]
-    assert leaked == [], f"importing devops_bench.harness pulled: {leaked}"
+    assert leaked == [], f"importing devops_bench.evalharness pulled: {leaked}"
 
 
 def test_harness_exports_present() -> None:
     """The eager package exposes every public harness symbol."""
-    pkg = importlib.import_module("devops_bench.harness")
+    pkg = importlib.import_module("devops_bench.evalharness")
     # All four public symbols are eagerly imported now (no ``__getattr__``).
     assert pkg.Harness.__name__ == "Harness"
     assert pkg.ResultReporter.__name__ == "ResultReporter"

@@ -44,8 +44,8 @@ from devops_bench.agents import AGENTS, AgentHarness, AgentResult, ToolCall
 from devops_bench.chaos import ChaosResult
 from devops_bench.chaos.faults.generate_load import GenerateLoadFault
 from devops_bench.chaos.triggers.time_delay import TimeTrigger
-from devops_bench.harness import default as harness_default
-from devops_bench.harness.default import DefaultHarness
+from devops_bench.evalharness import default as harness_default
+from devops_bench.evalharness.default import DefaultHarness
 from devops_bench.tasks import FileSystemTaskLoader
 from devops_bench.verification import VerificationResult, VerifierAgent
 

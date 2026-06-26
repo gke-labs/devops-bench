@@ -37,8 +37,8 @@ from pathlib import Path
 import pytest
 
 from devops_bench.agents.result import AgentResult, ToolCall
-from devops_bench.harness.default import DefaultHarness
-from devops_bench.harness.reporter import ResultReporter
+from devops_bench.evalharness.default import DefaultHarness
+from devops_bench.evalharness.reporter import ResultReporter
 from devops_bench.tasks import Task
 
 # Pinned legacy + symmetric-union key set. Every key listed here must be
@@ -58,7 +58,6 @@ _RESULTS_JSON_REQUIRED_KEYS: frozenset[str] = frozenset(
         "status",
         "error",
         "errors",
-        "score",
         "scores",
         "expected_output",
         "expected_output_raw",
@@ -182,7 +181,6 @@ def test_legacy_success_record_keys_are_emitted_verbatim(
     assert record["errors"] == []
     # Pre-scoring, ``scores`` is the empty dict; ``_score`` writes into it.
     assert record["scores"] == {}
-    assert record["score"] == 0
     # Capabilities snapshot rides on every record (CONVENTIONS.md §7 closure).
     assert record["capabilities_granted"]["use_mcp"] is True  # default get_bool
     assert record["capabilities_granted"]["skills"] == []
@@ -210,7 +208,6 @@ def test_legacy_failed_record_keys_are_emitted_verbatim(
     assert record["status"] == "failed"
     assert record["error"] == "deployer.up() failed"
     assert record["errors"] == ["deployer.up() failed"]
-    assert record["score"] == 0
     assert record["scores"] == {}
     assert record["output"] == ""
     assert record["trajectory"] == []

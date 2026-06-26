@@ -33,7 +33,7 @@ from devops_bench.chaos import ChaosResult, ChaosSpec
 from devops_bench.chaos.faults.generate_load import GenerateLoadFault
 from devops_bench.chaos.triggers.time_delay import TimeTrigger
 from devops_bench.core.context import RunContext
-from devops_bench.harness.scenario import ScenarioManager
+from devops_bench.evalharness.scenario import ScenarioManager
 from devops_bench.verification import VerificationResult, VerifierAgent
 
 

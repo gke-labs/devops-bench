@@ -24,7 +24,7 @@ from devops_bench.core import get_logger
 
 __all__ = ["snapshot_dir", "collect_generated_files"]
 
-_log = get_logger("harness.artifacts")
+_log = get_logger("evalharness.artifacts")
 
 
 def snapshot_dir(path: str | os.PathLike[str] = ".") -> set[str]:

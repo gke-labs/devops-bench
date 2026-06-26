@@ -26,7 +26,7 @@ import pytest
 
 from devops_bench.agents import AGENTS, AgentConfig, AgentHarness, AgentResult
 from devops_bench.core import NotRegisteredError
-from devops_bench.harness.default import DefaultHarness
+from devops_bench.evalharness.default import DefaultHarness
 
 
 class _DummyAgent(AgentHarness):

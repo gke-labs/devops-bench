@@ -16,9 +16,9 @@
 
 from __future__ import annotations
 
-from devops_bench.harness.base import Harness
-from devops_bench.harness.default import DefaultHarness
-from devops_bench.harness.reporter import ResultReporter
-from devops_bench.harness.scenario import ScenarioManager
+from devops_bench.evalharness.base import Harness
+from devops_bench.evalharness.default import DefaultHarness
+from devops_bench.evalharness.reporter import ResultReporter
+from devops_bench.evalharness.scenario import ScenarioManager
 
 __all__ = ["DefaultHarness", "Harness", "ResultReporter", "ScenarioManager"]

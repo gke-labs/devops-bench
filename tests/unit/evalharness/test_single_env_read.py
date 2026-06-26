@@ -28,7 +28,7 @@ from unittest.mock import patch
 
 import pytest
 
-from devops_bench.harness.default import DefaultHarness
+from devops_bench.evalharness.default import DefaultHarness
 
 
 @pytest.fixture
@@ -60,7 +60,7 @@ def test_harness_reads_use_mcp_once_at_construction(
     """``BENCH_USE_MCP`` is read once during ``__init__``, not on every method."""
     monkeypatch.setenv("BENCH_USE_MCP", "true")
 
-    with patch("devops_bench.harness.default.get_bool", wraps=__import__(
+    with patch("devops_bench.evalharness.default.get_bool", wraps=__import__(
         "devops_bench.core", fromlist=["get_bool"]
     ).get_bool) as wrapped:
         harness = DefaultHarness(project_id="p", cluster_name="c")
@@ -163,14 +163,14 @@ def test_only_one_executable_use_mcp_read_in_repo(
             reads[path.relative_to(devops_bench_root)] = len(matches)
 
     # Allowed read sites (CONVENTIONS.md §7):
-    # * ``harness/default.py`` — the canonical single read site.
+    # * ``evalharness/default.py`` — the canonical single read site.
     # * ``metrics/pipeline.py`` — a documented *fallback* the harness never
     #   triggers (it always passes ``use_mcp=`` explicitly), retained for
     #   legacy CLI callers running ``evaluate_metrics_batch`` directly.
     assert set(reads.keys()) <= {
-        Path("harness/default.py"),
+        Path("evalharness/default.py"),
         Path("metrics/pipeline.py"),
     }, f"unexpected BENCH_USE_MCP reads in: {sorted(reads)}"
     # Pin the harness file to exactly one read so an accidental second read
     # site (e.g. from a per-task refresh) is caught here.
-    assert reads.get(Path("harness/default.py")) == 1
+    assert reads.get(Path("evalharness/default.py")) == 1

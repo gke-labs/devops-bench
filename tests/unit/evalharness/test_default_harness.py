@@ -32,8 +32,8 @@ import pytest
 
 from devops_bench.agents.result import AgentResult
 from devops_bench.core import MissingDependencyError
-from devops_bench.harness import default as harness_default
-from devops_bench.harness.default import DefaultHarness
+from devops_bench.evalharness import default as harness_default
+from devops_bench.evalharness.default import DefaultHarness
 from devops_bench.tasks import Task
 
 

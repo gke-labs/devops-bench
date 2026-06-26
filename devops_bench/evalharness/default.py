@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib
 import json
 import os
@@ -41,16 +42,16 @@ from devops_bench.core import (
     get_logger,
 )
 from devops_bench.deployers.factory import get_deployer
-from devops_bench.harness.artifacts import collect_generated_files, snapshot_dir
-from devops_bench.harness.base import Harness
-from devops_bench.harness.reporter import ResultReporter
-from devops_bench.harness.scenario import VERIFICATION_TIMEOUT_SEC, ScenarioManager
+from devops_bench.evalharness.artifacts import collect_generated_files, snapshot_dir
+from devops_bench.evalharness.base import Harness
+from devops_bench.evalharness.reporter import ResultReporter
+from devops_bench.evalharness.scenario import VERIFICATION_TIMEOUT_SEC, ScenarioManager
 from devops_bench.tasks import Task
 from devops_bench.verification import VerificationSpec
 
 __all__ = ["DefaultHarness"]
 
-_log = get_logger("harness.default")
+_log = get_logger("evalharness.default")
 
 # Builtin agent modules imported at call time so their ``@AGENTS.register``
 # decorators run. External packages add agents by registering with the same
@@ -519,12 +520,20 @@ class DefaultHarness(Harness):
         self.reporter.write(run_dir, detailed_results)
         _log.info("execution complete; results saved to %s/results.json", run_dir)
 
-        self._score(detailed_results)
-        self.reporter.write(run_dir, detailed_results)
-        _log.info(
-            "post-processing evaluation complete; updated results saved to %s/results.json",
-            run_dir,
-        )
+        # Scoring is best-effort: a judge/config failure (e.g. get_judge_model()
+        # or an unexpected error in a metric) must not sink an otherwise
+        # successful execution pass, whose raw results are already on disk above.
+        try:
+            self._score(detailed_results)
+            self.reporter.write(run_dir, detailed_results)
+            _log.info(
+                "post-processing evaluation complete; updated results saved to %s/results.json",
+                run_dir,
+            )
+        except Exception:  # noqa: BLE001 - execution results must survive scoring errors
+            _log.exception(
+                "scoring failed; returning unscored execution results from %s", run_dir
+            )
         return detailed_results
 
     def _run_one(self, task: Task, run_dir: Path) -> dict[str, Any]:
@@ -646,7 +655,6 @@ class DefaultHarness(Harness):
             "status",
             "error",
             "errors",
-            "score",
             "scores",
             "expected_output",
             "expected_output_raw",
@@ -730,7 +738,7 @@ class DefaultHarness(Harness):
         (pinned in :attr:`_RECORD_KEYS`): a downstream parser iterating either
         shape never trips a ``KeyError`` crossing between them. The differences
         are values only — ``status=\"failed\"``, ``error`` carries the
-        exception text, ``score`` stays ``0``, ``scores`` stays empty.
+        exception text, ``scores`` stays empty.
 
         Args:
             task: The task that failed.
@@ -782,10 +790,10 @@ class DefaultHarness(Harness):
             "status": "",
             "error": None,
             "errors": [],
-            # Aggregate scalar slot. ``scores`` (the per-metric mapping) is
-            # populated by ``_score`` for success records; failed records
-            # leave it as the empty dict so the key is always present.
-            "score": 0,
+            # ``scores`` (the per-metric mapping) is populated by ``_score`` for
+            # success records; failed records leave it as the empty dict so the
+            # key is always present. There is no aggregate scalar score: the
+            # per-metric map is the source of truth.
             "scores": {},
             "expected_output": "",
             "expected_output_raw": task.expected_output,
@@ -834,10 +842,12 @@ class DefaultHarness(Harness):
                 "stamping chaos_report.status='timed_out'",
                 _SCENARIO_JOIN_SEC,
             )
-            # Preserve any partial fields the thread populated before the
-            # cutoff (injected_fault / name / output) so the operator can
-            # see how far it got.
-            chaos_report = dict(chaos_report)
+            # The daemon thread is still running and may be mid-write, so deep-
+            # copy the live report before stamping it: a shallow ``dict()`` would
+            # share nested objects and could capture a torn structure. This
+            # preserves any partial fields populated before the cutoff
+            # (injected_fault / name / output) so the operator sees how far it got.
+            chaos_report = copy.deepcopy(chaos_report)
             chaos_report["status"] = "timed_out"
         return chaos_report, perf_report
 

@@ -29,7 +29,7 @@ import yaml
 from devops_bench.chaos import ChaosSpec
 from devops_bench.chaos.faults.generate_load import GenerateLoadFault
 from devops_bench.chaos.triggers.time_delay import TimeTrigger
-from devops_bench.harness.default import DefaultHarness
+from devops_bench.evalharness.default import DefaultHarness
 from devops_bench.tasks import FileSystemTaskLoader
 from devops_bench.verification import (
     ParallelSpec,

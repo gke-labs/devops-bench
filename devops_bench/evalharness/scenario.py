@@ -38,7 +38,7 @@ from devops_bench.verification import VerifierAgent
 
 __all__ = ["ScenarioManager", "VERIFICATION_TIMEOUT_SEC"]
 
-_log = get_logger("harness.scenario")
+_log = get_logger("evalharness.scenario")
 
 # Verification budget shared across the (possibly nested) checks.
 VERIFICATION_TIMEOUT_SEC = 120
