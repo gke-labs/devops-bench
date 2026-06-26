@@ -16,17 +16,29 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import subprocess
+import time
+from collections.abc import Iterator
 from typing import Any, Protocol
 
+from devops_bench.core import get_logger
 from devops_bench.core.subprocess import CompletedProcess, run
 
 __all__ = [
     "apply",
     "get_resource",
+    "port_forward",
     "rollout_status",
     "wait",
 ]
+
+_log = get_logger("k8s.kubectl")
+
+# Seconds to let ``kubectl port-forward`` establish the tunnel before yielding.
+_PORT_FORWARD_SETTLE_SEC = 3
 
 
 class KubeconfigProvider(Protocol):
@@ -209,3 +221,80 @@ def rollout_status(
         *_namespace_args(namespace),
     ]
     return _run_kubectl(argv, kubeconfig)
+
+
+@contextlib.contextmanager
+def port_forward(
+    target: str,
+    local_port: int,
+    remote_port: int | None = None,
+    *,
+    namespace: str | None = None,
+    settle_sec: float = _PORT_FORWARD_SETTLE_SEC,
+    kubeconfig: KubeconfigSource = None,
+) -> Iterator[None]:
+    """Hold a ``kubectl port-forward`` open for the duration of the ``with`` body.
+
+    Unlike the one-shot wrappers, this drives :func:`subprocess.Popen` directly
+    so the tunnel can stay open while the body runs. ``stdout`` / ``stderr`` go
+    to ``DEVNULL`` because nothing reads the pipes — ``PIPE`` would let
+    ``kubectl`` block once its output buffer fills under sustained traffic. The
+    tunnel is always terminated on exit, whether the body completes or raises,
+    so it never outlives the ``with`` block.
+
+    Args:
+        target: Resource to forward, e.g. ``"deployment/web-app"`` or
+            ``"svc/web"``.
+        local_port: Local port to bind.
+        remote_port: Port on the target; defaults to ``local_port``.
+        namespace: Optional namespace (``-n``).
+        settle_sec: Seconds to wait for the tunnel to establish before yielding.
+        kubeconfig: Kubeconfig path or context-like object.
+
+    Yields:
+        ``None`` once the tunnel has had time to settle.
+
+    Raises:
+        RuntimeError: If ``kubectl port-forward`` exits before the settle window
+            elapses (e.g. the target does not exist).
+    """
+    remote = remote_port if remote_port is not None else local_port
+    argv = [
+        "kubectl",
+        "port-forward",
+        target,
+        f"{local_port}:{remote}",
+        *_namespace_args(namespace),
+    ]
+    path = _resolve_kubeconfig(kubeconfig)
+    env = {**os.environ, "KUBECONFIG": path} if path else None
+
+    _log.info("establishing port-forward to %s on port %d...", target, local_port)
+    process = subprocess.Popen(
+        argv,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+
+    time.sleep(settle_sec)
+    if process.poll() is not None:
+        # Reap the already-exited child before raising so it does not linger as
+        # a zombie waiting for ``wait()``. ``terminate`` is a no-op on a
+        # process that already exited; ``wait`` collects the exit status.
+        returncode = process.returncode
+        try:
+            process.wait(timeout=settle_sec)
+        except Exception as exc:  # noqa: BLE001 - never mask the raise reason
+            _log.warning("error reaping early-exited port-forward: %s", exc)
+        raise RuntimeError(
+            f"kubectl port-forward exited early (code {returncode}) for {target}"
+        )
+
+    try:
+        yield
+    finally:
+        _log.info("terminating port-forward to %s...", target)
+        process.terminate()
+        process.wait()
+        _log.info("port-forward to %s terminated.", target)

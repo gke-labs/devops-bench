@@ -12,22 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reusable Kubernetes primitives: kubectl wrappers and wait/poll conditions."""
+"""Gemini CLI agent harness, named to distinguish it from the Gemini model.
 
-from devops_bench.k8s.conditions import poll_until
-from devops_bench.k8s.kubectl import (
-    apply,
-    get_resource,
-    port_forward,
-    rollout_status,
-    wait,
-)
+The harness driver lives in :mod:`.agent` and the stream-json parser in
+:mod:`.parsing`. Importing this package self-registers the agent under the
+``"gemini"`` key via ``@AGENTS.register``.
+"""
 
-__all__ = [
-    "apply",
-    "get_resource",
-    "poll_until",
-    "port_forward",
-    "rollout_status",
-    "wait",
-]
+from __future__ import annotations
+
+from devops_bench.agents.cli.gemini_cli.agent import GeminiCliAgent
+from devops_bench.agents.cli.gemini_cli.parsing import parse_stream_json
+
+__all__ = ["GeminiCliAgent", "parse_stream_json"]
