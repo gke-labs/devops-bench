@@ -58,16 +58,16 @@ Code, Antigravity/Gemini, Codex, …). It needs only a **shell that can `ssh` th
 bastion**; everything else is an optimization. Map each capability used below to
 whatever your harness provides, and degrade gracefully if it lacks one:
 
-| Capability used below | Claude Code | Other harnesses / fallback |
-|---|---|---|
-| **Sub-task** (delegate to another model) | `Agent` tool (`model:`, `subagent_type:`) | the harness's subagent/`task` mechanism or a CLI delegation — **none? the main agent does it inline** |
-| **Model tiers** (low / mid / main) | Haiku / Sonnet / Opus | Gemini Flash / Flash–Pro / Pro · Codex mini / standard · or whatever the harness exposes |
-| **Background run** (non-blocking sub-task) | `run_in_background` | the harness's async job — else poll inline each tick |
-| **Timer / wake** (re-engage on a cadence) | `ScheduleWakeup` / cron | the harness's scheduler — else `sleep` between checks in a loop |
-| **Durable state** (checkpoint across resets) | task list | a notes file in the run dir / repo |
-| **Isolated worktree** (unlimited mode) | `EnterWorktree` | `git worktree add` + a branch |
-| **Ask the user** | `AskUserQuestion` | a plain question in chat |
-| **Keepalive** (don't stop early) | the bg job-list classifier reads your text | any idle-timeout / completion classifier — keep emitting progress, don't signal completion until done |
+| Capability used below | Claude Code | Antigravity (`agy` CLI / 2.0 IDE) | Other / fallback |
+|---|---|---|---|
+| **Sub-task** (delegate to another model) | `Agent` tool (`model:`, `subagent_type:`) | **dynamic subagents** (parent spawns focused subtasks; shown nested in the Agent Manager), or non-interactive `agy -p --model …` per task | Codex subagent/`task`; **none? main agent does it inline** |
+| **Model tiers** (low / mid / main) | Haiku / Sonnet / Opus | `Gemini 3.5 Flash (Medium)` / `3.1 Pro (Low)` or `Flash (High)` / `3.1 Pro (High)` — pick via `/models` (in-session) or `--model` (launch) | Codex mini / standard · or whatever the harness exposes |
+| **Background run** (non-blocking sub-task) | `run_in_background` | **Background Agents** (Agent Manager) / async subagents | the harness's async job — else poll inline each tick |
+| **Timer / wake** (re-engage on a cadence) | `ScheduleWakeup` / cron | **Scheduled tasks** (cron-style agent triggers) | the harness's scheduler — else `sleep` between checks in a loop |
+| **Durable state** (checkpoint across resets) | task list | **Artifacts** (task-list / implementation-plan) + the Knowledge base | a notes file in the run dir / repo |
+| **Isolated worktree** (unlimited mode) | `EnterWorktree` | `git worktree add` (agents also scope per **project/workspace**) | `git worktree add` + a branch |
+| **Ask the user** | `AskUserQuestion` | Artifact feedback / `request-review` approval (human-in-the-loop) | a plain question in chat |
+| **Keepalive** (don't stop early) | the bg job-list classifier reads your text | background agents run async (no idle-stop) — but **quota is the governor**: watch `/usage`, ~3–5 parallel subagents | any idle-timeout / completion classifier — keep emitting progress |
 
 Throughout this skill and its `references/`, tool names like `Agent` or
 `ScheduleWakeup` are **examples**, not requirements — substitute your harness's
