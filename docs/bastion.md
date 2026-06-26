@@ -197,7 +197,8 @@ wait
 ```
 
 For the full matrix (Task × Model × AgentConfig) use `scripts/bastion/run_matrix.sh`
-(refactored) or `scripts/bastion/run_matrix_legacy.sh` (legacy, oc-only). See
+(refactored) or `scripts/bastion/run_matrix_legacy.sh` (legacy, oc-only) — local by
+default, `BENCH_REMOTE=1` to sync + run on the bastion. See
 `docs/parallel-evals.md` for the matrix CUJs, the parallel-safety rules (legacy +
 gemini CLI is not parallel-safe), resume-after-drop, and Vertex setup.
 

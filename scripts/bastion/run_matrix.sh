@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Parallel eval matrix on the bastion — REFACTORED arm (python -m devops_bench).
+# Parallel eval matrix — REFACTORED arm (python -m devops_bench). Runs locally by
+# default; set BENCH_REMOTE=1 to sync + run on the bastion over ssh.
 # Dimensions: Task x Model x AgentConfig. Run from your workstation; results are
 # copied back locally. (Legacy arm: scripts/bastion/run_matrix_legacy.sh.)
 #

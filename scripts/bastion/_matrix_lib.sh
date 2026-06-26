@@ -26,6 +26,9 @@
 #   / GCP_VERTEX_LOCATION). For the legacy oc arm also set AGENT_PROVIDER=
 #   google-vertex so the model id becomes 'google-vertex/<model>'. Prereq: the oc
 #   google-vertex provider must be auth'd once (see docs/bastion.md).
+# BENCH_REMOTE=1: run the matrix ON the bastion over ssh (sync + remote nohup +
+#   pull). Default (unset) runs every combo LOCALLY on this host (no ssh/sync;
+#   outputs in ~/matrix-runs/<stamp>, no pull). BASTION_* matter only when set.
 
 BASTION_VM="${BASTION_VM:-bench-bastion}"
 BASTION_ZONE="${BASTION_ZONE:-us-central1-a}"
@@ -44,6 +47,7 @@ MAX_PARALLEL="${MAX_PARALLEL:-3}"
 GKE_MCP_BIN="${GKE_MCP_BIN:-\$HOME/gke-mcp}"     # expanded on the bastion
 SKILLS_PATHS="${SKILLS_PATHS:-\$HOME/oc-skills}" # expanded on the bastion
 DRY_RUN="${DRY_RUN:-}"
+BENCH_REMOTE="${BENCH_REMOTE:-}"  # empty = run locally on this host; set = ssh to the bastion
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 # Pulled results land in ${RESULTS_DIR}/${STAMP} (the pull re-creates the
@@ -71,6 +75,10 @@ else
   push_file()   { gcloud compute scp --tunnel-through-iap --zone "${BASTION_ZONE}" --project "${BASTION_PROJECT}" "${_GKA_SCP[@]}" "$1" "${BASTION_VM}:$2"; }
   pull_dir()    { gcloud compute scp --tunnel-through-iap --recurse --zone "${BASTION_ZONE}" --project "${BASTION_PROJECT}" "${_GKA_SCP[@]}" "${BASTION_VM}:$1" "$2"; }
 fi
+
+# Run a check/command on the runner host: locally by default, on the bastion when
+# BENCH_REMOTE is set. (The detached matrix runner itself is launched separately.)
+host_exec() { if [ -n "${BENCH_REMOTE}" ]; then remote_exec "$1"; else bash -c "$1"; fi; }
 
 # Pull with a few retries — a drop during the final copy is otherwise fatal.
 pull_dir_retry() {
@@ -100,10 +108,10 @@ resolve_tasks() {
 # (the run itself is detached via nohup and unaffected). Arg: expected combo count.
 _poll_until_done() {
   local expected="$1" done_n
-  echo "==> waiting for ${expected} run(s) (poll 60s; runs continue on the bastion if this exits)"
+  echo "==> waiting for ${expected} run(s) (poll 60s; runs continue if this exits)"
   while true; do
-    if remote_exec "test -f \$HOME/${REMOTE_OUT}/.done" 2>/dev/null; then break; fi
-    done_n="$(remote_exec "ls \$HOME/${REMOTE_OUT}/*/status 2>/dev/null | wc -l" 2>/dev/null | tr -d '[:space:]' || echo 0)"
+    if host_exec "test -f \$HOME/${REMOTE_OUT}/.done" 2>/dev/null; then break; fi
+    done_n="$(host_exec "ls \$HOME/${REMOTE_OUT}/*/status 2>/dev/null | wc -l" 2>/dev/null | tr -d '[:space:]' || echo 0)"
     echo "    ${done_n}/${expected} finished... ($(date +%H:%M:%S))"
     sleep 60
   done
@@ -113,9 +121,15 @@ _poll_until_done() {
 # <rid> subdirs rather than COMBOS, so it also serves RESUME_STAMP attach.
 _pull_and_summarize() {
   mkdir -p "${RESULTS_DIR}"
-  echo "==> pulling results -> ${RESULTS_DIR}/${STAMP}"
-  pull_dir_retry "${REMOTE_OUT}" "${RESULTS_DIR}" || return 1
-  local LOCAL_OUT="${RESULTS_DIR}/${STAMP}"
+  local LOCAL_OUT
+  if [ -n "${BENCH_REMOTE}" ]; then
+    echo "==> pulling results -> ${RESULTS_DIR}/${STAMP}"
+    pull_dir_retry "${REMOTE_OUT}" "${RESULTS_DIR}" || return 1
+    LOCAL_OUT="${RESULTS_DIR}/${STAMP}"
+  else
+    LOCAL_OUT="$HOME/${REMOTE_OUT}"
+    echo "==> local results at ${LOCAL_OUT}"
+  fi
 
   echo "==> summary"
   printf '%-56s %-8s %s\n' "COMBO" "EXIT" "results.json"
@@ -141,11 +155,12 @@ matrix_dispatch() {
   if [ -n "${RESUME_STAMP:-}" ]; then
     STAMP="${RESUME_STAMP}"
     REMOTE_OUT="matrix-runs/${STAMP}"
-    echo "==> RESUME: attaching to existing run ~/${REMOTE_OUT} on ${BASTION_VM}"
-    remote_exec "test -d \$HOME/${REMOTE_OUT}" 2>/dev/null \
-      || { echo "ERROR: no remote run at ~/${REMOTE_OUT} on ${BASTION_VM}" >&2; exit 2; }
+    local where; where="localhost"; [ -n "${BENCH_REMOTE}" ] && where="${BASTION_VM}"
+    echo "==> RESUME: attaching to existing run ~/${REMOTE_OUT} on ${where}"
+    host_exec "test -d \$HOME/${REMOTE_OUT}" 2>/dev/null \
+      || { echo "ERROR: no run at ~/${REMOTE_OUT} on ${where}" >&2; exit 2; }
     local exp
-    exp="$(remote_exec "ls -d \$HOME/${REMOTE_OUT}/*/ 2>/dev/null | wc -l" 2>/dev/null | tr -d '[:space:]' || echo '?')"
+    exp="$(host_exec "ls -d \$HOME/${REMOTE_OUT}/*/ 2>/dev/null | wc -l" 2>/dev/null | tr -d '[:space:]' || echo '?')"
     _poll_until_done "${exp}"
     _pull_and_summarize
     return $?
@@ -169,7 +184,7 @@ matrix_dispatch() {
   [ "${#COMBOS[@]}" -gt 0 ] || { echo "ERROR: empty matrix" >&2; exit 2; }
   [ -n "${GCP_PROJECT_ID:-}" ] || { echo "ERROR: set GCP_PROJECT_ID" >&2; exit 2; }
 
-  if [ -z "${SKIP_SYNC:-}" ]; then
+  if [ -n "${BENCH_REMOTE}" ] && [ -z "${SKIP_SYNC:-}" ]; then
     echo "==> syncing working tree to ${BASTION_VM}"
     "${REPO_ROOT}/scripts/bastion/sync-to-bastion.sh"
   fi
@@ -179,9 +194,9 @@ matrix_dispatch() {
   {
     echo '#!/usr/bin/env bash'
     echo 'set -uo pipefail'
-    echo "cd ~/${REMOTE_DIR}"
-    echo 'source .venv/bin/activate'
-    echo 'set -a; . ~/secrets.env; set +a'
+    if [ -n "${BENCH_REMOTE}" ]; then echo "cd ~/${REMOTE_DIR}"; else echo "cd '${REPO_ROOT}'"; fi
+    echo '[ -f .venv/bin/activate ] && source .venv/bin/activate || true'
+    echo 'set -a; [ -f ~/secrets.env ] && . ~/secrets.env; set +a'
     if [ -n "${BENCH_VERTEX:-}" ]; then
       # Vertex mode: drop every API key secrets.env exported so agents AND judges
       # fall back to ADC (the bastion VM SA via the metadata server), then point
@@ -236,12 +251,19 @@ matrix_dispatch() {
 
   # Per-stamp runner path so two matrices (e.g. refactored + legacy) can be
   # launched in parallel without clobbering each other's runner script.
-  local remote_runner="/tmp/matrix-runner-${STAMP}.sh"
-  echo "==> uploading + launching remote runner (detached)"
-  push_file "${runner}" "${remote_runner}"
+  local staged_runner="/tmp/matrix-runner-${STAMP}.sh"
   # Create the output dir (and its parent) BEFORE the nohup redirect — the
   # ``>...${REMOTE_OUT}.out`` target dir must exist or the job never starts.
-  remote_exec "mkdir -p \$HOME/${REMOTE_OUT}; chmod +x ${remote_runner}; nohup ${remote_runner} >\$HOME/${REMOTE_OUT}.out 2>&1 & echo launched pid=\$!"
+  if [ -n "${BENCH_REMOTE}" ]; then
+    echo "==> uploading + launching remote runner (detached)"
+    push_file "${runner}" "${staged_runner}"
+    remote_exec "mkdir -p \$HOME/${REMOTE_OUT}; chmod +x ${staged_runner}; nohup ${staged_runner} >\$HOME/${REMOTE_OUT}.out 2>&1 & echo launched pid=\$!"
+  else
+    echo "==> launching local runner (detached)"
+    cp "${runner}" "${staged_runner}"; chmod +x "${staged_runner}"
+    mkdir -p "$HOME/${REMOTE_OUT}"
+    nohup "${staged_runner}" >"$HOME/${REMOTE_OUT}.out" 2>&1 & echo "launched pid=$!"
+  fi
   echo "    (to re-attach if this exits: RESUME_STAMP=${STAMP} re-run the same command)"
 
   _poll_until_done "${#COMBOS[@]}"

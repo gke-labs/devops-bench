@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Parallel eval matrix on the bastion — LEGACY arm (pkg/evaluator/evaluate.py).
+# Parallel eval matrix — LEGACY arm (pkg/evaluator/evaluate.py). Runs locally by
+# default; set BENCH_REMOTE=1 to sync + run on the bastion over ssh.
 # Dimensions: Task x Model ONLY (no AgentConfig — the legacy arm reads MCP/skills
 # from the GLOBAL ~/.openclaw config, so capabilities are fixed for the whole
 # matrix; set them once with scripts/bastion/configure-oc.sh).
