@@ -12,22 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reusable Kubernetes primitives: kubectl wrappers and wait/poll conditions."""
+"""Agent capabilities: binding data + structural Protocols for MCP, skills, and rules."""
 
-from devops_bench.k8s.conditions import poll_until
-from devops_bench.k8s.kubectl import (
-    apply,
-    get_resource,
-    port_forward,
-    rollout_status,
-    wait,
+from __future__ import annotations
+
+from devops_bench.agents.capabilities.aggregate import AllCapabilities
+from devops_bench.agents.capabilities.mcp import McpBinding, SupportsMcp
+from devops_bench.agents.capabilities.rules import AgentRules, SupportsRules
+from devops_bench.agents.capabilities.skills import (
+    SkillBinding,
+    SupportsSkills,
 )
 
 __all__ = [
-    "apply",
-    "get_resource",
-    "poll_until",
-    "port_forward",
-    "rollout_status",
-    "wait",
+    "AgentRules",
+    "AllCapabilities",
+    "McpBinding",
+    "SkillBinding",
+    "SupportsMcp",
+    "SupportsRules",
+    "SupportsSkills",
 ]
