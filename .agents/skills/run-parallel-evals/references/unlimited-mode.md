@@ -33,8 +33,9 @@ the change that resolves it.
    `ruff` locally if they cover it (never run an eval to "test" a fix).
 4. **Log** the fix in a running changelog (durable state — a notes file or task list):
    combo, symptom, root cause, the change, commit sha.
-5. **Re-sync** the working tree to the bastion (`scripts/bastion/sync-to-bastion.sh`;
-   only use `SKIP_SYNC=1` after a real sync).
+5. **Re-sync (remote only).** In `BENCH_REMOTE` mode, push the working tree to the
+   bastion (`scripts/bastion/sync-to-bastion.sh`; `SKIP_SYNC=1` only after a real
+   sync). In local mode the edits are already in place — skip this.
 6. **Restart only the failed combo(s)** as fresh single-combo matrices (new stamp),
    after cleaning their leaked GCP resources (cluster, `gke-nodes-*` SA, secrets).
 7. **Continue** the resilient-monitoring loop over the remaining + restarted combos.

@@ -6,8 +6,9 @@ local drops, and — on harnesses that have one — the session is never marked
 "finished" while combos are still going.
 
 This is **harness-agnostic** (see *Harness portability* in `SKILL.md`): the roles
-below are capabilities, with Claude Code tools named only as examples. The **bastion
-is the source of truth** — every combo's state lives in `~/matrix-runs/<stamp>/<rid>/`
+below are capabilities, with Claude Code tools named only as examples. The **runner host**
+(this machine in local mode, the bastion when `BENCH_REMOTE`) **is the source of
+truth** — every combo's state lives in `~/matrix-runs/<stamp>/<rid>/`
 (`status`, `run.log`) plus the pulled results. Helper sub-tasks are disposable readers
 of that state: losing one loses nothing, because a fresh one re-reads the same
 `RESUME_STAMP`. If your harness has **no** sub-tasks at all, do the monitor/analyzer
@@ -18,11 +19,11 @@ steps inline yourself — the loop still works, just on one model.
 | Role | Model tier | Cadence | Job |
 |---|---|---|---|
 | **Supervisor** | your **main/session** model | every ~5 min while combos run; longer when idle | dispatch + re-spawn helpers, decide retries, keep the session alive, never go silent |
-| **Monitor** | a **low** tier (Claude Haiku · Gemini Flash · Codex mini · …) | each tick | shell into the bastion, read each combo's `status` + `run.log` tail, return a one-line-per-combo digest + an overall `running / done / flaked / .done` summary. No analysis, no log dumps. |
+| **Monitor** | a **low** tier (Claude Haiku · Gemini Flash · Codex mini · …) | each tick | shell to the runner host (local, or `ssh <bastion>` when `BENCH_REMOTE`), read each combo's `status` + `run.log` tail, return a one-line-per-combo digest + an overall `running / done / flaked / .done` summary. No analysis, no log dumps. |
 | **Analyzer** | a **mid** tier (Claude Sonnet · Gemini Flash/Pro · Codex standard · …) | once per finished combo (or a small batch) | pull + read that combo's `results.json` + `run.log`; return scores + pass/fail checks + a root-cause digest if it failed |
 
-Run the monitor/analyzer as **sub-tasks that can shell out** (`ssh` / `gcloud` /
-`gh`) — Claude Code: the `Agent` tool with `model:` + `subagent_type: general-purpose`;
+Run the monitor/analyzer as **sub-tasks that can shell out on the runner host**
+(local shell, or `ssh` / `gcloud` to the bastion in remote mode) — Claude Code: the `Agent` tool with `model:` + `subagent_type: general-purpose`;
 other harnesses: their subagent/delegation mechanism. Give each the connection env
 (`BASTION_*`, project) and the `RESUME_STAMP`, and tell it to **return a compact
 digest, not raw logs** — that keeps the supervisor's context clean (progressive

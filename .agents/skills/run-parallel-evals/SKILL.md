@@ -54,20 +54,24 @@ neither special mode applies, ignore the reference files entirely.
 ## Harness portability
 
 This skill is **agent/harness-agnostic** — it runs under any coding agent (Claude
-Code, Antigravity/Gemini, Codex, …). It needs only a **shell that can `ssh` the
-bastion** (Antigravity: the `run_command` tool); everything else is an optimization. Map each capability used below to
+Code, Antigravity/Gemini, Codex, …). It needs only a **shell on the runner host** — local by default, or `ssh` to the
+bastion in remote mode (Antigravity: the `run_command` tool); everything else is an optimization. Map each capability used below to
 whatever your harness provides, and degrade gracefully if it lacks one:
 
-| Capability used below | Claude Code | Antigravity (`agy` CLI / 2.0 IDE) | Other / fallback |
+| Capability | Claude Code | Antigravity | Other / fallback |
 |---|---|---|---|
-| **Sub-task** (delegate to another model) | `Agent` tool (`model:`, `subagent_type:`) | `invoke_subagent` (launch) / `define_subagent` (custom role) / `manage_subagents` (list·track·stop) / `send_message` (coordinate), nested in the Agent Manager — or non-interactive `agy -p --model …` per task | Codex subagent/`task`; **none? main agent does it inline** |
-| **Model tiers** (low / mid / main) | Haiku / Sonnet / Opus | `Gemini 3.5 Flash (Medium)` / `3.1 Pro (Low)` or `Flash (High)` / `3.1 Pro (High)` — pick via `/models` (in-session) or `--model` (launch) | Codex mini / standard · or whatever the harness exposes |
-| **Background run** (non-blocking sub-task) | `run_in_background` | concurrent `invoke_subagent` + `manage_task` (track / cancel background tasks); Background Agents in the Agent Manager | the harness's async job — else poll inline each tick |
-| **Timer / wake** (re-engage on a cadence) | `ScheduleWakeup` / cron | `schedule` — a timer or recurring cron ("Scheduled tasks") | the harness's scheduler — else `sleep` between checks in a loop |
-| **Durable state** (checkpoint across resets) | task list | **Artifacts** (task-list / plan) — or a notes file via `write_to_file` | a notes file in the run dir / repo |
-| **Isolated worktree** (unlimited mode) | `EnterWorktree` | `run_command` → `git worktree add` (agents also scope per **project/workspace**) | `git worktree add` + a branch |
-| **Ask the user** | `AskUserQuestion` | `ask_question` (multi-choice dialog) / `ask_permission` | a plain question in chat |
-| **Keepalive** (don't stop early) | the bg job-list classifier reads your text | background agents run async (no idle-stop) — but **quota is the governor**: watch `/usage`, ~3–5 parallel subagents | any idle-timeout / completion classifier — keep emitting progress |
+| Sub-task | `Agent` | `invoke_subagent` | subagent/`task`; else inline |
+| Model tiers | Haiku / Sonnet / Opus | `/models` (Flash / Pro) | mini / standard |
+| Background run | `run_in_background` | `manage_task` | async; else poll |
+| Timer / wake | `ScheduleWakeup` | `schedule` | scheduler; else `sleep` |
+| Durable state | task list | Artifacts / `write_to_file` | notes file |
+| Isolated worktree | `EnterWorktree` | `run_command` | `git worktree add` |
+| Ask the user | `AskUserQuestion` | `ask_question` | ask in chat |
+| Keepalive | progress, no early "done" | same | same |
+
+Each cell names **one primitive** — assume your harness chains the supporting
+calls (args, follow-ups, file reads) from it; the full Antigravity set is in the
+footnote below.
 
 Throughout this skill and its `references/`, tool names like `Agent` or
 `ScheduleWakeup` are **examples**, not requirements — substitute your harness's
@@ -78,9 +82,27 @@ bare harness (one shell, no sub-tasks, no scheduler) can drive a run by polling.
 
 ---
 
+## Execution mode
+
+**Local by default; remote is opt-in.** The matrix runs on the **runner host** —
+the machine where you invoke the wrapper. By default that's *this host* (local
+`nohup`, no ssh/sync, outputs in `~/matrix-runs/<stamp>`). Set **`BENCH_REMOTE=1`**
+(plus the `BASTION_*` connection env) to sync the tree to the bastion and run
+there over ssh, pulling results back.
+
+**Command convention:** the snippets below show the **remote** form,
+`ssh <bastion> '<cmd>'`. In **local mode, drop the `ssh <bastion>` wrapper** and
+run `<cmd>` directly — the paths (`~/secrets.env`, `~/.kube`,
+`~/matrix-runs/<stamp>`) are the same, just on this host. `RESUME_STAMP` and
+`DRY_RUN` behave identically in both modes.
+
+---
+
 ## Phase 1 — Gather the matrix spec
 
-Determine exactly what to run. Ask the user (your harness's clarify path — see *Harness portability*) for
+**First, always ask: local or remote?** (see *Execution mode*) — local runs on
+this host (default); remote sets `BENCH_REMOTE=1` + the `BASTION_*` connection
+env. Then determine exactly what to run. Ask the user (your harness's clarify path — see *Harness portability*) for
 anything not given;
 do not guess on dimensions that cost clusters/time. You need:
 
@@ -121,7 +143,8 @@ reused (safe only because the prior run tore down first).
 
 ## Phase 2 — Credentials & environment
 
-Set the **connection env** (same as `sync-to-bastion.sh`):
+Set the **connection env** (**remote mode only** — same as `sync-to-bastion.sh`;
+skip it entirely for a local run):
 
 ```bash
 export BASTION_USE_GCPNODE=1 BASTION_VM=bench-bastion \
@@ -182,8 +205,9 @@ If the legacy arm needs capabilities, run `configure-oc.sh --mcp --skills`
 
 ## Phase 4 — Launch the matrix (detached)
 
-The wrappers sync the working tree, generate a runner, upload it, and launch it
-**detached under `nohup`**, then poll. To run **both arms in parallel**: sync
+By default the wrappers run the matrix **locally** (detached `nohup` on this
+host). With `BENCH_REMOTE=1` they sync the working tree to the bastion, upload a
+runner, and launch it detached over ssh, then poll. To run **both arms in parallel**: sync
 once, then start each wrapper with `SKIP_SYNC=1`, staggered ~5s so their
 second-resolution `STAMP`s differ.
 
@@ -191,6 +215,7 @@ Run each wrapper as a **background job** so you keep control to monitor. Build t
 env from Phase 1–2, e.g. Vertex refactored:
 
 ```bash
+# local by default; prefix BENCH_REMOTE=1 (+ BASTION_* env) to run on the bastion
 BENCH_VERTEX=1 AGENT_PROVIDER=google-vertex \
 JUDGE_PROVIDER=google JUDGE_MODEL=gemini-3.1-pro-preview \
 MAX_PARALLEL=<n> MATRIX_TASKS="..." MATRIX_MODELS="..." \
@@ -200,12 +225,12 @@ MATRIX_AGENT_CONFIGS="..." RESULTS_DIR="results/<label>" \
 
 **Capture the `STAMP`** each wrapper prints (`RESUME_STAMP=<stamp>`). It is your
 handle for monitoring, retry, and re-attach. Record it (and the combo list) in durable state (a
-task list or a notes file) so you survive a context reset. Remote outputs live at
+task list or a notes file) so you survive a context reset. Outputs live on the runner host at
 `~/matrix-runs/<stamp>/<rid>/` (`run.log`, `status`); a `~/matrix-runs/<stamp>/.done`
 marker appears when all combos finish.
 
-If your local poller dies, the run continues on the VM — re-attach with
-`RESUME_STAMP=<stamp>` and the same command.
+If your poller dies, the run continues (detached on the runner host) — re-attach
+with `RESUME_STAMP=<stamp>` and the same command.
 
 ---
 
