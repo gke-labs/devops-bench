@@ -22,6 +22,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from devops_bench.metrics import grounding
+from devops_bench.metrics.base import GEVAL_PASS_THRESHOLD
 from devops_bench.metrics.grounding import (
     calculate_doc_retrieval_rate,
     evaluate_documentation_grounding,
@@ -100,6 +101,19 @@ def _evaluate_by_outcome(mocker, outcomes):
         return _metric_result(f"{name} [GEval]", score, success)
 
     return mocker.patch("deepeval.evaluate", side_effect=_side_effect)
+
+
+def test_grounding_constraint_geval_uses_explicit_pass_threshold(mocker):
+    # Per-constraint GEvals must pass the explicit 0.8 cutoff rather than
+    # inheriting deepeval's looser 0.5 default, since their success flags drive
+    # GroundingAccuracy / ParameterRecallAccuracy.
+    geval_cls = _named_geval(mocker)
+    mocker.patch("deepeval.evaluate", return_value=SimpleNamespace(test_results=[]))
+    docs = [{"constraints": [{"text": "use TLS", "critical": True}]}]
+
+    evaluate_documentation_grounding(docs, MagicMock(), MagicMock(), {})
+
+    assert geval_cls.call_args.kwargs["threshold"] == GEVAL_PASS_THRESHOLD
 
 
 def test_grounding_no_constraints_returns_early(mocker):

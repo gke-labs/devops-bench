@@ -74,12 +74,17 @@ def _build_context(
     Returns:
         A populated :class:`MetricContext` with the three test cases built once.
     """
+    # ``input`` / ``output`` / ``expected_output`` are the minimum a judge needs
+    # and are always written by the harness. The trajectory / latency /
+    # retrieval-context fields default to empty so a slimmer external result dict
+    # degrades to an unscored case rather than raising an uncaught ``KeyError``
+    # here (before the per-metric ``try`` in the batch loop).
     prompt = res["input"]
     actual_output = res["output"]
-    trajectory = res["trajectory"]
     expected_output = res["expected_output"]
-    latency = res["latency"]
-    retrieval_context = res["retrieval_context"]
+    trajectory = res.get("trajectory", [])
+    latency = res.get("latency")
+    retrieval_context = res.get("retrieval_context")
 
     outcome_case = LLMTestCase(
         input=prompt,
@@ -136,10 +141,11 @@ def evaluate_metrics_batch(
     given result, and one failing metric never aborts the rest.
 
     Args:
-        detailed_results: Execution result dicts, each with ``input``,
-            ``output``, ``trajectory``, ``expected_output``, ``latency``,
-            ``name``, ``retrieval_context``, and optional ``documentation`` /
-            ``chaos_spec`` / ``chaos_report`` / ``perf_report`` / ``tools`` keys.
+        detailed_results: Execution result dicts. ``input``, ``output``, and
+            ``expected_output`` are required; ``trajectory``, ``latency``,
+            ``retrieval_context``, ``name``, ``documentation``, ``chaos_spec`` /
+            ``chaos_report`` / ``perf_report``, and ``tools`` are optional and
+            default to empty when absent.
         judge_model: A ``DeepEvalBaseLLM`` judge model.
         use_mcp: Whether the harness granted MCP tool capabilities. ``None``
             falls back to the ``BENCH_USE_MCP`` env var.

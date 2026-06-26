@@ -29,6 +29,7 @@ from deepeval.test_case import SingleTurnParams
 
 from devops_bench.core import get_logger
 from devops_bench.metrics.base import (
+    GEVAL_PASS_THRESHOLD,
     METRICS,
     MetricContext,
     MetricScore,
@@ -123,6 +124,7 @@ class ChecklistMetric:
                     "Verify that the actual output fulfills this specific"
                     f" requirement: {item}"
                 ),
+                threshold=GEVAL_PASS_THRESHOLD,
                 evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
                 model=ctx.judge,
             )

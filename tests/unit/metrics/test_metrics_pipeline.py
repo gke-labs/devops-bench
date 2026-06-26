@@ -20,6 +20,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from devops_bench.metrics import checklist, pipeline
+from devops_bench.metrics.base import GEVAL_PASS_THRESHOLD
 from devops_bench.metrics.pipeline import (
     CHECKLIST_THRESHOLD,
     evaluate_metrics_batch,
@@ -207,6 +208,24 @@ def test_batch_computes_checklist_score(mocker):
     assert "Check: replicas=3" in scores
     assert scores["ChecklistScore"]["score"] == 1.0
     assert scores["ChecklistScore"]["success"] is True
+
+
+def test_checklist_per_item_geval_uses_explicit_pass_threshold(mocker):
+    # Per-item checklist GEvals must pass the explicit 0.8 cutoff rather than
+    # inheriting deepeval's looser 0.5 default, since their success flags feed
+    # the aggregate ChecklistScore.
+    geval_cls = mocker.patch.object(
+        checklist, "GEval", side_effect=lambda **kw: SimpleNamespace(name=kw["name"])
+    )
+    _patch_judges(mocker)
+    mocker.patch.object(pipeline, "LLMTestCase")
+    mocker.patch("deepeval.evaluate", side_effect=_evaluate_by_metric_name())
+    judge = MagicMock()
+    results = [_base_result(expected_output="Critical Requirements:\n- replicas=3\n")]
+
+    evaluate_metrics_batch(results, judge, use_mcp=True)
+
+    assert geval_cls.call_args.kwargs["threshold"] == GEVAL_PASS_THRESHOLD
 
 
 def test_batch_invokes_grounding_and_chaos(mocker):

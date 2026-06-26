@@ -25,6 +25,7 @@ from deepeval.test_case import LLMTestCase, SingleTurnParams
 
 from devops_bench.core import get_logger
 from devops_bench.metrics.base import (
+    GEVAL_PASS_THRESHOLD,
     METRICS,
     MetricContext,
     MetricScore,
@@ -118,6 +119,7 @@ def evaluate_documentation_grounding(
                 "Verify that the actual output fulfills this specific"
                 f" documentation constraint/requirement: {c_text}"
             ),
+            threshold=GEVAL_PASS_THRESHOLD,
             evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
             model=judge_model,
         )

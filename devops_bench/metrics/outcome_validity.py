@@ -24,6 +24,7 @@ from deepeval.test_case import SingleTurnParams
 from devops_bench.core import get_logger
 from devops_bench.metrics._skills import load_skill_text
 from devops_bench.metrics.base import (
+    GEVAL_PASS_THRESHOLD,
     METRICS,
     MetricContext,
     MetricScore,
@@ -61,11 +62,13 @@ def build_outcome_validity_metric(model) -> GEval:
         model: A ``DeepEvalBaseLLM`` judge model.
 
     Returns:
-        A configured :class:`~deepeval.metrics.GEval` instance.
+        A configured :class:`~deepeval.metrics.GEval` instance with the shared
+        :data:`GEVAL_PASS_THRESHOLD` pass cutoff applied.
     """
     return GEval(
         name="OutcomeValidity",
         criteria=load_outcome_criteria(),
+        threshold=GEVAL_PASS_THRESHOLD,
         evaluation_params=[
             SingleTurnParams.INPUT,
             SingleTurnParams.ACTUAL_OUTPUT,

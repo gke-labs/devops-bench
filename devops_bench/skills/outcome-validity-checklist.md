@@ -10,7 +10,6 @@ agent's task. Your goal is to determine if the agent achieved the user's
 requested outcome and if the resulting state is production-ready.
 
 Ensure that you compare the AI assistant's actual output against the user's input prompt, and verify it meets the architectural requirements and manifestations explicitly outlined in the test case Expected Output field.
-The final score should be calculated in the format 'Total Score: X/N', where X is the number of passed requirements and N is the total number of requirements in the 'Expected Output' list.
 
 ## Evaluation Criteria
 
@@ -30,9 +29,7 @@ The final score should be calculated in the format 'Total Score: X/N', where X i
         - [ ] Requirement 2: Reason for fail
     - Replace `Requirement 1` with the actual text of the requirement.
     - Use `[x]` for passed and `[ ]` for failed.
-    - After the list, you MUST include a summary line: **'Total Score: X/N'** where X is the count of passed items and N is the total number of items.
 
-## Scoring Guidance
-- Provide the final score in the format 'Total Score: X/N', where X is the count of passed requirements and N is the total number of requirements in the 'Expected Output' list.
-- Do not use the 1-5 scale.
-- You MUST also include a line 'Status: PASS' if X/N >= 0.8 (80%), otherwise 'Status: FAIL'.
+This checklist shapes the explanation you return; the numeric pass/fail score is
+derived by the evaluation harness, so do not emit a `Total Score` or `Status`
+line of your own.

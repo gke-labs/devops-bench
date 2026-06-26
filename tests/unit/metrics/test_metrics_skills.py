@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from devops_bench.metrics import _skills, outcome_validity, tool_invocation
+from devops_bench.metrics.base import GEVAL_PASS_THRESHOLD
 from devops_bench.metrics.tool_invocation import TOOL_INVOCATION_THRESHOLD
 
 
@@ -86,6 +87,7 @@ def test_build_outcome_validity_metric(mocker):
     kwargs = geval_cls.call_args.kwargs
     assert kwargs["name"] == "OutcomeValidity"
     assert kwargs["criteria"] == "CRIT"
+    assert kwargs["threshold"] == GEVAL_PASS_THRESHOLD
     assert kwargs["model"] is model
 
 
