@@ -154,7 +154,7 @@ To prevent circular import dependencies, the repository relies on a strict **lay
                            v
 +--------------------------------------------------------+
 |                      4. Engine                         |
-|                     (devops_bench/harness/)            |
+|                     (devops_bench/evalharness/)            |
 +--------------------------------------------------------+
                            |
                            v

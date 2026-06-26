@@ -7,32 +7,34 @@ expected_output: |
   - Agent adds resource requests and limits to the deployment.
   - Agent creates an HPA with minReplicas > 1 and appropriate target CPU.
   - Agent detects and takes appropriate actions to handle the chaos event (load spike).
-chaos_spec: |
-  [
-    {
-      "name": "Planned Load Spike",
-      "trigger": { "type": "time", "delay_seconds": 5 },
-      "action": { 
-        "type": "generate_load", 
-        "target": { "service_url": "http://{{TARGET_DEPLOYMENT_NAME}}.{{NAMESPACE}}.svc.cluster.local", "qps": 300 } 
-      },
-      "verification": "Planned Load Spike Verification"
-    }
-  ]
-verification_spec: |
-  [
-    {
-      "name": "Planned Load Spike Verification",
-      "pod_spec": {
-        "type": "pod_healthy",
-        "selector": "app={{TARGET_DEPLOYMENT_NAME}}",
-        "namespace": "{{NAMESPACE}}"
-      },
-      "scaling_spec": {
-        "type": "scaling_complete",
-        "deployment": "{{TARGET_DEPLOYMENT_NAME}}",
-        "min_replicas": 2,
-        "namespace": "{{NAMESPACE}}"
-      }
-    }
-  ]
+# Native YAML (Decision D2): field names ``chaos_spec`` and ``verification_spec``
+# are unchanged; only the values are migrated from JSON-in-YAML strings to plain
+# YAML mappings so authors edit one shape. Placeholder substitution still
+# round-trips through the rendered string before validation.
+chaos_spec:
+  - name: "Planned Load Spike"
+    trigger:
+      type: time
+      delay_seconds: 5
+    action:
+      type: generate_load
+      target:
+        service_url: "http://{{TARGET_DEPLOYMENT_NAME}}.{{NAMESPACE}}.svc.cluster.local"
+        qps: 300
+    # Cross-reference: matched against ``verification_spec[*].name`` below.
+    verify: "Planned Load Spike Verification"
+verification_spec:
+  - name: "Planned Load Spike Verification"
+    spec:
+      type: parallel
+      name: "Planned Load Spike Verification"
+      checks:
+        - type: pod_healthy
+          name: pod_spec
+          selector: "app={{TARGET_DEPLOYMENT_NAME}}"
+          namespace: "{{NAMESPACE}}"
+        - type: scaling_complete
+          name: scaling_spec
+          deployment: "{{TARGET_DEPLOYMENT_NAME}}"
+          min_replicas: 2
+          namespace: "{{NAMESPACE}}"

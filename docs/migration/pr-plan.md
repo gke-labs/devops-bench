@@ -102,7 +102,7 @@ These components depend on Stage 1 leaves and form the primary building blocks o
 With all leaves and components in place, the core run loop can now migrate.
 
 - **3a. Run orchestration (`harness/`)**:
-  - **Paths**: `devops_bench/harness/` (base, default, scenario, artifacts), `tests/unit/harness/`.
+  - **Paths**: `devops_bench/evalharness/` (base, default, scenario, artifacts), `tests/unit/evalharness/`.
   - **Details**: Integrates the `ScenarioManager` (controlling chaos and verification) with the `DefaultHarness` (managing task loops, provisioning, execution, and teardown).
 
 ---

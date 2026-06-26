@@ -36,8 +36,8 @@ MIGRATED = [
     # "devops_bench/agents/api/**",
 
     # --- Stage 3: orchestrator ---
-    # "devops_bench/harness/**",
-    # "tests/unit/harness/**",
+    # "devops_bench/evalharness/**",
+    # "tests/unit/evalharness/**",
 
     # --- Stage 4: data + entrypoint, then the cross-cutting tests last ---
     # "infra/**",

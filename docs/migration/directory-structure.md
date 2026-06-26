@@ -18,8 +18,8 @@ To prevent ambiguity, the codebase adheres to strict definitions for key framewo
 |------|------------|------------------|
 | **Task** | A benchmark scenario defining an intent, infrastructure requirements, and success verifications. | `tasks/` (YAML definitions) |
 | **Agent** | The AI system being evaluated. Powered by an **Agent Harness** adapter over a communication transport. | `devops_bench/agents/` |
-| **Evaluation Harness** | The execution pipeline that orchestrates the lifecycle of a task (provisioning, scenario startup, running the agent, teardown, scoring). | `devops_bench/harness/` |
-| **Scenario Manager** | A component within the evaluation harness that concurrently manages background chaos injection and checks. | `devops_bench/harness/scenario.py` |
+| **Evaluation Harness** | The execution pipeline that orchestrates the lifecycle of a task (provisioning, scenario startup, running the agent, teardown, scoring). | `devops_bench/evalharness/` |
+| **Scenario Manager** | A component within the evaluation harness that concurrently manages background chaos injection and checks. | `devops_bench/evalharness/scenario.py` |
 | **Chaos** | Fault injection configured as a combination of a **Trigger** (when) and a **Fault** (what). | `devops_bench/chaos/` |
 | **Verification** | Outcome assertions evaluated during or at the end of a scenario. Supports complex nested lists/dicts. | `devops_bench/verification/` |
 | **Metric / Judge** | Rubrics used to grade the agent's run trajectory, usually LLM-as-judge. | `devops_bench/metrics/` |
@@ -80,10 +80,10 @@ This table maps every significant path in the legacy `gke-labs` repository to it
 
 | Legacy Path (gke-labs) | Restructured Path (devops_bench) | Notes |
 |-----------------------|---------------------------------|-------|
-| `pkg/evaluator/evaluate.py` (Main loop) | `devops_bench/harness/{base,default,artifacts}.py` | Decomposed into pipeline phases |
+| `pkg/evaluator/evaluate.py` (Main loop) | `devops_bench/evalharness/{base,default,artifacts}.py` | Decomposed into pipeline phases |
 | `pkg/evaluator/evaluate.py` (Metrics) | `devops_bench/metrics/{pipeline,geval,outcome_validity,tool_invocation,grounding,chaos_metrics}.py` | Split into discrete metric modules |
 | `pkg/evaluator/loader.py` | `devops_bench/tasks/loader.py` | |
-| `pkg/manager/manager.py` | `devops_bench/harness/scenario.py` | ScenarioManager is part of the harness |
+| `pkg/manager/manager.py` | `devops_bench/evalharness/scenario.py` | ScenarioManager is part of the harness |
 | `pkg/agents/chaos/chaos.py` | `devops_bench/chaos/agent.py` + `devops_bench/chaos/faults/generate_load.py` | Split into agent loop + fault action |
 | `pkg/agents/verifier/*` | `devops_bench/verification/*` | Extracted into verifier base and registries |
 | `pkg/agents/runner/gcli.py`, `openclaw.py` | `devops_bench/agents/cli/{gemini,openclaw}.py` | Relocated by transport |
