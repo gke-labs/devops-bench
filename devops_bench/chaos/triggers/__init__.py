@@ -12,22 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reusable Kubernetes primitives: kubectl wrappers and wait/poll conditions."""
+"""Concrete chaos triggers, each self-registering in ``chaos.base.TRIGGERS``.
 
-from devops_bench.k8s.conditions import poll_until
-from devops_bench.k8s.kubectl import (
-    apply,
-    get_resource,
-    port_forward,
-    rollout_status,
-    wait,
-)
+Importing this package pulls each bundled trigger module so its
+``@TRIGGERS.register`` decorator fires. The imports stay light: a trigger
+module loads only the trigger *class* (and ``core`` / ``pydantic``).
+"""
 
-__all__ = [
-    "apply",
-    "get_resource",
-    "poll_until",
-    "port_forward",
-    "rollout_status",
-    "wait",
-]
+from __future__ import annotations
+
+# Imported for the ``@TRIGGERS.register`` side effect that populates the registry.
+from devops_bench.chaos.triggers import time_delay  # noqa: F401
+
+__all__: list[str] = []

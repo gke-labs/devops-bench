@@ -12,22 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reusable Kubernetes primitives: kubectl wrappers and wait/poll conditions."""
+"""API/MCP agent harness driving the shared :func:`run_tool_loop` primitive.
 
-from devops_bench.k8s.conditions import poll_until
-from devops_bench.k8s.kubectl import (
-    apply,
-    get_resource,
-    port_forward,
-    rollout_status,
-    wait,
-)
+The concrete harness lives in :mod:`devops_bench.agents.api.agent` and
+self-registers under ``"api"`` via ``@AGENTS.register``. That module and its
+siblings (:mod:`devops_bench.agents.api.mcp`,
+:mod:`devops_bench.agents.api.skills`) pull in heavy optional dependencies (the
+``mcp`` SDK, ``deepeval``) only at call time — importing this package never
+forces those imports.
+"""
 
-__all__ = [
-    "apply",
-    "get_resource",
-    "poll_until",
-    "port_forward",
-    "rollout_status",
-    "wait",
-]
+from __future__ import annotations
