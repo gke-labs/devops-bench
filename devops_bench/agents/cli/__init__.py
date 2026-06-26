@@ -12,22 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reusable Kubernetes primitives: kubectl wrappers and wait/poll conditions."""
+"""Concrete CLI-binary agent harnesses (``gemini``, ``oc``).
 
-from devops_bench.k8s.conditions import poll_until
-from devops_bench.k8s.kubectl import (
-    apply,
-    get_resource,
-    port_forward,
-    rollout_status,
-    wait,
-)
-
-__all__ = [
-    "apply",
-    "get_resource",
-    "poll_until",
-    "port_forward",
-    "rollout_status",
-    "wait",
-]
+Each harness lives in its own subpackage (:mod:`.gemini_cli`, :mod:`.openclaw`)
+that splits the run driver (``agent``) from the trajectory parsers (``parsing``)
+and self-registers under its canonical key on import via ``@AGENTS.register``.
+Subpackages are imported by the harness at call time, not by this package's
+``__init__`` — keeping the import graph light.
+"""
