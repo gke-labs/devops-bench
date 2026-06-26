@@ -7,7 +7,7 @@ description: >
   "kick off a Vertex eval run", "compare legacy vs refactored on the bastion".
   Drives the whole lifecycle: gather the matrix spec + credentials, set up the
   bastion cleanly, launch the detached run, monitor and retry infra flakes, then
-  summarize results and diagnose failures.
+  summarize results and diagnose failures. Supports delegated tiered-subagent monitoring and an opt-in unlimited/self-healing mode, loaded from reference files only when requested.
 ---
 
 # Run parallel evals on the bastion
@@ -29,6 +29,24 @@ provisioning — use it to validate the expansion before a real run.
 
 Work through the phases in order. Don't skip the clean-environment or
 credentials phases — they are the most common cause of wasted multi-hour runs.
+
+
+---
+
+## Modes & progressive disclosure
+
+Keep context lean: **this file is the standard run** (Phases 1–6, you drive
+directly). Two heavier capabilities live in `references/` — read them **only** when
+the request calls for them, and don't pull both in for a plain run.
+
+| If the user wants… | Read (when you reach it) | Default |
+|---|---|---|
+| A normal matrix run | nothing extra — Phases 1–6 below | — |
+| A long / hands-off run that "must not stop", "monitor with subagents", "stay alive" | `references/resilient-monitoring.md` — tiered-subagent monitoring + API-error recovery + background-classifier keepalive. Read **before Phase 5** of any real (non-`DRY_RUN`) launch. | **on** for real runs |
+| "unlimited", "keep going until it finishes", "auto-fix and restart", self-healing | `references/unlimited-mode.md` — diagnose → fix in a worktree → re-sync → restart failed combos → repeat. | **off** — explicit opt-in only |
+
+Resolve the mode in Phase 1 (ask if it's ambiguous for a long/expensive matrix). If
+neither special mode applies, ignore the reference files entirely.
 
 ---
 
@@ -164,6 +182,13 @@ If your local poller dies, the run continues on the VM — re-attach with
 
 ## Phase 5 — Monitor periodically + retry infra flakes
 
+> **Long or hands-off run? (default for real runs)** Read
+> `references/resilient-monitoring.md` and delegate polling/analysis to tiered
+> subagents — a cheap model (Haiku / Flash-low) polls, a mid model (Sonnet /
+> Flash-medium) analyzes finished combos, you supervise and re-spawn on API errors.
+> It also covers keeping the background job from being classified as finished
+> mid-run. The inline steps below are the direct (small-matrix / foreground) path.
+
 Check progress on an interval (every ~3–5 min for infra-bearing tasks). **Don't
 busy-poll**; sleep between checks. Per tick, inspect each combo:
 
@@ -204,6 +229,11 @@ never silently drop a combo):
 If the **whole** detached runner died (no `.done`, no live process, partial
 combos), re-attach with `RESUME_STAMP`; if that shows it's truly dead, relaunch
 the unfinished combos.
+
+> **Unlimited / self-healing mode?** If (and only if) the user opted in, a *real*
+> (non-flake) failure caused by a task/code bug is not the end — read
+> `references/unlimited-mode.md` and follow diagnose → fix → re-sync → restart
+> instead of just reporting it.
 
 ---
 
@@ -275,3 +305,10 @@ table, and the list of failures with their root cause + fix.
   `docs/bastion.md` appendices (see Phase 6) so learnings accrue across runs.
 - Prefer leaving the run detached + re-attaching via `RESUME_STAMP` over holding a
   fragile foreground SSH session.
+- **Don't let the background classifier stop the job mid-run.** A long detached
+  matrix has quiet stretches; never emit a completion / `result:` / "done" /
+  "failed" line until *every* combo is terminal and summarized. Each check-in, emit
+  a one-line "still working: N running / M done / K flaked" status and schedule the
+  next wake (see `references/resilient-monitoring.md`) rather than going silent.
+- **Progressive disclosure:** read a `references/*.md` file only when its mode
+  applies; don't load both for a plain run.
