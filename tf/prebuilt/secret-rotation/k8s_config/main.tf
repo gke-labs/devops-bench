@@ -54,5 +54,10 @@ resource "helm_release" "workloads" {
     value = var.namespace
   }
 
+  set {
+    name  = "secretName"
+    value = var.secret_id
+  }
+
   depends_on = [helm_release.external_secrets]
 }
