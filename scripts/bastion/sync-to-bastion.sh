@@ -34,7 +34,12 @@ cd "${REPO_ROOT}"
 # The subset the harness needs on the VM. Missing paths are skipped silently.
 PATHS=(
   devops_bench
+  pkg               # legacy arm (pkg/evaluator/evaluate.py etc.) for comparison runs
+  deployers         # legacy top-level deployers used by the legacy arm
+  skills            # judge/agent skill markdowns (legacy metrics read skills/*.md)
   pyproject.toml
+  README.md         # required by `pip install .` (pyproject readme = README.md)
+  LICENSE
   complextasks
   tasks
   tf
