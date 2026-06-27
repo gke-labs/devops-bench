@@ -1,5 +1,10 @@
-# Simple workflow for deploying static content to GitHub Pages
-name: Deploy static content to Pages
+# Build the site_new React/Vite dashboard and deploy it to GitHub Pages.
+#
+# Served from a project-repo subpath (https://<owner>.github.io/devops-bench/), so
+# the build is prefixed with VITE_BASE_PATH. Routed to the leaderboard-test
+# Firestore DB via `--mode staging` (build:staging). To switch to the production
+# `leaderboard` DB once validated, change `npm run build:staging` -> `npm run build`.
+name: Deploy site to Pages
 
 on:
   # Runs on pushes targeting the default branch
@@ -8,9 +13,6 @@ on:
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -25,22 +27,53 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./site_new
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: site_new/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # >>> DATABASE SWITCH <<<
+      # `build:staging` -> mode staging -> Firestore DB `leaderboard-test` (test data).
+      # To point the live site at PRODUCTION, change `build:staging` to `build`
+      # (mode production -> DB `leaderboard`). This is the ONLY line to change.
+      - name: Build (staging -> leaderboard-test)
+        run: npm run build:staging
+        env:
+          # Project repo serves at /<repo>/ — keep in sync with the repo name.
+          VITE_BASE_PATH: /devops-bench/
+
+      - name: Add SPA + Pages fallbacks
+        # GitHub Pages has no server-side rewrites: serve the SPA for deep links
+        # (e.g. /setup/:id) via a 404.html copy, and disable Jekyll processing.
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload only the site directory
-          path: './site'
+          path: ./site_new/dist
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

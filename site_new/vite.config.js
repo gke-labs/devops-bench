@@ -3,6 +3,10 @@ import react from "@vitejs/plugin-react";
 
 // React SPA. Vitest config lives here too (jsdom env for component tests).
 export default defineConfig({
+    // Served from the domain root locally (`/`), but GitHub Pages serves a project
+    // repo from a subpath (e.g. `/devops-bench/`). The Pages workflow sets
+    // VITE_BASE_PATH so dev/preview stay at `/` while the deployed build is prefixed.
+    base: process.env.VITE_BASE_PATH || "/",
     plugins: [react()],
     build: {
         rollupOptions: {
