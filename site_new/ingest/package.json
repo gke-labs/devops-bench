@@ -1,0 +1,15 @@
+{
+  "name": "devops-bench-site-ingest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ingests real benchmark eval-results into the site_new Firestore collections.",
+  "scripts": {
+    "ingest": "node ingest.mjs",
+    "ingest:test": "FIRESTORE_DATABASE_ID=leaderboard-test node ingest.mjs",
+    "derive": "node derive.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

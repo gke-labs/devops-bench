@@ -22,7 +22,7 @@ export default defineConfig({
         environment: "jsdom",
         globals: true,
         setupFiles: ["./src/test/setup.js"],
-        // Include the Node-side seed tests (mjs) alongside the src tests.
-        include: ["src/**/*.test.{js,jsx}", "seed/**/*.test.mjs"]
+        // Include the Node-side seed + ingest tests (mjs) alongside the src tests.
+        include: ["src/**/*.test.{js,jsx}", "seed/**/*.test.mjs", "ingest/**/*.test.mjs"]
     }
 });

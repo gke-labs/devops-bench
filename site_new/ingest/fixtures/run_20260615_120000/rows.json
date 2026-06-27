@@ -1,0 +1,18 @@
+[
+  {
+    "setupId": "alpha-pro-gemini-cli-mcp-skills",
+    "model": "alpha-pro", "harness": "gemini-cli", "augmentation": ["mcp", "skills"],
+    "runId": "run_20260615_120000", "t": "2026-06-15T12:00:00Z",
+    "taskFolder": "get-app-architecture", "taskName": "Summarize Application Architecture",
+    "iteration": 0, "status": "success", "outcomeScore": 0.95, "toolScore": 0.9,
+    "latencySec": 11.8, "inputTokens": 8800, "outputTokens": 410
+  },
+  {
+    "setupId": "alpha-pro-gemini-cli-mcp-skills",
+    "model": "alpha-pro", "harness": "gemini-cli", "augmentation": ["mcp", "skills"],
+    "runId": "run_20260615_120000", "t": "2026-06-15T12:00:00Z",
+    "taskFolder": "get-app-architecture", "taskName": "Summarize Application Architecture",
+    "iteration": 1, "status": "success", "outcomeScore": 0.85, "toolScore": 0.8,
+    "latencySec": 12.0, "inputTokens": 8900, "outputTokens": 415
+  }
+]

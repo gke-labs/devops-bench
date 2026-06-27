@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "runId": "run_20260615_120000",
+  "t": "2026-06-15T12:00:00Z",
+  "setupId": "alpha-pro-gemini-cli-mcp-skills",
+  "model": "alpha-pro",
+  "harness": "gemini-cli",
+  "augmentation": ["mcp", "skills"]
+}
