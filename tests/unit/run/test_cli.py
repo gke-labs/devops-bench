@@ -86,6 +86,8 @@ def _result(results: list[dict[str, object]], tmp_path: Path) -> BenchmarkResult
         results=results,
         run_dir=tmp_path,
         results_path=tmp_path / "results.json",
+        rows_path=tmp_path / "rows.json",
+        manifest_path=tmp_path / "manifest.json",
     )
 
 

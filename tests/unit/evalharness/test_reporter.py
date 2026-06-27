@@ -55,6 +55,7 @@ _RESULTS_JSON_REQUIRED_KEYS: frozenset[str] = frozenset(
         "trajectory",
         "skills",
         "name",
+        "folder",
         "status",
         "error",
         "errors",
@@ -137,6 +138,83 @@ def test_reporter_writes_results_json_with_indented_payload(tmp_path: Path) -> N
     assert written == run_dir / "results.json"
     on_disk = json.loads(written.read_text())
     assert on_disk == payload
+
+
+def test_reporter_writes_rows_json(tmp_path: Path) -> None:
+    """``write_rows`` writes the flattened rows to ``rows.json`` verbatim."""
+    reporter = ResultReporter(results_root=tmp_path)
+    run_dir = reporter.new_run_dir()
+    rows = [{"setupId": "m-h", "taskName": "demo", "outcomeScore": 0.9}]
+
+    written = reporter.write_rows(run_dir, rows)
+
+    assert written == run_dir / "rows.json"
+    assert json.loads(written.read_text()) == rows
+
+
+def test_reporter_writes_manifest_json(tmp_path: Path) -> None:
+    """``write_manifest`` writes the run-level manifest to ``manifest.json``."""
+    reporter = ResultReporter(results_root=tmp_path)
+    run_dir = reporter.new_run_dir()
+    manifest = {"runId": run_dir.name, "model": "m", "augmentation": ["mcp"]}
+
+    written = reporter.write_manifest(run_dir, manifest)
+
+    assert written == run_dir / "manifest.json"
+    assert json.loads(written.read_text()) == manifest
+
+
+def test_write_run_artifacts_emits_rows_and_manifest(
+    isolated_env: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The harness flattens scored records into rows.json + manifest.json.
+
+    Drives the real ``_write_run_artifacts`` path so the bridge between the
+    harness records and the dashboard ``ResultRow`` contract is exercised
+    end-to-end: capabilities → augmentation, nested ``scores`` → flat
+    ``outcomeScore``, provider tokens → flat ``inputTokens``.
+    """
+    monkeypatch.setenv("AGENT_MODEL", "alpha-pro")
+    reporter = ResultReporter(results_root=tmp_path)
+    harness = DefaultHarness(
+        project_id="p", cluster_name="c", agent_type="gemini", reporter=reporter
+    )
+    run_dir = reporter.new_run_dir()
+    records = [
+        {
+            "name": "Rotate Secret",
+            "folder": "task_001",
+            "status": "success",
+            "latency": 12.0,
+            "tokens": {"input": 100, "output": 20},
+            "scores": {
+                "OutcomeValidity": {"score": 0.9, "success": True, "reason": "ok"},
+                "ToolInvocation": {"score": 0.6, "success": True, "reason": "ok"},
+            },
+        }
+    ]
+
+    harness._write_run_artifacts(run_dir, records)  # noqa: SLF001 - testing internals
+
+    manifest = json.loads((run_dir / "manifest.json").read_text())
+    assert manifest["model"] == "alpha-pro"
+    assert manifest["harness"] == "gemini"
+    # use_mcp defaults True (get_bool) and no skills granted -> ["mcp"].
+    assert manifest["augmentation"] == ["mcp"]
+    assert manifest["setupId"] == "alpha-pro-gemini-mcp"
+    assert manifest["runId"] == run_dir.name
+
+    rows = json.loads((run_dir / "rows.json").read_text())
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["taskFolder"] == "task_001"
+    assert row["taskName"] == "Rotate Secret"
+    assert row["outcomeScore"] == 0.9
+    assert row["toolScore"] == 0.6
+    assert row["inputTokens"] == 100
+    assert row["outputTokens"] == 20
+    assert row["iteration"] == 0
+    assert row["setupId"] == manifest["setupId"]
 
 
 def test_new_run_dir_returns_unique_path_under_root(tmp_path: Path) -> None:

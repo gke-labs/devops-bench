@@ -101,11 +101,17 @@ class BenchmarkResult:
         results: Per-task result dicts.
         run_dir: Directory holding the run's artifacts.
         results_path: Path of the written ``results.json``.
+        rows_path: Path of the flattened, ingest-ready ``rows.json``. The file is
+            written best-effort, so it may be absent if row emission failed.
+        manifest_path: Path of the run-level ``manifest.json`` (same best-effort
+            caveat as ``rows_path``).
     """
 
     results: list[dict[str, Any]]
     run_dir: Path
     results_path: Path
+    rows_path: Path
+    manifest_path: Path
 
 
 def run_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
@@ -162,4 +168,10 @@ def run_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
         run_dir = Path(config.results_root)
     results_path = run_dir / "results.json"
     _log.info("benchmark results written to %s", results_path)
-    return BenchmarkResult(results=results, run_dir=run_dir, results_path=results_path)
+    return BenchmarkResult(
+        results=results,
+        run_dir=run_dir,
+        results_path=results_path,
+        rows_path=run_dir / "rows.json",
+        manifest_path=run_dir / "manifest.json",
+    )

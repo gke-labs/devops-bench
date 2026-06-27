@@ -3,16 +3,21 @@
 // means "no filter" for that dimension. Shared by FilterBar (rendering) and
 // Leaderboard (filtering + counts) so the two never drift.
 
-import { AUGMENTATIONS } from "./vocab.js";
+import { augmentationLabel } from "./vocab.js";
 
 // Fresh filter state: one empty Set per group.
 export function emptyFilterState() {
-    return { model: new Set(), harness: new Set(), augmentation: new Set(), mcp: new Set() };
+    return { model: new Set(), harness: new Set(), augmentation: new Set() };
 }
 
 // Build the group definitions, with options derived from the LIVE setups so an
-// unused dimension value simply doesn't show a chip.
+// unused dimension value simply doesn't show a chip. Groups expose EITHER
+// `valueOf` (single scalar per setup, equality match) OR `valuesOf` (array of
+// tokens per setup, intersection match) — never both. See getFilteredSetups.
 export function buildFilterGroups(models, harnesses, setups) {
+    // Union of augmentation tokens present across setups, sorted so chip order
+    // is stable.
+    const augTokens = [...new Set(setups.flatMap(s => s.augmentation))].sort();
     return [
         {
             key: "model", label: "Model", tier: "primary",
@@ -30,28 +35,25 @@ export function buildFilterGroups(models, harnesses, setups) {
         },
         {
             key: "augmentation", label: "Augment", tier: "secondary",
-            valueOf: s => s.augmentation,
-            options: Object.keys(AUGMENTATIONS)
-                .filter(a => setups.some(s => s.augmentation === a))
-                .map(a => ({ value: a, text: AUGMENTATIONS[a] }))
-        },
-        {
-            key: "mcp", label: "MCP", tier: "secondary",
-            valueOf: s => (s.mcp ? "mcp" : "nomcp"),
-            options: [
-                setups.some(s => s.mcp) ? { value: "mcp", text: "MCP" } : null,
-                setups.some(s => !s.mcp) ? { value: "nomcp", text: "No MCP" } : null
-            ].filter(Boolean)
+            valuesOf: s => s.augmentation,
+            options: augTokens.map(token => ({ value: token, text: augmentationLabel(token) }))
         }
     ];
 }
 
-// The setups passing every active facet.
+// The setups passing every active facet. A group with `valueOf` matches by
+// equality on the scalar; a group with `valuesOf` matches when the setup's
+// token array INTERSECTS the selected set (OR within group). An empty group
+// selection matches everything.
 export function getFilteredSetups(setups, groups, filterState) {
     return setups.filter(setup =>
         groups.every(group => {
             const selected = filterState[group.key];
-            return selected.size === 0 || selected.has(group.valueOf(setup));
+            if (selected.size === 0) return true;
+            if (group.valuesOf) {
+                return group.valuesOf(setup).some(v => selected.has(v));
+            }
+            return selected.has(group.valueOf(setup));
         })
     );
 }

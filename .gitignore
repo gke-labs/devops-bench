@@ -2,7 +2,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 third_party/
-results/
+# Harness run output at the repo root (RESULTS_ROOT default). Anchored so it does
+# not also ignore source packages named ``results`` (e.g. devops_bench/results).
+/results/
 .deepeval/
 # Python tooling (uv / ruff)
 .venv/

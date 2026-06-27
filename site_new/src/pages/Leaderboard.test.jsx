@@ -16,14 +16,14 @@ const FIXTURE = {
     },
     setups: [
         {
-            id: "alpha-pro-gemini-cli-baseline", order: 0, model: "alpha-pro", harness: "gemini-cli",
-            mcp: false, augmentation: "baseline", color: "#3b82f6",
+            id: "alpha-pro-gemini-cli", order: 0, model: "alpha-pro", harness: "gemini-cli",
+            augmentation: [], color: "#3b82f6",
             tasks: [{ folder: "a", name: "A", scores: { pass1: 90, pass5: 95, passMax: 100 } }],
             history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: 90, pass5: 95, passMax: 100 } }]
         },
         {
-            id: "gamma-coder-openclaw-gca-mcp", order: 1, model: "gamma-coder", harness: "openclaw",
-            mcp: true, augmentation: "gca", color: "#ec4899",
+            id: "gamma-coder-openclaw-mcp-skills", order: 1, model: "gamma-coder", harness: "openclaw",
+            augmentation: ["mcp", "skills"], color: "#ec4899",
             tasks: [{ folder: "a", name: "A", scores: { pass1: 70, pass5: 75, passMax: 80 } }],
             history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: 70, pass5: 75, passMax: 80 } }]
         }

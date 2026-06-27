@@ -14,11 +14,10 @@ const harnesses = { "gemini-cli": { name: "Gemini CLI" } };
 
 function makeSetup(overrides = {}) {
     return {
-        id: "alpha-pro-gemini-cli-baseline",
+        id: "alpha-pro-gemini-cli",
         model: "alpha-pro",
         harness: "gemini-cli",
-        mcp: false,
-        augmentation: "baseline",
+        augmentation: [],
         color: "#3b82f6",
         tasks: [
             { folder: "a", name: "A", scores: { pass1: 90, pass5: 95, passMax: 100 } },
@@ -86,23 +85,28 @@ describe("formatRunDate", () => {
 });
 
 describe("setupLabel", () => {
-    it("leads with model × harness, then modifiers", () => {
+    it("leads with model × harness, then 'Baseline' when augmentation is empty", () => {
         expect(setupLabel(makeSetup(), models, harnesses)).toBe("Alpha Pro × Gemini CLI · Baseline");
     });
 
-    it("appends MCP and GCA when set", () => {
-        const s = makeSetup({ mcp: true, augmentation: "gca" });
-        expect(setupLabel(s, models, harnesses)).toBe("Alpha Pro × Gemini CLI · GCA + Skills · MCP");
+    it("appends one segment per augmentation token", () => {
+        const s = makeSetup({ augmentation: ["mcp", "skills"] });
+        expect(setupLabel(s, models, harnesses)).toBe("Alpha Pro × Gemini CLI · MCP · Skills");
+    });
+
+    it("title-cases unknown augmentation tokens", () => {
+        const s = makeSetup({ augmentation: ["rules"] });
+        expect(setupLabel(s, models, harnesses)).toBe("Alpha Pro × Gemini CLI · Rules");
     });
 });
 
 describe("setupTags", () => {
-    it("returns the augmentation chip only when no MCP", () => {
+    it("returns a single 'Baseline' chip when augmentation is empty", () => {
         expect(setupTags(makeSetup()).map(t => t.text)).toEqual(["Baseline"]);
     });
 
-    it("adds an MCP chip when mcp is true", () => {
-        expect(setupTags(makeSetup({ mcp: true })).map(t => t.text)).toEqual(["Baseline", "MCP"]);
+    it("returns one chip per augmentation token", () => {
+        expect(setupTags(makeSetup({ augmentation: ["mcp", "skills"] })).map(t => t.text)).toEqual(["MCP", "Skills"]);
     });
 });
 

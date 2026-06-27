@@ -2,10 +2,10 @@
 // Shared shape of the devops-bench leaderboard data — the canonical description
 // of what lives in Firestore, in two layers:
 //
-//   - the RAW `results` row    : source of truth, one per iteration (written by
-//                                the seeder / real ingest)
-//   - the DERIVED read-model   : `models` / `harnesses` / `setups`, the only
-//                                thing the dashboard reads
+//   - the RAW `rows.json` row : source of truth, one per iteration (written by
+//                               the Python eval harness)
+//   - the DERIVED read-model  : `models` / `harnesses` / `setups`, the only
+//                               thing the dashboard reads
 //
 // These interfaces are DOCUMENTATION, not runtime validation. Firestore is
 // schemaless and `doc.data()` is untyped, so a type here describes the INTENDED
@@ -27,8 +27,9 @@ export type MetricKey = "pass1" | "pass5" | "passMax";
 
 /**
  * Per-metric scores as percentages (0..100). `null` where a metric has no
- * scored data for the task/run — complete in mock data, potentially sparse once
- * real ingest data lands (the UI must treat these as nullable).
+ * scored data for the task/run. `pass5` and `passMax` are null today — they
+ * stay null until the harness produces multi-iteration runs (then `derive()`
+ * recomputes them from the same raw rows).
  */
 export type Scores = Record<MetricKey, number | null>;
 
@@ -73,8 +74,12 @@ export interface Setup {
     model: string;
     /** Key into HarnessMap. NOT enforced — a dangling id is possible. */
     harness: string;
-    mcp: boolean;
-    augmentation: "baseline" | "gca";
+    /**
+     * Capability tokens stacked on top of the base (model × harness) pairing,
+     * e.g. `["mcp", "skills"]`. Empty array means baseline. Order is not
+     * significant; the UI renders one badge per token.
+     */
+    augmentation: string[];
     /** Hex line/bar color, e.g. "#3b82f6". */
     color: string;
     tasks: Task[];
@@ -92,19 +97,20 @@ export interface BenchmarkData {
     setups: Setup[];
 }
 
-// --- raw source-of-truth row (`results` collection) --------------------------
+// --- raw source-of-truth row (`rows.json`) -----------------------------------
 //
-// One row per (setup × task × run × iteration). Carries the CONTINUOUS
-// `outcomeScore` (never a precomputed pass flag) so any future pass threshold /
-// pass@k formula stays computable; `derive()` turns these rows into the Setup
-// read-model above.
+// One row per (setup × task × run × iteration), emitted by the Python eval
+// harness into `rows.json`. Iteration is always 0 today (pass1-only); the
+// schema is already shaped for multi-iteration runs so pass@k stays
+// computable when the harness starts sampling. `derive()` turns these rows
+// into the Setup read-model above.
 
 export interface ResultRow {
     setupId: string;
     model: string;
     harness: string;
-    mcp: boolean;
-    augmentation: "baseline" | "gca";
+    /** Capability tokens active for this row, mirroring `Setup.augmentation`. */
+    augmentation: string[];
     /** run_YYYYMMDD_HHMMSS — matches results/run_<timestamp>/ on the producer. */
     runId: string;
     /** Run timestamp, ISO 8601. */
@@ -112,10 +118,15 @@ export interface ResultRow {
     taskFolder: string;
     taskName: string;
     iteration: number;
-    /** Judge score in [0,1]; an iteration passes when `>= PASS_THRESHOLD`. */
-    outcomeScore: number;
-    toolScore: number;
+    /** Terminal outcome of the run (the harness flags crashes/timeouts). */
+    status: "success" | "failed";
+    /** Judge score in [0,1]; an iteration passes when `>= PASS_THRESHOLD`. Null when unscored. */
+    outcomeScore: number | null;
+    /** Tool-use score in [0,1]; null when unscored. */
+    toolScore: number | null;
     latencySec: number;
-    inputTokens: number;
-    outputTokens: number;
+    /** Null when token usage was not captured. */
+    inputTokens: number | null;
+    /** Null when token usage was not captured. */
+    outputTokens: number | null;
 }

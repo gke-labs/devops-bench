@@ -205,6 +205,7 @@ def test_to_dict_roundtrip_fields():
     assert set(d) == {
         "id",
         "name",
+        "folder",
         "prompt",
         "expected_output",
         "retrieval_context",

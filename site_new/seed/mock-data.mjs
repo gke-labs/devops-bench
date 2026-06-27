@@ -72,16 +72,18 @@ const BASE_PROFILE = {
 };
 
 // Curated (model × harness) pairings — a representative subset, each shown as a
-// baseline-vs-GCA pair so both the model and harness axes are exercised.
+// baseline-vs-augmented pair so both the model and harness axes are exercised.
+// `augmentation` is the set of capability tokens stacked on the base pairing
+// (empty array = baseline).
 const SETUP_DEFS = [
-    { model: "alpha-pro",   harness: "gemini-cli", mcp: false, augmentation: "baseline" },
-    { model: "alpha-pro",   harness: "gemini-cli", mcp: true,  augmentation: "gca" },
-    { model: "alpha-pro",   harness: "api-loop",   mcp: false, augmentation: "baseline" },
-    { model: "alpha-pro",   harness: "api-loop",   mcp: true,  augmentation: "gca" },
-    { model: "beta-sonic",  harness: "openclaw",   mcp: false, augmentation: "baseline" },
-    { model: "beta-sonic",  harness: "openclaw",   mcp: true,  augmentation: "gca" },
-    { model: "gamma-coder", harness: "gemini-cli", mcp: false, augmentation: "baseline" },
-    { model: "gamma-coder", harness: "api-loop",   mcp: true,  augmentation: "gca" }
+    { model: "alpha-pro",   harness: "gemini-cli", augmentation: [] },
+    { model: "alpha-pro",   harness: "gemini-cli", augmentation: ["mcp", "skills"] },
+    { model: "alpha-pro",   harness: "api-loop",   augmentation: [] },
+    { model: "alpha-pro",   harness: "api-loop",   augmentation: ["mcp", "skills"] },
+    { model: "beta-sonic",  harness: "openclaw",   augmentation: [] },
+    { model: "beta-sonic",  harness: "openclaw",   augmentation: ["mcp", "skills"] },
+    { model: "gamma-coder", harness: "gemini-cli", augmentation: [] },
+    { model: "gamma-coder", harness: "api-loop",   augmentation: ["mcp", "skills"] }
 ];
 
 // One distinct line/bar color per setup.
@@ -117,8 +119,12 @@ function makeRng(seed) {
 }
 
 function setupId(def) {
-    return `${def.model}-${def.harness}-${def.augmentation}${def.mcp ? "-mcp" : ""}`
-        .replace(/[^a-z0-9-]/gi, "");
+    // Sort augmentation tokens so the id is stable regardless of input order.
+    // Empty augmentation → "<model>-<harness>" (no trailing dash).
+    const augPart = def.augmentation.length
+        ? `-${def.augmentation.slice().sort().join("-")}`
+        : "";
+    return `${def.model}-${def.harness}${augPart}`.replace(/[^a-z0-9-]/gi, "");
 }
 
 function runId(t) {
@@ -137,7 +143,7 @@ export function generateRaw() {
     SETUP_DEFS.forEach((def, i) => {
         const id = setupId(def);
         const base = BASE_PROFILE[def.model];
-        const augDelta = def.augmentation === "gca" ? 5 : 0;            // GCA + skills lift
+        const augDelta = def.augmentation.includes("skills") ? 5 : 0;       // skills lift
         const harnessDelta = harnesses[def.harness].type === "cli" ? 1 : 0;  // runner lift
         const delta = augDelta + harnessDelta;
 
@@ -168,13 +174,13 @@ export function generateRaw() {
                         setupId: id,
                         model: def.model,
                         harness: def.harness,
-                        mcp: def.mcp,
                         augmentation: def.augmentation,
                         runId: runId(t),
                         t: t,
                         taskFolder: task.folder,
                         taskName: task.name,
                         iteration: iter,
+                        status: "success",
                         outcomeScore: round(outcomeScore, 4),
                         toolScore: round(Math.min(1, outcomeScore + rng() * 0.1), 4),
                         latencySec: round(20 + rng() * 60, 2),
@@ -214,20 +220,26 @@ export function passAtK(n, c, k) {
 }
 
 // Compute {pass1, pass5, passMax} (as percentages) for a list of iteration rows
-// that all belong to the same (setup, task, run).
+// that all belong to the same (setup, task, run). pass5/passMax stay null until
+// the harness produces multi-iteration runs — passAtK() and K are kept
+// (re-enable here when that lands; nothing about the formula needs to change).
 function scoresFor(rows) {
     const n = rows.length;
-    const c = rows.filter(r => r.outcomeScore >= PASS_THRESHOLD).length;
+    const c = rows.filter(r => r.outcomeScore != null && r.outcomeScore >= PASS_THRESHOLD).length;
     return {
         pass1: round((c / n) * 100, 1),
-        pass5: round(passAtK(n, c, K) * 100, 1),
-        passMax: round(passAtK(n, c, n) * 100, 1) // pass@n = "ever passed"
+        pass5: null,
+        passMax: null
     };
 }
 
-// Mean over a list of score objects, per metric.
+// Mean over a list of score objects, per metric. Skips nulls so a metric with
+// no scored entries comes back as null instead of NaN.
 function meanScores(scoreList) {
-    const avg = m => round(scoreList.reduce((s, x) => s + x[m], 0) / scoreList.length, 1);
+    const avg = m => {
+        const vals = scoreList.map(x => x[m]).filter(v => v != null);
+        return vals.length ? round(vals.reduce((s, v) => s + v, 0) / vals.length, 1) : null;
+    };
     return { pass1: avg("pass1"), pass5: avg("pass5"), passMax: avg("passMax") };
 }
 
@@ -276,8 +288,7 @@ export function derive(rows) {
             order: i,
             model: def.model,
             harness: def.harness,
-            mcp: def.mcp,
-            augmentation: def.augmentation,
+            augmentation: def.augmentation.slice(),
             color: PALETTE[i % PALETTE.length],
             tasks,
             history

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import copy
+import datetime
 import importlib
 import json
 import os
@@ -542,7 +543,54 @@ class DefaultHarness(Harness):
             _log.exception(
                 "scoring failed; returning unscored execution results from %s", run_dir
             )
+
+        # Emit the flattened, ingest-ready rows + run manifest. Best-effort: the
+        # detailed results.json is already on disk, so a failure here must not
+        # sink the run.
+        try:
+            self._write_run_artifacts(run_dir, detailed_results)
+        except Exception:  # noqa: BLE001 - rows/manifest are derived, never load-bearing
+            _log.exception("failed to write rows.json/manifest.json for %s", run_dir)
         return detailed_results
+
+    def _write_run_artifacts(
+        self, run_dir: Path, detailed_results: list[dict[str, Any]]
+    ) -> None:
+        """Flatten ``detailed_results`` into ``rows.json`` + ``manifest.json``.
+
+        Assembles the run-level :class:`~devops_bench.results.Manifest` from the
+        harness's resolved model / harness key / capabilities, flattens every
+        record through :func:`~devops_bench.results.build_rows`, and writes both
+        artifacts via the reporter.
+
+        Args:
+            run_dir: The run directory the artifacts are written under.
+            detailed_results: The scored per-task records.
+        """
+        from devops_bench.results import (
+            SCHEMA_VERSION,
+            Manifest,
+            build_rows,
+            derive_augmentation,
+        )
+        from devops_bench.results import setup_id as results_setup_id
+
+        augmentation = derive_augmentation(
+            {"use_mcp": self.use_mcp, "skills": list(self._granted_skill_paths)}
+        )
+        model = self._agent_config.model or self._agent_config.provider or self.agent_type
+        manifest = Manifest(
+            schema_version=SCHEMA_VERSION,
+            run_id=run_dir.name,
+            t=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            setup_id=results_setup_id(model, self.agent_type, augmentation),
+            model=model,
+            harness=self.agent_type,
+            augmentation=augmentation,
+        )
+        rows = build_rows(detailed_results, manifest)
+        self.reporter.write_rows(run_dir, [row.to_dict() for row in rows])
+        self.reporter.write_manifest(run_dir, manifest.to_dict())
 
     def _run_one(self, task: Task, run_dir: Path) -> dict[str, Any]:
         """Provision, run the agent, collect artifacts, tear down for one task.
@@ -663,6 +711,7 @@ class DefaultHarness(Harness):
             "trajectory",
             "skills",
             "name",
+            "folder",
             "status",
             "error",
             "errors",
@@ -798,6 +847,7 @@ class DefaultHarness(Harness):
             "trajectory": [],
             "skills": list(self._granted_skill_paths),
             "name": task.name,
+            "folder": task.folder,
             "status": "",
             "error": None,
             "errors": [],

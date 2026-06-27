@@ -25,7 +25,7 @@ function makeBenchmark(overrides = {}) {
         setups: [
             {
                 id: SETUP_ID, order: 0, model: "alpha-pro", harness: "gemini-cli",
-                mcp: false, augmentation: "baseline", color: "#3b82f6",
+                augmentation: [], color: "#3b82f6",
                 tasks: [
                     { folder: "a", name: "Apple", scores: { pass1: 60, pass5: 65, passMax: 70 } },
                     { folder: "b", name: "Banana", scores: { pass1: 90, pass5: 95, passMax: 100 } },
@@ -84,7 +84,7 @@ describe("Detail", () => {
         benchmark = makeBenchmark({
             setups: [{
                 id: SETUP_ID, order: 0, model: "alpha-pro", harness: "gemini-cli",
-                mcp: false, augmentation: "baseline", color: "#3b82f6",
+                augmentation: [], color: "#3b82f6",
                 tasks: [
                     { folder: "a", name: "Apple", scores: { pass1: 80, pass5: 1, passMax: 1 } },
                     { folder: "b", name: "Banana", scores: { pass1: 60, pass5: 1, passMax: 1 } },
@@ -105,7 +105,7 @@ describe("Detail", () => {
         benchmark = makeBenchmark({
             setups: [{
                 id: SETUP_ID, order: 0, model: "alpha-pro", harness: "gemini-cli",
-                mcp: false, augmentation: "baseline", color: "#3b82f6",
+                augmentation: [], color: "#3b82f6",
                 tasks: [
                     { folder: "a", name: "Apple", scores: { pass1: null, pass5: 1, passMax: 1 } },
                     { folder: "b", name: "Banana", scores: { pass5: 1, passMax: 1 } } // pass1 absent

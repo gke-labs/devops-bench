@@ -51,11 +51,12 @@ describe("derive", () => {
         for (const s of setups) expect(s.tasks).toHaveLength(12);
     });
 
-    it("keeps pass1 <= pass5 <= passMax for every task", () => {
+    it("yields a numeric pass1 and null pass5/passMax per task (pass1-only today)", () => {
         for (const s of setups) {
             for (const t of s.tasks) {
-                expect(t.scores.pass1).toBeLessThanOrEqual(t.scores.pass5 + 1e-9);
-                expect(t.scores.pass5).toBeLessThanOrEqual(t.scores.passMax + 1e-9);
+                expect(typeof t.scores.pass1).toBe("number");
+                expect(t.scores.pass5).toBeNull();
+                expect(t.scores.passMax).toBeNull();
             }
         }
     });

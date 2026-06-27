@@ -7,7 +7,7 @@
 // so it stays a pure, easily-tested function.
 // =============================================================================
 
-import { AUGMENTATIONS } from "./vocab.js";
+import { AUGMENTATIONS, augmentationLabel } from "./vocab.js";
 
 /**
  * @typedef {import('./schema').Setup} Setup
@@ -16,8 +16,16 @@ import { AUGMENTATIONS } from "./vocab.js";
  * @typedef {import('./schema').MetricKey} MetricKey
  */
 
+// Per-augmentation chip style. Tokens not listed here use the neutral fallback.
+const AUG_TAG_CLS = {
+    skills: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100",
+    mcp: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
+};
+const AUG_TAG_FALLBACK = "bg-slate-100 text-slate-500";
+
 // Full label distinguishing a setup. Leads with the first-class pairing
-// (model × harness), then the secondary modifiers. Used by the chart legend.
+// (model × harness), then one segment per augmentation token (or "Baseline"
+// when the augmentation array is empty). Used by the chart legend.
 /**
  * @param {Setup} setup
  * @param {ModelMap} models
@@ -26,24 +34,25 @@ import { AUGMENTATIONS } from "./vocab.js";
  */
 export function setupLabel(setup, models, harnesses) {
     const parts = [`${models[setup.model].name} × ${harnesses[setup.harness].name}`];
-    parts.push(AUGMENTATIONS[setup.augmentation]);
-    if (setup.mcp) parts.push("MCP");
+    if (setup.augmentation.length) {
+        for (const token of setup.augmentation) parts.push(augmentationLabel(token));
+    } else {
+        parts.push(AUGMENTATIONS.baseline);
+    }
     return parts.join(" · ");
 }
 
-// Secondary modifier chips (augmentation + mcp). The harness type chip is built
-// separately at the call site because it needs the per-harness accent color.
+// Secondary modifier chips — one per augmentation token, or a single neutral
+// "Baseline" chip when the augmentation array is empty. The harness type chip
+// is built separately at the call site (it needs the per-harness accent color).
 export function setupTags(setup) {
-    const tags = [
-        {
-            text: AUGMENTATIONS[setup.augmentation],
-            cls: setup.augmentation === "gca"
-                ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100"
-                : "bg-slate-100 text-slate-500"
-        }
-    ];
-    if (setup.mcp) tags.push({ text: "MCP", cls: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100" });
-    return tags;
+    if (!setup.augmentation.length) {
+        return [{ text: AUGMENTATIONS.baseline, cls: AUG_TAG_FALLBACK }];
+    }
+    return setup.augmentation.map(token => ({
+        text: augmentationLabel(token),
+        cls: AUG_TAG_CLS[token] ?? AUG_TAG_FALLBACK
+    }));
 }
 
 // Aggregated headline score for a setup under the selected metric. Mean over

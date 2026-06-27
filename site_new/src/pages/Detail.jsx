@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useBenchmark } from "../context/BenchmarkContext.jsx";
 import { setupScore, setupLabel } from "../lib/accessors.js";
-import { METRIC_LABELS } from "../lib/vocab.js";
+import { METRIC_LABELS, availableMetrics } from "../lib/vocab.js";
 import { SetupIdentity } from "../components/SetupIdentity.jsx";
 import { MetricToggle } from "../components/MetricToggle.jsx";
 import { TrendChart } from "../components/TrendChart.jsx";
@@ -100,6 +100,7 @@ export function Detail() {
     );
 
     const setup = useMemo(() => setups.find(s => s.id === id) || null, [setups, id]);
+    const available = useMemo(() => (setup ? availableMetrics([setup]) : []), [setup]);
 
     useEffect(() => {
         document.title = setup
@@ -157,7 +158,7 @@ export function Detail() {
                             <span className="text-4xl font-bold text-slate-900">{score.toFixed(1)}<span className="text-2xl">%</span></span>
                             <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">{METRIC_LABELS[metric]}</span>
                         </div>
-                        <MetricToggle value={metric} onChange={setMetric} />
+                        <MetricToggle value={metric} onChange={setMetric} available={available} />
                     </div>
                 </div>
 

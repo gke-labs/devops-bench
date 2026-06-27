@@ -103,6 +103,8 @@ def test_returns_benchmark_result(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert result.results == _CANNED_RESULTS
     assert result.run_dir.parent == tmp_path
     assert result.results_path == result.run_dir / "results.json"
+    assert result.rows_path == result.run_dir / "rows.json"
+    assert result.manifest_path == result.run_dir / "manifest.json"
 
 
 def test_infra_enabled_missing_project_cluster_raises(

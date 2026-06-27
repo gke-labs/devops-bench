@@ -87,8 +87,21 @@ def test_field_defaults_missing_id_and_name(tmp_path):
     assert len(tasks) == 1
     assert tasks[0].id == ""
     assert tasks[0].name == "the-dir-name"
+    # folder is the directory holding task.yaml, independent of the name field.
+    assert tasks[0].folder == "the-dir-name"
     assert tasks[0].prompt == "padded prompt"
     assert tasks[0].expected_output == "padded"
+
+
+def test_folder_is_task_directory_not_name(tmp_path):
+    # An explicit name does not change folder; folder tracks the directory.
+    _write(
+        tmp_path / "group" / "task_001" / "task.yaml",
+        'task_id: 7\nname: "Human Readable"\nprompt: "p"\n',
+    )
+    tasks = load_from_tasks_dir(str(tmp_path))
+    assert tasks[0].name == "Human Readable"
+    assert tasks[0].folder == "task_001"
 
 
 def test_goal_alias_in_dir_load(tmp_path):
@@ -177,6 +190,8 @@ def test_load_single_yaml_file(tmp_path):
     assert len(tasks) == 1
     assert tasks[0].id == "11"
     assert tasks[0].name == "single"
+    # A single spec file has no task directory; folder falls back to the stem.
+    assert tasks[0].folder == "case"
     assert tasks[0].prompt == "hi"
 
 

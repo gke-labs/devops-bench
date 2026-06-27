@@ -34,6 +34,8 @@ __all__ = ["ResultReporter"]
 _log = get_logger("evalharness.reporter")
 
 _RESULTS_FILENAME = "results.json"
+_ROWS_FILENAME = "rows.json"
+_MANIFEST_FILENAME = "manifest.json"
 
 
 class ResultReporter:
@@ -91,4 +93,43 @@ class ResultReporter:
         with open(path, "w") as f:
             json.dump(results, f, indent=2)
         _log.info("wrote results.json with %d entries to %s", len(results), path)
+        return path
+
+    def write_rows(self, run_dir: str | os.PathLike[str], rows: list[dict[str, Any]]) -> Path:
+        """Write flattened ingest rows to ``<run_dir>/rows.json`` and return the path.
+
+        ``rows`` is the dashboard-facing ``ResultRow`` contract (one entry per
+        ``(setup × task × run × iteration)``), already converted to dicts via
+        ``ResultRow.to_dict()``.
+
+        Args:
+            run_dir: Run directory previously returned by :meth:`new_run_dir`.
+            rows: Flattened result rows already shaped to the on-disk schema.
+
+        Returns:
+            The path of the JSON file written.
+        """
+        path = Path(run_dir) / _ROWS_FILENAME
+        with open(path, "w") as f:
+            json.dump(rows, f, indent=2)
+        _log.info("wrote rows.json with %d rows to %s", len(rows), path)
+        return path
+
+    def write_manifest(
+        self, run_dir: str | os.PathLike[str], manifest: dict[str, Any]
+    ) -> Path:
+        """Write the run-level manifest to ``<run_dir>/manifest.json``.
+
+        Args:
+            run_dir: Run directory previously returned by :meth:`new_run_dir`.
+            manifest: Run-level identity already converted via
+                ``Manifest.to_dict()``.
+
+        Returns:
+            The path of the JSON file written.
+        """
+        path = Path(run_dir) / _MANIFEST_FILENAME
+        with open(path, "w") as f:
+            json.dump(manifest, f, indent=2)
+        _log.info("wrote manifest.json to %s", path)
         return path

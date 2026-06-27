@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { useBenchmark } from "../context/BenchmarkContext.jsx";
 import { buildFilterGroups, getFilteredSetups, emptyFilterState } from "../lib/filters.js";
 import { setupScore } from "../lib/accessors.js";
+import { availableMetrics } from "../lib/vocab.js";
 import { FilterBar } from "../components/FilterBar.jsx";
 import { LeaderboardRow } from "../components/LeaderboardRow.jsx";
 import { MetricToggle } from "../components/MetricToggle.jsx";
@@ -18,6 +19,7 @@ export function Leaderboard() {
     const [filterState, setFilterState] = useState(emptyFilterState);
 
     const groups = useMemo(() => buildFilterGroups(models, harnesses, setups), [models, harnesses, setups]);
+    const available = useMemo(() => availableMetrics(setups), [setups]);
 
     const filtered = useMemo(
         () => getFilteredSetups(setups, groups, filterState),
@@ -92,7 +94,7 @@ export function Leaderboard() {
                                 </div>
                             </div>
                         </div>
-                        <MetricToggle value={metric} onChange={setMetric} />
+                        <MetricToggle value={metric} onChange={setMetric} available={available} />
                     </div>
                 </div>
 

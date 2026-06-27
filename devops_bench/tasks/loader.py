@@ -60,12 +60,13 @@ def _sort_key(task: Task) -> tuple[int, int | str]:
     return (0, int(text)) if text.isdigit() else (1, text)
 
 
-def _load_yaml_task(path: Path, name_default: str) -> Task | None:
+def _load_yaml_task(path: Path, name_default: str, folder: str = "") -> Task | None:
     """Read one YAML spec file into a Task, or None if it is not a mapping.
 
     Args:
         path: Path to the YAML spec file.
         name_default: Fallback name used when the spec omits one.
+        folder: Directory name recorded on the task's :attr:`~Task.folder`.
 
     Returns:
         The parsed task, or ``None`` when the document is not a mapping.
@@ -73,7 +74,7 @@ def _load_yaml_task(path: Path, name_default: str) -> Task | None:
     content = safe_parse_yaml(path.read_text())
     if not isinstance(content, dict):
         return None
-    return Task.from_dict(content, name_default=name_default)
+    return Task.from_dict(content, name_default=name_default, folder=folder)
 
 
 def load_from_tasks_dir(dir_path: str) -> list[Task]:
@@ -108,7 +109,9 @@ def load_from_tasks_dir(dir_path: str) -> list[Task]:
 
         yaml_path = current / _TASK_FILE
         try:
-            task = _load_yaml_task(yaml_path, name_default=current.name)
+            task = _load_yaml_task(
+                yaml_path, name_default=current.name, folder=current.name
+            )
             if task is not None:
                 if task.id and task.id in seen_ids:
                     _log.warning("duplicate task id %r at %s", task.id, yaml_path)
@@ -142,22 +145,25 @@ def _load_single_file(path: str) -> list[Task]:
     """
     spec = Path(path)
     name_default = spec.stem
+    # A single spec file has no backing task directory; fall back to the file
+    # stem so ``folder`` is still a stable, human-meaningful slug.
+    folder = spec.stem
 
     try:
         if spec.suffix in (".yaml", ".yml"):
-            task = _load_yaml_task(spec, name_default=name_default)
+            task = _load_yaml_task(spec, name_default=name_default, folder=folder)
             return [task] if task is not None else []
 
         raw = json.loads(spec.read_text())
 
         if isinstance(raw, dict):
-            return [Task.from_dict(raw, name_default=name_default)]
+            return [Task.from_dict(raw, name_default=name_default, folder=folder)]
         if isinstance(raw, list):
             tasks: list[Task] = []
             for idx, item in enumerate(raw):
                 if not isinstance(item, dict):
                     raise ConfigError(f"task spec {path}: JSON list element {idx} is not an object")
-                tasks.append(Task.from_dict(item, name_default=name_default))
+                tasks.append(Task.from_dict(item, name_default=name_default, folder=folder))
             return tasks
         return []
     except ConfigError:

@@ -14,14 +14,14 @@ const harnesses = { "gemini-cli": { name: "Gemini CLI" } };
 // B's first cell must render the "—" placeholder.
 const setups = [
     {
-        id: "a", model: "alpha-pro", harness: "gemini-cli", augmentation: "baseline", mcp: false, color: "#3b82f6",
+        id: "a", model: "alpha-pro", harness: "gemini-cli", augmentation: [], color: "#3b82f6",
         history: [
             { t: "2026-01-15T00:00:00Z", scores: { pass1: 70, pass5: 75, passMax: 80 } },
             { t: "2026-02-15T00:00:00Z", scores: { pass1: 80, pass5: 85, passMax: 90 } }
         ]
     },
     {
-        id: "b", model: "beta-sonic", harness: "gemini-cli", augmentation: "baseline", mcp: false, color: "#ec4899",
+        id: "b", model: "beta-sonic", harness: "gemini-cli", augmentation: [], color: "#ec4899",
         history: [
             { t: "2026-02-15T00:00:00Z", scores: { pass1: 90, pass5: 95, passMax: 100 } }
         ]
@@ -71,7 +71,7 @@ describe("TrendChart accessibility table", () => {
         // Regression: before the guard, a present run with a null metric crashed
         // on rec.scores[metric].toFixed(...). Now it must render the placeholder.
         const withNull = [{
-            id: "c", model: "alpha-pro", harness: "gemini-cli", augmentation: "baseline", mcp: false, color: "#3b82f6",
+            id: "c", model: "alpha-pro", harness: "gemini-cli", augmentation: [], color: "#3b82f6",
             history: [
                 { t: "2026-01-15T00:00:00Z", scores: { pass1: null, pass5: 50, passMax: 60 } },
                 { t: "2026-02-15T00:00:00Z", scores: { pass1: 88, pass5: 90, passMax: 95 } }
