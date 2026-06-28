@@ -1,4 +1,4 @@
-task_id: 3
+task_id: 19
 name: "cp-recovery"
 # KIND-ONLY EXCEPTION to the all-GKE matrix. This task performs control-plane
 # surgery (diagnose a corrupted etcd member, verify a staged snapshot, restore
