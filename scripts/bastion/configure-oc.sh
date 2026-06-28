@@ -81,11 +81,9 @@ else
 fi
 
 # --- 1b. google-genai catalog overrides ------------------------------------- #
-# Register models oc's built-in catalog doesn't ship (e.g. gemini-3.5-flash)
-# under the google (google-genai) provider so the legacy arm can target
-# `google/<model>` over the API-key endpoint. The provider's transport is
-# built-in, so only the model + agent allowlist entries are added. Idempotent;
-# auth still flows from `oc models auth paste-api-key --provider google` above.
+# Register models oc doesn't ship (e.g. gemini-3.5-flash) under the google
+# (google-genai) provider so the legacy arm can target `google/<model>`.
+# Idempotent; auth flows from the `oc models auth` paste above.
 if [ -n "${GENAI_MODELS}" ]; then
   OC_CONFIG="${HOME}/.openclaw/openclaw.json" GENAI_MODELS="${GENAI_MODELS}" \
   python3 - <<'PY'
@@ -98,6 +96,7 @@ try:
 except FileNotFoundError:
     cfg = {}
 prov = cfg.setdefault("models", {}).setdefault("providers", {}).setdefault("google", {})
+prov["api"] = "google-generative-ai"  # replaces built-in entry; pin transport
 prov.setdefault("models", [])
 existing = {m.get("id") for m in prov["models"] if isinstance(m, dict)}
 for m in models:

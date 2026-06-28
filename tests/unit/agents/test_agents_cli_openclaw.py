@@ -577,13 +577,16 @@ def test_model_override_empty_when_no_model():
     assert _build_model_override(AgentConfig()) == {}
 
 
-def test_model_override_genai_registers_under_google_provider():
-    """google-genai: catalog entry + allowlist under the built-in google provider,
-    with no transport pinned (oc's google provider carries its own)."""
+def test_model_override_genai_pins_generative_ai_transport():
+    """google-genai: the entry pins ``api: google-generative-ai`` so oc routes it
+    through the google-genai transport (a per-run provider entry replaces oc's
+    built-in one, so the transport must be carried) and needs no ``baseUrl``.
+    Allowlists ``google/<model>``."""
     override = _build_model_override(AgentConfig(model="gemini-3.5-flash", provider="google"))
     google = override["models"]["providers"]["google"]
-    assert google == {"models": [{"id": "gemini-3.5-flash", "name": "gemini-3.5-flash"}]}
-    assert "api" not in google and "baseUrl" not in google
+    assert google["api"] == "google-generative-ai"
+    assert "baseUrl" not in google
+    assert google["models"] == [{"id": "gemini-3.5-flash", "name": "gemini-3.5-flash"}]
     assert override["agents"]["defaults"]["models"] == {"google/gemini-3.5-flash": {}}
 
 

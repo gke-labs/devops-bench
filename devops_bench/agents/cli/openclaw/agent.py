@@ -89,20 +89,18 @@ _OPENCLAW_STATE_DIRNAME = "state"
 _OPENCLAW_SKILLS_DIRNAME = "skills"
 _OPENCLAW_CONFIG_FILE = "openclaw.json"
 
-# Bare model ids (the part after the ``provider/`` prefix) that openclaw's
-# built-in catalog doesn't ship. ``oc agent --model provider/id`` aborts on an
-# unknown id unless the provider's catalog is patched; for these the harness
-# registers a catalog entry in the per-run isolated ``openclaw.json`` instead of
-# relying on a global ``oc models``/``configure-oc.sh`` step (which races across
-# parallel runs and pollutes the operator's config).
+# Bare model ids (the part after ``provider/``) absent from openclaw's built-in
+# catalog; the harness registers these per-run (see :func:`_build_model_override`).
 _CATALOG_OVERRIDES: frozenset[str] = frozenset({"gemini-3.5-flash"})
 
-# Providers that need an explicit transport so oc routes them correctly. The
-# built-in ``google`` (google-genai) provider already carries its transport, so
-# only the Vertex provider is listed: without ``api: google-vertex`` oc falls
-# back to the OpenAI transport and 401s. ``{location}`` is expanded by oc from
-# its transport location (``GOOGLE_CLOUD_LOCATION``), so it stays a literal here.
+# Transport each per-run provider entry must pin: such an entry *replaces* oc's
+# built-in provider rather than merging, so without ``api`` oc falls back to the
+# OpenAI transport and 401s. ``google`` needs no ``baseUrl``; for ``google-vertex``
+# ``{location}`` is expanded by oc, so it stays literal here.
 _PROVIDER_TRANSPORT: dict[str, dict[str, str]] = {
+    "google": {
+        "api": "google-generative-ai",
+    },
     "google-vertex": {
         "api": "google-vertex",
         "baseUrl": "https://{location}-aiplatform.googleapis.com",
@@ -152,8 +150,9 @@ def _build_model_override(config: AgentConfig) -> dict:
     The entry is provider-agnostic across Google's two backends: the provider is
     read from the resolved oc model id, so the *same* model id works on
     ``google`` (google-genai, API key) or ``google-vertex`` (Vertex AI, ADC) by
-    flipping ``config.provider`` alone. Vertex needs its transport pinned (see
-    :data:`_PROVIDER_TRANSPORT`); the built-in google provider does not.
+    flipping ``config.provider`` alone. Both pin their transport (see
+    :data:`_PROVIDER_TRANSPORT`) because a per-run provider entry replaces oc's
+    built-in one rather than merging into it.
 
     No auth is written here — it flows from the env: an API key
     (``GEMINI_API_KEY``/``GOOGLE_API_KEY``) for google-genai, or, when no key is
