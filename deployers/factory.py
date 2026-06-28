@@ -21,10 +21,10 @@ class NoOpDeployer(Deployer):
         self._project_id = project_id
 
     def up(self) -> None:
-        print("[NoOpDeployer] Skipping infrastructure provisioning (BENCH_NO_INFRA=true)")
+        print("[NoOpDeployer] Skipping infrastructure provisioning (deployer: noop / BENCH_NO_INFRA)")
 
     def down(self) -> None:
-        print("[NoOpDeployer] Skipping infrastructure teardown (BENCH_NO_INFRA=true)")
+        print("[NoOpDeployer] Skipping infrastructure teardown (deployer: noop / BENCH_NO_INFRA)")
 
     def get_cluster_info(self) -> Dict[str, Any]:
         return {
@@ -55,7 +55,12 @@ def get_deployer(
         else:
             deployer_type = "tofu"
 
-    if os.environ.get("BENCH_NO_INFRA", "false").lower() == "true":
+    # Skip provisioning when the task declares ``deployer: noop`` (e.g.
+    # manifest-generation tasks that never touch a cluster) or when
+    # ``BENCH_NO_INFRA=true`` overrides any config (run against existing infra).
+    # Mirrors the refactored arm (devops_bench/deployers/factory.py); without the
+    # ``noop`` check a noop task would fall through to the GCPDeployer below.
+    if deployer_type == "noop" or os.environ.get("BENCH_NO_INFRA", "false").lower() == "true":
         return NoOpDeployer(cluster_name=global_cluster_name, project_id=global_project_id)
 
     # Resolve Location with strict precedence: argument then GCP_LOCATION env var
