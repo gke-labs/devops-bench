@@ -22,7 +22,7 @@ export BASTION_USE_GCPNODE=1 BASTION_VM=bench-bastion \
        BASTION_ZONE=us-central1-a BASTION_PROJECT=<proj> GCP_PROJECT_ID=<proj>
 
 # --- API-key mode (secrets.env supplies GEMINI_API_KEY etc.) ---
-MATRIX_TASKS="complextasks/secret-rotation/task.yaml" \
+MATRIX_TASKS="tasks/gcp/secret-rotation/task.yaml" \
 MATRIX_MODELS="gemini-3.1-pro-preview" \
 MATRIX_AGENT_CONFIGS="gcli+mcp+skills" \
   scripts/bastion/run_matrix.sh                       # refactored arm
@@ -33,7 +33,7 @@ MATRIX_MODELS="gemini-3.1-pro-preview" \
 # one-time per bastion: vm-setup.sh (gemini folder-trust) + configure-oc.sh --vertex
 BENCH_VERTEX=1 AGENT_PROVIDER=google-vertex \
 JUDGE_PROVIDER=google JUDGE_MODEL=gemini-3.1-pro-preview \
-MATRIX_TASKS="complextasks/secret-rotation/task.yaml" \
+MATRIX_TASKS="tasks/gcp/secret-rotation/task.yaml" \
 MATRIX_MODELS="gemini-3.5-flash" \
 MATRIX_AGENT_CONFIGS="gcli+mcp+skills" \
   scripts/bastion/run_matrix.sh

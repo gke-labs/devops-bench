@@ -20,7 +20,7 @@
 #   podman run --rm \
 #     -v "$(pwd)/results:/app/results" \
 #     -e JUDGE_PROVIDER=ollama -e JUDGE_MODEL=llama3 \
-#     devops-bench-harness:latest tasks/gcp/create-deployment/task.yaml --no-infra
+#     devops-bench-harness:latest tasks/noop/create-deployment/task.yaml --no-infra
 
 FROM debian:trixie-slim
 

@@ -94,7 +94,7 @@ isolation from PR #N"), fetch that PR's relevant files too, so you review the
 
 Bucket each changed file so you apply the right lens (a PR often spans several):
 
-- **Task spec** — `complextasks/*/task.yaml`, `tasks/**/task.yaml` -> Lens C + B.
+- **Task spec** — `tasks/**/task.yaml` -> Lens C + B.
 - **TF stack / module** — `tf/prebuilt/**`, `tf/modules/**`, `*.tf`, seed/setup
   `scripts/*.sh` -> Lens B (heavily) + C + A.
 - **Harness / deployer / agent code** — `devops_bench/**`, `pkg/**`,
@@ -189,7 +189,7 @@ another.** For each shared-state suspect, ask which axis triggers it:
    "own" that binding, and the first `tofu destroy` strips it from the SA while the
    others are still running -> mid-run auth loss.
 5. **`task_id` uniqueness.** A new task must not reuse an existing `task_id`
-   (`grep -rn '^task_id' complextasks/ tasks/`). Duplicates make per-task scoring
+   (`grep -rn '^task_id' tasks/`). Duplicates make per-task scoring
    ambiguous when both run in one matrix.
 6. **Agent-created resources & host capacity.** If the task design relies on the
    agent creating clusters/resources at runtime, their names are agent-chosen

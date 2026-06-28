@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 MOCK_PORT="${MOCK_PORT:-11435}"
-TASK_FILE="tasks/generic/gateway-https-redirect/task.yaml"
+TASK_FILE="tasks/noop/gateway-https-redirect/task.yaml"
 
 echo "==> Starting mock Ollama server on port ${MOCK_PORT}"
 python3 scripts/mock_ollama_server.py "${MOCK_PORT}" &

@@ -6,7 +6,7 @@
 # `devops-bench` CLI. Arguments passed to `podman run`/`docker run`
 # after the image name are forwarded verbatim to the CLI, e.g.:
 #
-#   podman run ... devops-bench-harness:latest tasks/gcp/create-deployment/task.yaml --no-infra
+#   podman run ... devops-bench-harness:latest tasks/noop/create-deployment/task.yaml --no-infra
 #
 # If no positional task source is given, BENCH_SOURCE (or the legacy
 # BENCH_TASK_FILE) is used so the image is also drivable purely via env vars.
