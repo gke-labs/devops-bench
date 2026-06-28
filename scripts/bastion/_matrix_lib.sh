@@ -103,6 +103,32 @@ resolve_tasks() {
   fi
 }
 
+# Per-task extra env, ';'-prefixed so it appends onto an existing KVS list.
+# Some tasks need the harness integration contract (TARGET_DEPLOYMENT_NAME /
+# NAMESPACE) pinned so the prompt / chaos service_url / verification placeholders
+# match what the task's stack actually deployed. The harness reads these from the
+# environment and its defaults DIFFER across arms (refactored namespace "default"
+# vs legacy "production"), so they must be set explicitly here, not left to the
+# per-arm default. Emits nothing for tasks that don't need it.
+task_extra_env() {
+  case "$1" in
+    */optimize-scale/*) echo ";TARGET_DEPLOYMENT_NAME=scale-target;NAMESPACE=default" ;;
+    # Pre-seeded fixtures: pin NAMESPACE so the prompt's {{NAMESPACE}} resolves to
+    # the same namespace the stack deploys the fixture into, on BOTH arms (the
+    # harness default differs: refactored "default" vs legacy "production"). The
+    # value matches each stack's own namespace default.
+    */multi-region-failover/*)      echo ";NAMESPACE=storefront" ;;
+    */secret-rotation/*)            echo ";NAMESPACE=secret-rotation" ;;
+    */cp-recovery/*)                echo ";NAMESPACE=cp-recovery" ;;
+    */troubleshoot-unhealthy-pod/*) echo ";NAMESPACE=default" ;;
+    */gitops-auto-revert/*)         echo ";NAMESPACE=default" ;;
+    # No stack fixture (agent-created), but pin so legacy doesn't target a
+    # non-existent "production" namespace.
+    */deploy-postgres-web-app/*)    echo ";NAMESPACE=default" ;;
+    */debug-crashloop/*)            echo ";NAMESPACE=default" ;;
+  esac
+}
+
 # Poll until the remote .done marker appears. Resilient: a failed SSH check is
 # read as "not finished yet" and retried next tick, so brief drops don't abort
 # (the run itself is detached via nohup and unaffected). Arg: expected combo count.

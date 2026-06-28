@@ -37,7 +37,7 @@ while IFS= read -r task; do
   [ -n "${task}" ] || continue
   tname="$(basename "$(dirname "${task}")")"
   for model in ${MATRIX_MODELS}; do
-    kvs="AGENT_MODEL=${model};AGENT_PROVIDER=${AGENT_PROVIDER};${LEGACY_KVS}"
+    kvs="AGENT_MODEL=${model};AGENT_PROVIDER=${AGENT_PROVIDER};${LEGACY_KVS}$(task_extra_env "${task}")"
     rid="$(sanitize "${tname}")__$(sanitize "${model}")__legacy"
     COMBOS+=("${rid}|${task}|${kvs}|legacy")
   done
