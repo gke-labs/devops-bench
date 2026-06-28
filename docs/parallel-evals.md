@@ -156,6 +156,15 @@ and the `-preview` models.
 
 ## Agent capabilities (MCP + skills)
 
+> **Agent skills source.** `+skills` gives the agent the **operational gke-mcp
+> skills** (`gke-compute-class-creator`, `gke-workload-scaling`,
+> `gke-networking-edge`, `gke-productionize`, …) — `SKILLS_PATHS` defaults to
+> `$HOME/gke-mcp-repo/skills`, cloned by `vm-setup.sh`. Do **not** point it at
+> `~/oc-skills`, which holds the *judge rubric* markdown (the grader's criteria),
+> not operational skills — feeding those to the agent leaves `+skills` inert and
+> depresses manifest-task scores. The judge loads its rubrics separately from the
+> `devops_bench.skills` package, so the two never share a path.
+
 ### OpenClaw (legacy + refactored `oc` config)
 
 - **Refactored arm**: reads `AGENT_MCP_SERVER` (the `gke-mcp` binary) and
@@ -230,6 +239,26 @@ hard-wired to `oc`. For parallel gemini, use the refactored matrix.
 
 ## Operational runbook
 
+### Pre-flight (clean state before every run)
+
+The bastion is persistent, so prior runs leave state behind. Before launching a
+matrix (not just a single-task rerun), clear it — otherwise a fresh launch fails
+at `tofu plan` with *"could not locate any control plane nodes for cluster …"*
+(the per-run state dir under `/tmp/devops-bench-runs/` is keyed by
+`task__model__arm` and gets reused against an already-deleted cluster):
+
+```bash
+# Wipe ALL stale per-run state + leftover kind clusters/containers:
+ssh <bastion> 'rm -rf /tmp/devops-bench-runs/* ; \
+               for c in $(kind get clusters); do kind delete cluster --name "$c"; done ; \
+               docker rm -f $(docker ps -aq --filter name=-eval) 2>/dev/null || true'
+```
+
+Then confirm no leftover GCP resources from a failed prior teardown (see the
+[Teardown checklist](#teardown-checklist) for the full list — clusters,
+`gke-nodes-*` SAs, `db-credentials` secrets, `lus-net-*`/`ps-net-*` VPCs,
+`hello-app-*` AR repos).
+
 ### Launch
 
 Run a wrapper with the matrix env. **By default it runs locally** on the current
@@ -274,6 +303,19 @@ confirm nothing leaked — the node SAs are the easy-to-miss part:
 gcloud container clusters list --project <proj>
 gcloud iam service-accounts list --project <proj> | grep -E 'gke-nodes-|sa-secret-rotation-'
 gcloud secrets list --project <proj> | grep db-credentials
+# auto-mode VPCs left by Lustre/Parallelstore stacks (and their stuck firewall rules):
+gcloud compute networks list --project <proj> | grep -E 'lus-net-|ps-net-'
+gcloud lustre instances list --project <proj> --location=<zone> 2>/dev/null
+# agent-created Artifact Registry repos (e.g. deploy-hello-app):
+gcloud artifacts repositories list --project <proj> | grep -E 'hello-app-'
+```
+
+To remove a leaked auto-VPC whose delete is blocked by lingering firewall rules:
+
+```bash
+gcloud compute firewall-rules list --project <proj> --filter="network~<net>" --format='value(name)' \
+  | xargs -r -n1 gcloud compute firewall-rules delete --project <proj> --quiet
+gcloud compute networks delete <net> --project <proj> --quiet
 ```
 
 ---
@@ -295,6 +337,16 @@ gcloud secrets list --project <proj> | grep db-credentials
 | Standalone test sees stale code (`-e=""` after it was fixed) | bastion venv has an **installed** `devops_bench`; `python3 /tmp/x.py` imports it, not the synced source | run with `PYTHONPATH=$HOME/devops-bench`, or `python -m devops_bench` from the source dir (what the matrix does) |
 | Cluster re-create `409 already exists` (node SA) | `gke-nodes-<cluster>` SA is **not** random-suffixed; a failed teardown orphans it | delete orphan `gke-nodes-*` SAs; durable fix tracked (see below) |
 | SSH `exit 255` mid-run | transient gcpnode/cert blip | retry; the detached run is unaffected, re-attach with `RESUME_STAMP` |
+| kind task fails instantly: `docker: executable file not found in $PATH` | Docker not installed on the bastion (kind tasks run on the host) | install `docker.io`, start the daemon, grant the runner socket access (`setfacl -m u:$USER:rw /var/run/docker.sock` or the `docker` group + fresh login) |
+| Multi-node kind task fails: `failed to join node with kubeadm … exit status 1` | default `fs.inotify.max_user_instances` (128) is exhausted by a multi-node cluster (e.g. cp-recovery's HA control plane) | `sudo sysctl -w fs.inotify.max_user_instances=1280 fs.inotify.max_user_watches=1048576` (persist in `/etc/sysctl.d/`) |
+| GKE task `Error 403: <API> has not been used in project … or it is disabled` (e.g. `sqladmin`, `servicenetworking`) | a required GCP API isn't enabled in the eval project | `gcloud services enable <api>.googleapis.com`; wait a few min to propagate before retry (Cloud SQL → `sqladmin`; Parallelstore/Lustre peering → `servicenetworking`) |
+| Parallelstore task `Error 400: Project is not allowlisted for Parallelstore APIs` | Parallelstore needs a project allowlist (Google-side) | not fixable via IAM/API-enable — request allowlisting, or use the Managed Lustre CSI task instead |
+| kubectl/manifest parse error on `._<name>.yaml` (`control characters are not allowed`) | macOS `sync-to-bastion.sh` tar carried AppleDouble `._*` files into the synced tree | fixed in `sync-to-bastion.sh` (`COPYFILE_DISABLE=1` pack + `--no-xattrs` extract); clean leftovers with `find ~/devops-bench -name '._*' -delete` |
+| Task fails in ~2 min at `tofu plan`: `could not locate any control plane nodes for cluster '<hash>-eval'` | a prior run's per-run state under `/tmp/devops-bench-runs/<task>__<model>__<arm>` is reused and references a cluster that was already torn down | before a (re)run, wipe stale per-run state as part of cleaning the environment: `rm -rf /tmp/devops-bench-runs/*` and delete leftover kind clusters (`for c in $(kind get clusters); do kind delete cluster --name "$c"; done`) |
+| Agent run ends mid-trajectory with `Vertex AI API error (429): Resource exhausted` (`RESOURCE_EXHAUSTED`) | transient Vertex per-minute quota on long, high-token agentic runs (e.g. multi-region, cp-recovery use >1M input tokens) | not a model miss — retry the combo; if it recurs, lower `MAX_PARALLEL` or raise the Vertex quota |
+| Chaos `generate_load` fails with `NotRegisteredError: 'google-vertex' is not registered in the 'models' registry` under `BENCH_VERTEX` | the chaos model factory had no `google-vertex` provider (only `gemini`) | fixed: `google-vertex`/`google_vertex` are aliased to the gemini adapter (Vertex via env) in `devops_bench/models/base.py` |
+| Chaos `generate_load` fails with `kubectl port-forward exited early (code 1)` / load never registers (pod ~1m CPU) | the agent's deployment edit triggers a rolling update; the port-forward raced a not-Ready pod | fixed: the load now reaches the target via an **external LoadBalancer** Service (reachable from any runner), with a Ready-pod-wait + port-forward fallback (`scenario.py`, `chaos/faults/generate_load.py`) |
+| Lustre/Parallelstore task leaves a leaked auto-mode VPC (`lus-net-*` / `ps-net-*`) after teardown, but the combo still reports `exit=0` | GKE-created firewall rules (`network~<net>`) are deleted asynchronously and linger, blocking `tofu destroy` of the auto-VPC; the teardown error is logged but not fatal | the lustre stack now sweeps these firewall rules at destroy (a `null_resource` ordered cluster→sweep→network) + has a `delete` timeout. To clean a leftover manually: delete firewall rules matching `network~<net>` then `gcloud compute networks delete <net>` |
 
 ### SSH / environment gotchas
 

@@ -203,13 +203,14 @@ If the legacy arm needs capabilities, run `configure-oc.sh --mcp --skills`
    `fortio` binary on PATH (the chaos agent shells out to it for `generate_load`;
    without it the load spike silently no-ops). If anything is missing, run
    `scripts/bastion/vm-setup.sh`.
-5. **Clear stale per-run state before a RERUN of a task** (else `tofu plan` fails
-   with *"could not locate any control plane nodes for cluster …"* against a
-   deleted cluster, or a GitOps seed `rm -rf` trips on a leftover repo): the
-   per-run state dir is keyed by `task__model__arm`, so a prior aborted run's state
-   is reused. Wipe it:
+5. **Clear stale per-run state before EVERY run** (not just a single-task rerun).
+   On a persistent bastion the per-run state dir is keyed by `task__model__arm`,
+   so state from ANY prior run is reused — even a fresh full-matrix launch then
+   fails at `tofu plan` with *"could not locate any control plane nodes for cluster
+   …"* (against an already-deleted cluster), or a GitOps seed `rm -rf` trips on a
+   leftover repo. Wipe ALL of it (not just one task) up front:
    ```bash
-   ssh <bastion> 'rm -rf /tmp/devops-bench-runs/<task>__* ; \
+   ssh <bastion> 'rm -rf /tmp/devops-bench-runs/* ; \
                   for c in $(kind get clusters); do kind delete cluster --name "$c"; done'
    ```
    Also clear stale GitOps bare repos the seeds recreate
