@@ -195,6 +195,19 @@ def test_load_single_yaml_file(tmp_path):
     assert tasks[0].prompt == "hi"
 
 
+def test_single_task_yaml_file_folder_is_parent_dir(tmp_path):
+    # Loading a single ``<task-dir>/task.yaml`` (how the parallel matrix runs one
+    # task per process) must report the parent directory as the folder, not the
+    # literal ``"task"`` stem — mirroring the directory loader.
+    path = tmp_path / "secret-rotation" / "task.yaml"
+    _write(path, 'task_id: 7\nprompt: "p"\n')
+    tasks = FileSystemTaskLoader().load_tasks(str(path))
+    assert len(tasks) == 1
+    assert tasks[0].folder == "secret-rotation"
+    # name also falls back to the parent dir (not "task") when the spec omits one.
+    assert tasks[0].name == "secret-rotation"
+
+
 def test_load_single_json_file_object_with_goal_alias(tmp_path):
     path = tmp_path / "case.json"
     _write(

@@ -109,9 +109,7 @@ def load_from_tasks_dir(dir_path: str) -> list[Task]:
 
         yaml_path = current / _TASK_FILE
         try:
-            task = _load_yaml_task(
-                yaml_path, name_default=current.name, folder=current.name
-            )
+            task = _load_yaml_task(yaml_path, name_default=current.name, folder=current.name)
             if task is not None:
                 if task.id and task.id in seen_ids:
                     _log.warning("duplicate task id %r at %s", task.id, yaml_path)
@@ -144,10 +142,12 @@ def _load_single_file(path: str) -> list[Task]:
             always surface a clean ``ConfigError``.
     """
     spec = Path(path)
-    name_default = spec.stem
-    # A single spec file has no backing task directory; fall back to the file
-    # stem so ``folder`` is still a stable, human-meaningful slug.
-    folder = spec.stem
+    # A ``<task-dir>/task.yaml`` stem is just "task", so use the parent dir name
+    # for it (mirroring the directory loader); the parallel matrix loads one
+    # task.yaml per process. Other single specs fall back to the file stem.
+    base = spec.parent.name if spec.name == _TASK_FILE else spec.stem
+    name_default = base
+    folder = base
 
     try:
         if spec.suffix in (".yaml", ".yml"):
