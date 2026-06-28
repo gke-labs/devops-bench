@@ -174,6 +174,21 @@ and the `-preview` models.
   `scripts/bastion/configure-oc.sh --mcp --skills` (or `--no-mcp --no-skills` for
   a clean "no capabilities" run). The agent profile is `main`.
 
+#### Model catalog overrides (e.g. `gemini-3.5-flash`)
+
+Models openclaw doesn't ship in its built-in catalog must be registered before
+`oc agent --model provider/<id>` will accept them.
+
+- **Refactored arm**: the harness registers the entry *automatically* in its
+  per-run isolated `openclaw.json` for whichever Google backend `AGENT_PROVIDER`
+  selects — `google` (google-genai, API key) or `google-vertex` (Vertex AI,
+  ADC). No manual step, no shared-config mutation. Vertex runs work **keyless**
+  (auth is the metadata-server ADC marker). Currently auto-registered:
+  `gemini-3.5-flash`.
+- **Legacy arm**: `scripts/bastion/configure-oc.sh` registers the catalog entry
+  in the **global** config — under `google-vertex` with `--vertex` (`VERTEX_MODELS`)
+  and under `google` always (`GENAI_MODELS`, default `gemini-3.5-flash`).
+
 ### Gemini CLI (refactored `gcli` config) — headless MCP requirements
 
 Making the gemini CLI actually **load and execute** MCP tools (e.g. gke-mcp) in

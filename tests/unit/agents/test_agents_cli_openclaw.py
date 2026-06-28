@@ -37,6 +37,7 @@ from devops_bench.agents.cli.openclaw import agent as oc_mod
 from devops_bench.agents.cli.openclaw.agent import (
     _build_env,
     _build_local_command,
+    _build_model_override,
     _build_openclaw_config,
     _oc_model_id,
 )
@@ -49,10 +50,15 @@ def _events(*entries: dict) -> str:
 
 
 def _tool_call(call_id: str, name: str, arguments: dict) -> dict:
-    return {"type": "tool.call", "data": {"toolCallId": call_id, "name": name, "arguments": arguments}}
+    return {
+        "type": "tool.call",
+        "data": {"toolCallId": call_id, "name": name, "arguments": arguments},
+    }
 
 
-def _tool_result(call_id: str, text: str, *, is_error: bool = False, status: str = "completed") -> dict:
+def _tool_result(
+    call_id: str, text: str, *, is_error: bool = False, status: str = "completed"
+) -> dict:
     return {
         "type": "tool.result",
         "data": {
@@ -154,7 +160,9 @@ def test_parse_trajectory_export_output_falls_back_to_assistant_message():
     blob = _events(
         {
             "type": "assistant.message",
-            "data": {"message": {"role": "assistant", "content": [{"type": "text", "text": "done."}]}},
+            "data": {
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "done."}]}
+            },
         },
         {"type": "model.completed", "data": {"usage": {"input": 1, "output": 2}}},
     )
@@ -262,7 +270,9 @@ def _bundle_writer(events_jsonl: str):
     writes ``events.jsonl`` (the real trajectory filename) into the bundle dir
     under the ``--workspace`` it was handed.
     """
-    sessions_payload = json.dumps([{"key": "agent:operator:test", "model": "google/gemini-2.5-pro"}])
+    sessions_payload = json.dumps(
+        [{"key": "agent:operator:test", "model": "google/gemini-2.5-pro"}]
+    )
 
     def fake_core_run(argv, **kwargs):
         if argv[1] == "sessions" and "export-trajectory" not in argv:
@@ -271,9 +281,7 @@ def _bundle_writer(events_jsonl: str):
             ws = Path(argv[argv.index("--workspace") + 1])
             export_root = ws / ".openclaw" / "trajectory-exports" / "openclaw-trajectory-x"
             export_root.mkdir(parents=True, exist_ok=True)
-            (export_root / "events.jsonl").write_text(
-                events_jsonl, encoding="utf-8"
-            )
+            (export_root / "events.jsonl").write_text(events_jsonl, encoding="utf-8")
             return _make_subprocess_result(stdout="exported", returncode=0)
         raise AssertionError(f"unexpected argv {argv}")
 
@@ -306,11 +314,7 @@ def test_execute_prefers_bundle_output_over_noisy_stdout(monkeypatch, tmp_path):
     """The agent's final answer (events.jsonl assistantTexts) must win over
     `oc --log-level debug` noise — otherwise the judge grades debug spew.
     """
-    noisy_stdout = (
-        "[DEBUG] starting oc...\n"
-        "[INFO] sessionFile=/tmp/.openclaw/...\n"
-        "[DEBUG] turn 1\n"
-    )
+    noisy_stdout = "[DEBUG] starting oc...\n[INFO] sessionFile=/tmp/.openclaw/...\n[DEBUG] turn 1\n"
 
     def fake_bash(cmd, **kwargs):
         return _make_subprocess_result(stdout=noisy_stdout, returncode=0)
@@ -319,7 +323,10 @@ def test_execute_prefers_bundle_output_over_noisy_stdout(monkeypatch, tmp_path):
     events = _events(
         _tool_call("1", "exec", {"command": "kubectl get pods"}),
         _tool_result("1", "pod-a Running"),
-        {"type": "model.completed", "data": {"usage": {"input": 1, "output": 1}, "assistantTexts": [clean_answer]}},
+        {
+            "type": "model.completed",
+            "data": {"usage": {"input": 1, "output": 1}, "assistantTexts": [clean_answer]},
+        },
     )
     monkeypatch.setattr(subprocess, "run", fake_bash)
     monkeypatch.setattr(oc_mod, "run", _bundle_writer(events))
@@ -403,6 +410,7 @@ def test_execute_passes_timeout_to_bash(monkeypatch, tmp_path):
 
 
 # Tests for the now-deleted legacy surface — fail-fast if SSH transport returns.
+
 
 def test_legacy_ssh_runner_is_gone():
     assert not hasattr(oc_mod, "run_openclaw_agent")
@@ -525,14 +533,88 @@ def test_execute_does_not_prepend_rules_when_empty(monkeypatch, tmp_path):
 
 def test_build_openclaw_config_wraps_servers_under_mcp():
     """A launchable binding renders under the ``mcp.servers`` config path."""
-    cfg = _build_openclaw_config((McpBinding(name="gke", command=("gke-mcp",)),))
+    cfg = _build_openclaw_config(AgentConfig(), (McpBinding(name="gke", command=("gke-mcp",)),))
     assert cfg == {"mcp": {"servers": {"gke": {"command": "gke-mcp"}}}}
 
 
-def test_build_openclaw_config_empty_without_launchable_server():
-    """No command-bearing binding → empty config (caller skips the write)."""
-    assert _build_openclaw_config(()) == {}
-    assert _build_openclaw_config((McpBinding(name="b", command=(), tools=("t",)),)) == {}
+def test_build_openclaw_config_empty_without_launchable_server_or_override():
+    """No MCP binding and a catalog-known model → empty config (caller skips)."""
+    assert _build_openclaw_config(AgentConfig(), ()) == {}
+    assert (
+        _build_openclaw_config(
+            AgentConfig(model="gemini-3.1-pro-preview"),
+            (McpBinding(name="b", command=(), tools=("t",)),),
+        )
+        == {}
+    )
+
+
+def test_build_openclaw_config_merges_mcp_and_model_override():
+    """MCP servers and a model-catalog entry coexist (disjoint key spaces)."""
+    cfg = _build_openclaw_config(
+        AgentConfig(model="gemini-3.5-flash", provider="google"),
+        (McpBinding(name="gke", command=("gke-mcp",)),),
+    )
+    assert cfg["mcp"] == {"servers": {"gke": {"command": "gke-mcp"}}}
+    assert cfg["models"]["providers"]["google"]["models"] == [
+        {"id": "gemini-3.5-flash", "name": "gemini-3.5-flash"}
+    ]
+    assert cfg["agents"]["defaults"]["models"] == {"google/gemini-3.5-flash": {}}
+
+
+# ---------------------------------------------------------------------------
+# Model catalog override: models oc doesn't ship by default get registered in
+# the per-run isolated config, for both google-genai and google-vertex.
+# ---------------------------------------------------------------------------
+
+
+def test_model_override_empty_for_catalog_known_model():
+    """A model already in oc's catalog needs no override."""
+    assert _build_model_override(AgentConfig(model="gemini-3.1-pro-preview")) == {}
+
+
+def test_model_override_empty_when_no_model():
+    assert _build_model_override(AgentConfig()) == {}
+
+
+def test_model_override_genai_registers_under_google_provider():
+    """google-genai: catalog entry + allowlist under the built-in google provider,
+    with no transport pinned (oc's google provider carries its own)."""
+    override = _build_model_override(AgentConfig(model="gemini-3.5-flash", provider="google"))
+    google = override["models"]["providers"]["google"]
+    assert google == {"models": [{"id": "gemini-3.5-flash", "name": "gemini-3.5-flash"}]}
+    assert "api" not in google and "baseUrl" not in google
+    assert override["agents"]["defaults"]["models"] == {"google/gemini-3.5-flash": {}}
+
+
+def test_model_override_gemini_alias_normalizes_to_google():
+    """``provider=gemini`` resolves to the ``google`` provider (id alias)."""
+    override = _build_model_override(AgentConfig(model="gemini-3.5-flash", provider="gemini"))
+    assert "google" in override["models"]["providers"]
+    assert override["agents"]["defaults"]["models"] == {"google/gemini-3.5-flash": {}}
+
+
+def test_model_override_vertex_pins_transport_and_allowlists():
+    """google-vertex: the entry pins ``api``/``baseUrl`` so oc uses the vertex
+    transport (not the OpenAI fallback), and allowlists ``google-vertex/<model>``."""
+    override = _build_model_override(
+        AgentConfig(model="gemini-3.5-flash", provider="google-vertex")
+    )
+    vertex = override["models"]["providers"]["google-vertex"]
+    assert vertex["api"] == "google-vertex"
+    assert vertex["baseUrl"] == "https://{location}-aiplatform.googleapis.com"
+    assert vertex["models"] == [{"id": "gemini-3.5-flash", "name": "gemini-3.5-flash"}]
+    assert override["agents"]["defaults"]["models"] == {"google-vertex/gemini-3.5-flash": {}}
+
+
+def test_model_override_vertex_needs_no_api_key():
+    """The override is independent of ``api_key`` — a keyless ADC vertex run still
+    gets its catalog entry (auth is the metadata-server ADC, set outside)."""
+    override = _build_model_override(
+        AgentConfig(model="gemini-3.5-flash", provider="google-vertex", api_key=None)
+    )
+    assert override["agents"]["defaults"]["models"] == {"google-vertex/gemini-3.5-flash": {}}
+    assert _build_env(AgentConfig(model="gemini-3.5-flash", provider="google-vertex")) == {}
 
 
 def test_build_env_threads_api_key_by_provider():
@@ -542,6 +624,13 @@ def test_build_env_threads_api_key_by_provider():
     anthropic = _build_env(AgentConfig(api_key="k", provider="anthropic"))
     assert anthropic == {"ANTHROPIC_API_KEY": "k"}
     assert _build_env(AgentConfig()) == {}
+
+
+def test_build_env_routes_vertex_key_to_cloud_api_key():
+    """A ``google-vertex`` key reaches ``GOOGLE_CLOUD_API_KEY`` (the vertex
+    transport's var), not ``GEMINI_API_KEY`` (the google-genai one)."""
+    vertex = _build_env(AgentConfig(api_key="marker", provider="google-vertex"))
+    assert vertex == {"GOOGLE_CLOUD_API_KEY": "marker"}
 
 
 def _empty_sessions_run(argv, **kwargs):
@@ -560,9 +649,7 @@ def test_execute_writes_mcp_servers_into_isolated_config(monkeypatch, tmp_path):
         cfg_path = env.get("OPENCLAW_CONFIG_PATH")
         captured["cfg_path"] = cfg_path
         captured["config"] = (
-            json.loads(Path(cfg_path).read_text())
-            if cfg_path and Path(cfg_path).exists()
-            else None
+            json.loads(Path(cfg_path).read_text()) if cfg_path and Path(cfg_path).exists() else None
         )
         return _make_subprocess_result(stdout="ok", returncode=0)
 
@@ -577,7 +664,8 @@ def test_execute_writes_mcp_servers_into_isolated_config(monkeypatch, tmp_path):
 
 
 def test_execute_writes_no_config_when_no_launchable_server(monkeypatch, tmp_path):
-    """No command-bearing MCP binding → no isolated config, env var unset."""
+    """No command-bearing MCP binding and a catalog-known model → no isolated
+    config, env var unset."""
     captured: dict = {}
 
     def fake_bash(cmd, **kwargs):
@@ -590,8 +678,50 @@ def test_execute_writes_no_config_when_no_launchable_server(monkeypatch, tmp_pat
     caps = AllCapabilities(
         mcp_servers=(McpBinding(name="builtin", command=(), tools=("alpha",)),),
     )
-    OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"), capabilities=caps)).run("p")
+    OpenClawAgent(
+        AgentConfig(
+            target=str(tmp_path / "oc"),
+            model="gemini-3.1-pro-preview",
+            capabilities=caps,
+        )
+    ).run("p")
     assert captured["has_cfg"] is False
+
+
+def test_execute_writes_model_override_config_without_mcp(monkeypatch, tmp_path):
+    """A model absent from oc's catalog gets an isolated config + OPENCLAW_CONFIG_PATH
+    even with no MCP server — and works keyless (vertex/ADC)."""
+    captured: dict = {}
+
+    def fake_bash(cmd, **kwargs):
+        env = kwargs.get("env") or {}
+        cfg_path = env.get("OPENCLAW_CONFIG_PATH")
+        captured["cfg_path"] = cfg_path
+        captured["config"] = (
+            json.loads(Path(cfg_path).read_text()) if cfg_path and Path(cfg_path).exists() else None
+        )
+        # ADC path: no API key threaded into the subprocess env.
+        captured["has_key"] = any(
+            k in env for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_API_KEY")
+        )
+        return _make_subprocess_result(stdout="ok", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_bash)
+    monkeypatch.setattr(oc_mod, "run", _empty_sessions_run)
+    OpenClawAgent(
+        AgentConfig(
+            target=str(tmp_path / "oc"),
+            model="gemini-3.5-flash",
+            provider="google-vertex",
+        )
+    ).run("p")
+    assert captured["cfg_path"], "OPENCLAW_CONFIG_PATH must be set for a catalog override"
+    vertex = captured["config"]["models"]["providers"]["google-vertex"]
+    assert vertex["api"] == "google-vertex"
+    assert captured["config"]["agents"]["defaults"]["models"] == {
+        "google-vertex/gemini-3.5-flash": {}
+    }
+    assert captured["has_key"] is False
 
 
 def test_execute_isolates_state_dir_and_drops_global_session_wipe(monkeypatch, tmp_path):
@@ -660,9 +790,7 @@ def test_execute_warns_and_skips_missing_skill_paths(monkeypatch, tmp_path):
     def fake_bash(cmd, **kwargs):
         cwd = kwargs.get("cwd")
         skills_root = os.path.join(cwd, "state", "skills")
-        captured["entries"] = (
-            sorted(os.listdir(skills_root)) if os.path.isdir(skills_root) else []
-        )
+        captured["entries"] = sorted(os.listdir(skills_root)) if os.path.isdir(skills_root) else []
         return _make_subprocess_result(stdout="ok", returncode=0)
 
     monkeypatch.setattr(subprocess, "run", fake_bash)
