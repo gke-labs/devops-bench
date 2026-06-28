@@ -12,7 +12,8 @@ cluster substrate and the upgrade mechanism differ.
 ## How it works
 
 - **Infrastructure** provisions a cluster at a **start** version and seeds a **local bare git
-  repo** (`~/migration-repo.git`) with application manifests that use deprecated APIs
+  repo** (`~/migration-repo-<cluster_name>.git`, run-unique so concurrent runs don't collide;
+  the prompt uses `{{CLUSTER_NAME}}`) with application manifests that use deprecated APIs
   (`networking.k8s.io/v1beta1` Ingress, `policy/v1beta1` PodDisruptionBudget). The repo is the
   agent's source of truth — there is no mock audit script and nothing names the deprecations
   in-cluster; the agent must discover them itself.

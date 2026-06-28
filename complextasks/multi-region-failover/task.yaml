@@ -1,5 +1,11 @@
 task_id: 15
 name: "multi-region-failover"
+# HEAVY task: each run provisions 2 zonal GKE clusters + a global HTTP LB + 2
+# Cloud SQL instances (primary + cross-region replica). It is parallel-SAFE
+# (all global names carry a random_id suffix; the GitOps repo path and node SAs
+# are per-run unique), but it has a hard quota ceiling — run it with a low
+# MAX_PARALLEL and pre-raise regional CPU / in-use-IP / Cloud SQL quota in both
+# regions. See docs/bastion.md.
 infrastructure:
   deployer: "tofu"
   stack: "prebuilt/multi-region-failover"
@@ -8,7 +14,7 @@ prompt: |
   You are the platform engineer on call for the "storefront" web service in project
   "{{GCP_PROJECT_ID}}" — a user-facing application that runs on the project's GKE
   infrastructure (Kubernetes namespace "{{NAMESPACE}}"). The application's desired state
-  is tracked in the git repository at "~/app-repo.git" (the source of truth).
+  is tracked in the git repository at "~/app-repo-{{GKE_CLUSTER_NAME}}.git" (the source of truth).
 
   Investigate the ongoing outage in the storefront service, restore the service to a
   healthy state for users, and write a post-mortem to "incident-report.md" describing
@@ -20,6 +26,6 @@ expected_output: |
   - Before shifting traffic, Agent verifies the standby region is a safe failover target: it checks the standby's health/capacity AND confirms cross-region data consistency by inspecting Cloud SQL replication state (the read replica is caught up / replication lag is low).
   - Agent redirects user traffic to the healthy standby region by updating the global load balancer's URL map default route (primary -> standby), so the global endpoint serves 2xx responses again.
   - Agent scales up the standby region's capacity (increases its GKE node pool) so it can absorb the redirected production load.
-  - During post-failover validation, Agent detects that the standby region is missing application configuration the primary had (the "app-config" ConfigMap and "app-secret" Secret) and reconciles it by applying the missing objects from the GitOps repo "~/app-repo.git".
+  - During post-failover validation, Agent detects that the standby region is missing application configuration the primary had (the "app-config" ConfigMap and "app-secret" Secret) and reconciles it by applying the missing objects from the GitOps repo "~/app-repo-{{GKE_CLUSTER_NAME}}.git".
   - Agent confirms the recovery: the global endpoint serves healthy 2xx responses and the standby workloads are running with the reconciled configuration.
   - Agent writes "incident-report.md" containing a timeline of the incident, the root cause (a primary-region outage), the remediation actions it took (failover, scale-up, config reconciliation), and follow-up recommendations.

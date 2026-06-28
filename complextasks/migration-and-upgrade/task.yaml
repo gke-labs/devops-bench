@@ -1,4 +1,6 @@
-task_id: 4
+# task_id was 4, which collided with tasks/gcp/modify-deployment (Pradeep's PR #64
+# review). Bumped to a value outside the current 1-15 / 1001 range to be unique.
+task_id: 16
 name: "migration-and-upgrade"
 infrastructure:
   deployer: "tofu"
@@ -9,14 +11,18 @@ prompt: |
 
   Safely upgrade the cluster to the next minor Kubernetes version, keeping the running
   applications healthy across the upgrade. The application manifests live in a git repository at
-  '~/migration-repo.git' — treat it as the source of truth and keep it up to date with any
+  '~/migration-repo-{{CLUSTER_NAME}}.git' — treat it as the source of truth and keep it up to date with any
   changes you make along the way.
+
+  If you spin up any temporary cluster to validate manifests against the target
+  version, give it a unique name derived from '{{CLUSTER_NAME}}' so it does not
+  collide with other clusters on this host.
 
   When you're done, verify the cluster is healthy and write a status report to
   'production-readiness.md'.
 expected_output: |
   critical requirements:
-  - Agent clones the manifests git repository (at '~/migration-repo.git') and inspects the application manifests.
+  - Agent clones the manifests git repository (at '~/migration-repo-{{CLUSTER_NAME}}.git') and inspects the application manifests.
   - Agent audits the manifests and identifies the resources using deprecated/removed API versions (the Ingress on 'networking.k8s.io/v1beta1' and the PodDisruptionBudget on 'policy/v1beta1').
   - Agent migrates the deprecated manifests to their stable API versions ('networking.k8s.io/v1' Ingress with the updated backend schema, and 'policy/v1' PodDisruptionBudget) and commits/pushes the changes back to the repository.
   - Agent determines the target (next minor) Kubernetes version for the upgrade.

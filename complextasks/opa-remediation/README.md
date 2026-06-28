@@ -14,7 +14,8 @@ Runs on **kind** (local, on the runner VM) — no cloud dependency.
   `scripts/setup.sh`, which installs Kyverno, applies two **audit** `ClusterPolicy`s
   (`disallow-privileged-containers`, `require-resource-limits`), deploys team workloads (across
   `team-alpha`/`team-beta`/`team-gamma`, with `owner`/`env` labels) — some violating, one
-  compliant as a control — and seeds a local bare git repo `~/opa-repo.git` with the workload
+  compliant as a control — and seeds a per-run local bare git repo `~/opa-repo-<cluster_name>.git`
+  (run-unique so concurrent runs don't collide; the prompt uses `{{CLUSTER_NAME}}`) with the workload
   manifests (the GitOps source of truth).
 - Audit mode means the violating workloads exist **live** and are flagged in PolicyReports,
   rather than being blocked at admission. Nothing in the cluster names the fix — the agent
@@ -73,7 +74,7 @@ kubectl get pods -n kyverno                              # Kyverno controllers R
 kubectl get cpol                                         # both ClusterPolicies (Audit)
 kubectl get deploy -A | grep -E 'team-'                  # team workloads
 kubectl get policyreport,clusterpolicyreport -A          # FAIL results for the violations
-git clone ~/opa-repo.git /tmp/opa && ls /tmp/opa/workloads && rm -rf /tmp/opa
+git clone ~/opa-repo-<cluster_name>.git /tmp/opa && ls /tmp/opa/workloads && rm -rf /tmp/opa
 
 tofu destroy -auto-approve -var cluster_name=opa-kind
 ```

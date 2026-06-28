@@ -7,8 +7,10 @@ variable "cluster_name" {
   type        = string
   description = <<-EOT
     Base name for the stack. The two regional GKE clusters are named
-    "<cluster_name>-east" (primary) and "<cluster_name>-west" (standby); the global
-    LB / Cloud SQL resources derive their names from it too. Supplied by the harness
+    "e-<cluster_name>" (primary, east) and "w-<cluster_name>" (standby, west) — the
+    region marker is a PREFIX, not a suffix, so it stays within the node-SA
+    name-truncation window (see locals in main.tf). The global LB / Cloud SQL
+    resources derive their names from it too. Supplied by the harness
     (GKE_CLUSTER_NAME); the "cluster_name" output returns the east cluster so the
     harness credentials it.
   EOT
@@ -84,8 +86,12 @@ variable "db_tier" {
 
 variable "repo_path" {
   type        = string
-  description = "Path to the GitOps bare repo seeded with the app's desired state."
-  default     = "~/app-repo.git"
+  description = <<-EOT
+    Path to the GitOps bare repo seeded with the app's desired state. Empty (the
+    default) derives a per-run-unique path from cluster_name so concurrent runs on
+    the shared bastion don't rm -rf + reseed each other's repo (see locals).
+  EOT
+  default     = ""
 }
 
 variable "agent_service_account" {
