@@ -2,8 +2,40 @@ from pathlib import Path
 import subprocess
 import json
 import os
+import shutil
 from typing import Dict, Any
 from deployers.base import Deployer
+
+
+def _isolated_work_dir(stack_dir: str, tf_root: Path) -> str:
+    """Return a per-run private copy of the stack dir, or ``stack_dir`` unchanged.
+
+    Mirrors ``devops_bench/deployers/tofu.py``: per-run isolation already keys
+    ``TF_DATA_DIR`` and the state file per run, but both arms still ran ``tofu``
+    in the *shared* ``tf/prebuilt/<stack>`` directory, so concurrent runs of the
+    SAME stack contend on its ``.terraform.lock.hcl`` (none is committed, so each
+    ``init`` rewrites it). Copy the WHOLE ``tf/`` tree (stacks use relative
+    ``../../`` module sources, so a leaf-only copy would break) into the run's
+    scratch dir (the parent of ``TF_DATA_DIR``) and run tofu in the copied stack.
+    In-repo + isolated (parallel) runs only; external/absolute stacks and single
+    runs keep the original dir, and any copy failure falls back to it.
+    """
+    tf_data_dir = os.environ.get("TF_DATA_DIR", "").strip()
+    if not tf_data_dir:
+        return stack_dir
+    try:
+        rel = Path(stack_dir).resolve().relative_to(Path(tf_root).resolve())
+    except ValueError:
+        return stack_dir  # external/absolute stack: cannot relocate safely
+    try:
+        run_dir = Path(tf_data_dir).resolve().parent
+        dest_tf = run_dir / "tf"
+        shutil.copytree(tf_root, dest_tf, dirs_exist_ok=True)
+        return str(dest_tf / rel)
+    except OSError as exc:
+        print(f"Warning: could not isolate tofu stack dir ({exc}); using shared {stack_dir}")
+        return stack_dir
+
 
 class TFDeployer(Deployer):
     """
@@ -31,6 +63,10 @@ class TFDeployer(Deployer):
                     f"TF stack not found in repo: {tf_dir} "
                     f"(checked {repo_tf_path})"
                 )
+
+        # Per-run private working directory (a copy of the tf/ tree under the
+        # run's scratch dir) when isolated; otherwise the shared stack dir.
+        self.work_dir = _isolated_work_dir(self.tf_dir, repo_root / "tf")
 
         self.variables = variables or {}
 
@@ -67,42 +103,42 @@ class TFDeployer(Deployer):
             return subprocess.run(cmd, cwd=cwd, check=True, env=env)
 
     def up(self) -> None:
-        tf_path = Path(self.tf_dir)
+        tf_path = Path(self.work_dir)
         if not tf_path.exists():
-            raise ValueError(f"TF directory not found: {self.tf_dir}")
+            raise ValueError(f"TF directory not found: {self.work_dir}")
 
-        self._run_cmd(["tofu", "init", "-input=false"], cwd=self.tf_dir)
+        self._run_cmd(["tofu", "init", "-input=false"], cwd=self.work_dir)
 
         cmd = ["tofu", "apply", "-auto-approve", "-input=false", *self._state_flags()]
         for k, v in self.variables.items():
             cmd.extend(["-var", f"{k}={v}"])
 
-        self._run_cmd(cmd, cwd=self.tf_dir)
+        self._run_cmd(cmd, cwd=self.work_dir)
 
 
     def down(self) -> None:
-        tf_path = Path(self.tf_dir)
+        tf_path = Path(self.work_dir)
         if not tf_path.exists():
             print(
-                f"Warning: TF directory {self.tf_dir} not found. "
+                f"Warning: TF directory {self.work_dir} not found. "
                 "Skipping teardown."
             )
             return
 
-        self._run_cmd(["tofu", "init", "-input=false"], cwd=self.tf_dir)
+        self._run_cmd(["tofu", "init", "-input=false"], cwd=self.work_dir)
 
         cmd = ["tofu", "destroy", "-auto-approve", "-input=false", *self._state_flags()]
         for k, v in self.variables.items():
             cmd.extend(["-var", f"{k}={v}"])
 
-        self._run_cmd(cmd, cwd=self.tf_dir)
+        self._run_cmd(cmd, cwd=self.work_dir)
 
     def get_cluster_info(self) -> Dict[str, Any]:
-        self._run_cmd(["tofu", "init", "-input=false"], cwd=self.tf_dir)
+        self._run_cmd(["tofu", "init", "-input=false"], cwd=self.work_dir)
 
         result = self._run_cmd(
             ["tofu", "output", "-json", *self._state_flags()],
-            cwd=self.tf_dir,
+            cwd=self.work_dir,
             capture=True,
         )
         outputs = json.loads(result.stdout)

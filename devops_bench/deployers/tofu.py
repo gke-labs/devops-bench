@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -55,6 +56,44 @@ def _format_var(value: Any) -> str:
     if value is None:
         return "null"
     return str(value)
+
+
+def _isolated_work_dir(stack_dir: str, tf_root: Path) -> str:
+    """Return a per-run private copy of the stack dir, or ``stack_dir`` unchanged.
+
+    Per-run isolation already keys ``TF_DATA_DIR`` and the state file per run, but
+    both still ran ``tofu`` in the *shared* ``tf/prebuilt/<stack>`` directory, so
+    two concurrent runs of the SAME stack contend on its ``.terraform.lock.hcl``
+    (no lock file is committed, so every ``init`` rewrites it). To give each run a
+    private working directory, copy the WHOLE ``tf/`` tree — stacks reference
+    modules via relative ``../../`` paths, so a leaf-only copy would break — into
+    the run's scratch dir (the parent of ``TF_DATA_DIR``, beside the per-run
+    state file) and run tofu in the copied stack.
+
+    Only applies to in-repo stacks under an isolated (parallel) run; external or
+    absolute stacks and single (non-isolated) runs keep the original directory.
+    Any copy failure falls back to the original directory so provisioning still
+    proceeds (degrading to the shared-dir behavior, never failing).
+    """
+    tf_data_dir = os.environ.get("TF_DATA_DIR")
+    if not tf_data_dir or not tf_data_dir.strip():
+        return stack_dir
+    try:
+        rel = Path(stack_dir).resolve().relative_to(tf_root.resolve())
+    except ValueError:
+        return stack_dir  # external/absolute stack: cannot relocate safely
+    try:
+        run_dir = Path(tf_data_dir).resolve().parent
+        dest_tf = run_dir / "tf"
+        shutil.copytree(tf_root, dest_tf, dirs_exist_ok=True)
+        return str(dest_tf / rel)
+    except OSError as exc:
+        _log.warning(
+            "could not isolate tofu stack dir (%s); falling back to shared %s",
+            exc,
+            stack_dir,
+        )
+        return stack_dir
 
 
 class TFDeployer(Deployer):
@@ -96,6 +135,10 @@ class TFDeployer(Deployer):
                 raise ConfigError(f"TF stack not found in repo: {tf_dir} (checked {repo_tf_path})")
             self.tf_dir = str(repo_tf_path)
 
+        # Per-run private working directory (a copy of the tf/ tree under the
+        # run's scratch dir) when isolated; otherwise the shared stack dir.
+        self.work_dir = _isolated_work_dir(self.tf_dir, _TF_ROOT)
+
         self.provider = provider
         self.variables = variables or {}
 
@@ -124,12 +167,12 @@ class TFDeployer(Deployer):
         return ["-state", str(Path(tf_data_dir).resolve().parent / "terraform.tfstate")]
 
     def up(self) -> None:
-        tf_path = Path(self.tf_dir)
+        tf_path = Path(self.work_dir)
         if not tf_path.exists():
-            raise ConfigError(f"TF directory not found: {self.tf_dir}")
+            raise ConfigError(f"TF directory not found: {self.work_dir}")
 
         self.provider.ensure_account_credentials()
-        run(["tofu", "init", "-input=false"], cwd=self.tf_dir, capture=False)
+        run(["tofu", "init", "-input=false"], cwd=self.work_dir, capture=False)
 
         cmd = [
             "tofu",
@@ -139,16 +182,16 @@ class TFDeployer(Deployer):
             *self._state_flags(),
             *self._var_flags(),
         ]
-        run(cmd, cwd=self.tf_dir, capture=False)
+        run(cmd, cwd=self.work_dir, capture=False)
 
     def down(self) -> None:
-        tf_path = Path(self.tf_dir)
+        tf_path = Path(self.work_dir)
         if not tf_path.exists():
-            _log.warning("TF directory %s not found. Skipping teardown.", self.tf_dir)
+            _log.warning("TF directory %s not found. Skipping teardown.", self.work_dir)
             return
 
         self.provider.ensure_account_credentials()
-        run(["tofu", "init", "-input=false"], cwd=self.tf_dir, capture=False)
+        run(["tofu", "init", "-input=false"], cwd=self.work_dir, capture=False)
 
         cmd = [
             "tofu",
@@ -158,7 +201,7 @@ class TFDeployer(Deployer):
             *self._state_flags(),
             *self._var_flags(),
         ]
-        run(cmd, cwd=self.tf_dir, capture=False)
+        run(cmd, cwd=self.work_dir, capture=False)
 
     def get_cluster_info(self) -> ClusterInfo:
         """Read cluster details from the stack outputs.
@@ -172,11 +215,11 @@ class TFDeployer(Deployer):
         Raises:
             ConfigError: If required outputs are missing or unparseable.
         """
-        run(["tofu", "init", "-input=false"], cwd=self.tf_dir, capture=False)
+        run(["tofu", "init", "-input=false"], cwd=self.work_dir, capture=False)
 
         result = run(
             ["tofu", "output", "-json", *self._state_flags()],
-            cwd=self.tf_dir,
+            cwd=self.work_dir,
             capture=True,
         )
         try:
