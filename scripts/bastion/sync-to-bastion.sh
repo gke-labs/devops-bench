@@ -58,6 +58,11 @@ echo "==> packing $(printf '%s ' "${PRESENT[@]}")"
 # COPYFILE_DISABLE=1 stops macOS bsdtar from emitting AppleDouble (``._*``) entries
 # that extract as junk files on Linux and break manifest globs (e.g. kubectl
 # parsing ``._policy.yaml``). Harmless on Linux hosts.
+# NOTE: do NOT add `--exclude='results'` — the eval-output `results/` dir lives at
+# the repo root and is already excluded by not being in the synced path allowlist
+# (PATHS). A bare `results` pattern matches ANY path component, so it also strips
+# the `devops_bench/results/` SOURCE module (the rows.json/manifest.json builder),
+# which silently disables leaderboard-row generation on the bastion.
 COPYFILE_DISABLE=1 tar \
   --exclude='.git' \
   --exclude='.venv' \
@@ -65,7 +70,6 @@ COPYFILE_DISABLE=1 tar \
   --exclude='.terraform' \
   --exclude='*.tfstate' \
   --exclude='*.tfstate.*' \
-  --exclude='results' \
   --exclude='.pytest_cache' \
   --exclude='.ruff_cache' \
   -czf "${ARCHIVE}" "${PRESENT[@]}"
