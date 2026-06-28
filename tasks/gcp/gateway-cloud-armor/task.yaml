@@ -1,5 +1,10 @@
 task_id: 9
 name: "gateway-cloud-armor"
+# Manifest-generation task: judged on the YAML produced by generate_manifest,
+# never applied to a cluster. deployer: noop skips provisioning so it does not
+# fall back to the default prebuilt/kind stack and is trivially parallel-safe.
+infrastructure:
+  deployer: "noop"
 prompt: "Apply a Cloud Armor security policy named block-ddos-policy to the external Gateway public-gw using a GCPBackendPolicy."
 expected_output: |
   critical requirements:
