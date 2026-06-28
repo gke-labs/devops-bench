@@ -30,7 +30,14 @@ MODELS: Registry[type[LLMClient]] = Registry("models")
 # Adapter modules are named by model family (``gemini``, ``claude``) and
 # self-register under that canonical key via ``@MODELS.register``; ``ollama`` is
 # the runtime exception. Company/runtime names are accepted as aliases here.
-_ALIASES = {"google": "gemini", "anthropic": "claude"}
+# ``google-vertex`` resolves to the gemini adapter, which selects Vertex AI at
+# runtime via ``GOOGLE_GENAI_USE_VERTEXAI`` rather than a distinct adapter.
+_ALIASES = {
+    "google": "gemini",
+    "google-vertex": "gemini",
+    "google_vertex": "gemini",
+    "anthropic": "claude",
+}
 
 
 class LLMClient(ABC):
@@ -103,8 +110,9 @@ def get_model(
     environment variable, defaulting to ``"gemini"``.
 
     Args:
-        provider: Registry key such as ``"gemini"``/``"google"``,
-            ``"claude"``/``"anthropic"``, or ``"ollama"``. Case-insensitive.
+        provider: Registry key such as ``"gemini"``/``"google"``/
+            ``"google-vertex"``, ``"claude"``/``"anthropic"``, or ``"ollama"``.
+            Case-insensitive.
         model_name: Optional model override passed to the adapter; when omitted
             the adapter reads ``AGENT_MODEL`` (or its own default).
         **kwargs: Extra keyword arguments forwarded to the adapter constructor.

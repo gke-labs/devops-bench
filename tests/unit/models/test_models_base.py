@@ -52,6 +52,16 @@ def test_get_model_resolves_google_alias(mocker):
     assert isinstance(client, gemini.GeminiClientAdapter)
 
 
+@pytest.mark.parametrize("provider", ["google-vertex", "google_vertex"])
+def test_get_model_resolves_google_vertex_alias(mocker, provider):
+    from devops_bench.models import gemini
+
+    mocker.patch.object(gemini.genai, "Client")
+    client = get_model(provider=provider)
+
+    assert isinstance(client, gemini.GeminiClientAdapter)
+
+
 def test_get_model_returns_claude_adapter(mocker):
     from devops_bench.models import claude
 

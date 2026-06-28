@@ -122,10 +122,18 @@ def _build_openclaw_config(mcp_servers: tuple[McpBinding, ...]) -> dict:
         A config mapping with an ``mcp.servers`` section, or an empty dict when
         no binding carries a launch command (caller then skips the config write
         and leaves ``OPENCLAW_CONFIG_PATH`` unset).
+
+    Each server entry inherits the run's ``KUBECONFIG`` (set by ``RunEnv``) as an
+    explicit ``env`` so the MCP server (e.g. gke-mcp) reads the run-scoped cluster
+    credentials directly instead of forcing the agent to re-fetch them.
     """
     servers = build_mcp_servers(mcp_servers)
     if not servers:
         return {}
+    kubeconfig = os.environ.get("KUBECONFIG")
+    if kubeconfig:
+        for entry in servers.values():
+            entry.setdefault("env", {})["KUBECONFIG"] = kubeconfig
     return {"mcp": {"servers": servers}}
 
 
