@@ -87,7 +87,7 @@ sets `BENCH_REMOTE=1` + the `BASTION_*` connection env.) Then pin down exactly t
 run. Ask the user (your harness's clarify path) for anything not given; don't guess on
 the dimensions that cost a cluster + time. You need:
 
-1. **Task** — one `*/task.yaml` path (`MATRIX_TASKS="complextasks/secret-rotation/task.yaml"`).
+1. **Task** — one `*/task.yaml` path (`MATRIX_TASKS="tasks/gcp/secret-rotation/task.yaml"`).
 2. **Model** — one model (`MATRIX_MODELS="gemini-3.1-pro-preview"`).
 3. **Agent config** — refactored arm only: one `MATRIX_AGENT_CONFIGS`, e.g.
    `gcli+mcp+skills` or `oc+mcp+skills` (`oc|gcli` `[+mcp][+skills]`).
@@ -170,7 +170,7 @@ control. Example (Vertex, refactored arm):
 # local by default; prefix BENCH_REMOTE=1 (+ BASTION_* env) to run on the bastion
 BENCH_VERTEX=1 AGENT_PROVIDER=google-vertex \
 JUDGE_PROVIDER=google JUDGE_MODEL=gemini-3.1-pro-preview \
-MATRIX_TASKS="complextasks/secret-rotation/task.yaml" \
+MATRIX_TASKS="tasks/gcp/secret-rotation/task.yaml" \
 MATRIX_MODELS="gemini-3.1-pro-preview" \
 MATRIX_AGENT_CONFIGS="gcli+mcp+skills" \
 RESULTS_DIR="results/<label>" \

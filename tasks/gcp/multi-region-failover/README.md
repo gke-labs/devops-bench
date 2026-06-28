@@ -158,7 +158,7 @@ export JUDGE_API_KEY="<your-gemini-key>"
 ### 5. Run the evaluator
 
 ```bash
-python pkg/evaluator/evaluate.py complextasks/multi-region-failover/task.yaml
+python pkg/evaluator/evaluate.py tasks/gcp/multi-region-failover/task.yaml
 ```
 
 The harness provisions the infra (+ injects the outage), runs the local `oc` agent against it,

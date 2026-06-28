@@ -14,7 +14,7 @@
 
 """End-to-end smoke test (e2e plan §8 / harness handoff §10).
 
-Drives the real ``complextasks/optimize-scale`` task through
+Drives the real ``tasks/common/optimize-scale`` task through
 :meth:`DefaultHarness.run` against the :class:`NoOpDeployer`, with the agent
 and the deepeval judge stubbed (no network, no provider SDK, no real
 ``kubectl``), but exercising the **real** wiring: deployer → chaos
@@ -50,7 +50,7 @@ from devops_bench.tasks import FileSystemTaskLoader
 from devops_bench.verification import VerificationResult, VerifierAgent
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_OPTIMIZE_SCALE_DIR = _REPO_ROOT / "complextasks" / "optimize-scale"
+_OPTIMIZE_SCALE_DIR = _REPO_ROOT / "tasks" / "common" / "optimize-scale"
 
 
 class _StubAgent(AgentHarness):

@@ -59,7 +59,7 @@ export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/application_default_credent
 #### Option A: Running Locally (via Python)
 Run the evaluator script directly:
 ```bash
-python3 pkg/evaluator/evaluate.py complextasks/secret-rotation/task.yaml
+python3 pkg/evaluator/evaluate.py tasks/gcp/secret-rotation/task.yaml
 ```
 
 > [!TIP]
@@ -79,7 +79,7 @@ docker run -it \
   -e GKE_CLUSTER_NAME="${GKE_CLUSTER_NAME}" \
   -e GCP_LOCATION="${GCP_LOCATION}" \
   -e NAMESPACE="${NAMESPACE}" \
-  -e BENCH_TASK_FILE="complextasks/secret-rotation/task.yaml" \
+  -e BENCH_TASK_FILE="tasks/gcp/secret-rotation/task.yaml" \
   -e BENCH_AGENT_TYPE="${BENCH_AGENT_TYPE}" \
   -e AGENT_TARGET="${AGENT_TARGET}" \
   -e AGENT_PROVIDER="${AGENT_PROVIDER}" \

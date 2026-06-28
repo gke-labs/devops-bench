@@ -17,7 +17,7 @@ code, not the model.
 ## How to run
 
 ```bash
-# default reference task: tasks/generic/gateway-https-redirect/task.yaml
+# default reference task: tasks/noop/gateway-https-redirect/task.yaml
 scripts/compare_legacy_vs_refactor.sh
 
 # a different task / a different mock port

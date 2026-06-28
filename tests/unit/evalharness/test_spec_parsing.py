@@ -41,7 +41,7 @@ from devops_bench.verification.verifiers import (
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_TASK_DIR = _REPO_ROOT / "complextasks" / "optimize-scale"
+_TASK_DIR = _REPO_ROOT / "tasks" / "common" / "optimize-scale"
 _TASK_YAML = _TASK_DIR / "task.yaml"
 
 

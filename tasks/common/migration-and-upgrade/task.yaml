@@ -1,4 +1,4 @@
-# task_id was 4, which collided with tasks/gcp/modify-deployment (Pradeep's PR #64
+# task_id was 4, which collided with tasks/noop/modify-deployment (Pradeep's PR #64
 # review). Bumped to a value outside the current 1-15 / 1001 range to be unique.
 task_id: 16
 name: "migration-and-upgrade"
