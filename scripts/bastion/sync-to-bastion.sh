@@ -55,7 +55,10 @@ ARCHIVE="$(mktemp -t bench-sync-XXXXXX).tgz"
 trap 'rm -f "${ARCHIVE}"' EXIT
 
 echo "==> packing $(printf '%s ' "${PRESENT[@]}")"
-tar \
+# COPYFILE_DISABLE=1 stops macOS bsdtar from emitting AppleDouble (``._*``) entries
+# that extract as junk files on Linux and break manifest globs (e.g. kubectl
+# parsing ``._policy.yaml``). Harmless on Linux hosts.
+COPYFILE_DISABLE=1 tar \
   --exclude='.git' \
   --exclude='.venv' \
   --exclude='__pycache__' \
@@ -100,6 +103,6 @@ echo "==> uploading archive to ${BASTION_VM}"
 upload_archive
 
 echo "==> extracting into ~/${REMOTE_DIR} on the VM"
-remote_exec "set -e; mkdir -p ~/${REMOTE_DIR}; tar -xzf /tmp/bench-sync.tgz -C ~/${REMOTE_DIR}; rm -f /tmp/bench-sync.tgz; echo 'synced to ~/${REMOTE_DIR}'"
+remote_exec "set -e; mkdir -p ~/${REMOTE_DIR}; tar --no-xattrs -xzf /tmp/bench-sync.tgz -C ~/${REMOTE_DIR}; rm -f /tmp/bench-sync.tgz; echo 'synced to ~/${REMOTE_DIR}'"
 
 echo "==> done. Next: SSH in and run scripts/bastion/vm-setup.sh"

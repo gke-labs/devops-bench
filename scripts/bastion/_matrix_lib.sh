@@ -44,8 +44,15 @@ AGENT_PROVIDER="${AGENT_PROVIDER:-google}"
 JUDGE_PROVIDER="${JUDGE_PROVIDER:-google}"
 JUDGE_MODEL="${JUDGE_MODEL:-gemini-3.1-pro}"
 MAX_PARALLEL="${MAX_PARALLEL:-3}"
+# Per-subprocess agent timeout. The 600s harness default is too low for
+# infra-bearing tasks (e.g. deploy-hello-app timed out); give matrix runs more
+# headroom. Override by exporting AGENT_TIMEOUT_SEC before launch.
+AGENT_TIMEOUT_SEC="${AGENT_TIMEOUT_SEC:-1200}"
 GKE_MCP_BIN="${GKE_MCP_BIN:-\$HOME/gke-mcp}"     # expanded on the bastion
-SKILLS_PATHS="${SKILLS_PATHS:-\$HOME/oc-skills}" # expanded on the bastion
+# Agent +skills source: the 19 operational gke-mcp skills (SKILL.md form), cloned
+# by vm-setup.sh. NOT ~/oc-skills, which holds the judge rubric markdown (the
+# grader's criteria), not operational agent skills. Expanded on the bastion.
+SKILLS_PATHS="${SKILLS_PATHS:-\$HOME/gke-mcp-repo/skills}"
 DRY_RUN="${DRY_RUN:-}"
 BENCH_REMOTE="${BENCH_REMOTE:-}"  # empty = run locally on this host; set = ssh to the bastion
 
@@ -243,6 +250,7 @@ matrix_dispatch() {
     echo "OUT=\"\$HOME/${REMOTE_OUT}\"; mkdir -p \"\$OUT\""
     echo "export GCP_PROJECT_ID='${GCP_PROJECT_ID}' GKE_CLUSTER_NAME='${GKE_CLUSTER_NAME}' GCP_LOCATION='${GCP_LOCATION}'"
     echo "export AGENT_PROVIDER='${AGENT_PROVIDER}' JUDGE_PROVIDER='${JUDGE_PROVIDER}' JUDGE_MODEL='${JUDGE_MODEL}'"
+    echo "export AGENT_TIMEOUT_SEC='${AGENT_TIMEOUT_SEC}'"
     echo "export BENCH_PARALLEL=true"
     echo 'run_one() {'
     echo '  local rid="$1" task="$2" kvs="$3" arm="$4" kv rc rdir'
