@@ -1,5 +1,10 @@
 task_id: 7
 name: "computeclass-spot-fallback"
+# Manifest-generation task: judged on the YAML produced by generate_manifest,
+# never applied to a cluster. deployer: noop skips provisioning so it does not
+# fall back to the default prebuilt/kind stack and is trivially parallel-safe.
+infrastructure:
+  deployer: "noop"
 prompt: "Create a ComputeClass named cost-optimized-high-cpu. It should prioritize Spot VMs using the C3 machine family, but fall back to On-Demand N2 instances if Spot capacity is unavailable."
 expected_output: |
   critical requirements:
