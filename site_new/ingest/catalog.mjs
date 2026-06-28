@@ -21,9 +21,10 @@
 
 /** @type {Record<string, {name: string, provider: string, license: string, logo: string}>} */
 export const MODELS = {
-    "alpha-pro":   { name: "Alpha Pro",   provider: "Acme",    license: "Proprietary", logo: "alpha" },
-    "beta-sonic":  { name: "Beta Sonic",  provider: "Globex",  license: "Proprietary", logo: "beta" },
-    "gamma-coder": { name: "Gamma Coder", provider: "Initech", license: "Open Source", logo: "gamma" }
+    "alpha-pro":      { name: "Alpha Pro",      provider: "Acme",    license: "Proprietary", logo: "alpha" },
+    "beta-sonic":     { name: "Beta Sonic",     provider: "Globex",  license: "Proprietary", logo: "beta" },
+    "gamma-coder":    { name: "Gamma Coder",    provider: "Initech", license: "Open Source", logo: "gamma" },
+    "gemini-3.1-pro": { name: "Gemini 3.1 Pro", provider: "Google",  license: "Proprietary", logo: "gemini" }
 };
 
 /** @type {Record<string, {name: string, type: "cli"|"api", accent: string, logo: string}>} */
@@ -42,7 +43,11 @@ export const HARNESSES = {
 export const MODEL_ALIASES = {
     "alpha-pro": "alpha-pro",
     "beta-sonic": "beta-sonic",
-    "gamma-coder": "gamma-coder"
+    "gamma-coder": "gamma-coder",
+    // Preview shares the stable Gemini 3.1 Pro metadata. The bare key also lets
+    // versioned ids (e.g. gemini-3.1-pro-001) resolve via substring matching.
+    "gemini-3.1-pro": "gemini-3.1-pro",
+    "gemini-3.1-pro-preview": "gemini-3.1-pro"
 };
 
 // Map a raw `agentType` (BENCH_AGENT_TYPE, incl. the harness's own aliases
