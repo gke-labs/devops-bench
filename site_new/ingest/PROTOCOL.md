@@ -50,7 +50,7 @@ always `0`; the schema is already shaped for multi-iteration runs (§4).
 | `model` | string | curated key | Model key, e.g. `"alpha-pro"`. Must exist in `catalog.mjs` (§6). |
 | `harness` | string | curated key | Harness key, e.g. `"gemini-cli"`. Must exist in `catalog.mjs` (§6). |
 | `augmentation` | string[] | tokens | Capability tokens stacked on the base pairing, e.g. `["mcp", "skills"]`. **`[]` means baseline.** |
-| `runId` | string | `^run_\d{8}_\d{6}$` | Run id, `run_YYYYMMDD_HHMMSS`. Identifies the run; ties iterations together. |
+| `runId` | string | `^run_\d{8}_\d{6}(_<suffix>)?$` | Run id, `run_YYYYMMDD_HHMMSS` with an optional `_<suffix>`. Identifies the run; ties its tasks/iterations together. The timestamp alone is not unique, so isolated parallel runs append a `_<suffix>` (pid / matrix id) to stay distinct in the `setupId__runId__taskFolder__iteration` doc id. |
 | `t` | string | ISO 8601 | Run timestamp, e.g. `"2026-06-01T12:00:00Z"`. The trend x-axis. |
 | `taskFolder` | string | non-empty | Task folder id, e.g. `"deploy-config"`. The task axis key. |
 | `taskName` | string | non-empty | Human-readable task name. |

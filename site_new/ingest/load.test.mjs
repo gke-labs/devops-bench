@@ -47,6 +47,11 @@ describe("validateRow", () => {
         expect(errs.join()).toMatch(/runId/);
     });
 
+    it("accepts a runId with a uniqueness suffix (parallel/aggregated runs)", () => {
+        expect(validateRow({ ...validRow, runId: "run_20260601_120000_12345" })).toEqual([]);
+        expect(validateRow({ ...validRow, runId: "run_20260601_120000_matrix-7" })).toEqual([]);
+    });
+
     it("flags a non-array augmentation", () => {
         const errs = validateRow({ ...validRow, augmentation: "gca" });
         expect(errs.join()).toMatch(/augmentation/);
