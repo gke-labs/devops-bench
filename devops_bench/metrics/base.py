@@ -93,6 +93,8 @@ class MetricContext:
         outcome_case: The outcome-focused ``LLMTestCase``.
         tool_case: The tools-and-trajectory ``LLMTestCase``.
         all_case: The combined (text + trace) ``LLMTestCase``.
+        generation_only: Whether the task provisions no cluster (``deployer:
+            noop``); outcome scoring must not require cluster application for these.
     """
 
     result: dict[str, Any]
@@ -101,6 +103,7 @@ class MetricContext:
     outcome_case: LLMTestCase
     tool_case: LLMTestCase
     all_case: LLMTestCase
+    generation_only: bool = False
 
 
 @runtime_checkable

@@ -61,6 +61,23 @@ _BUILTIN_METRIC_KEYS: tuple[str, ...] = (
 )
 
 
+def _canonical_tool_name(name: str) -> str:
+    """Strip an MCP server prefix from a tool name for judge matching.
+
+    MCP tools surface as ``<server>__<tool>`` (e.g. ``default__generate_manifest``);
+    tasks reference the canonical ``<tool>``. Returns the segment after the first
+    ``"__"``, or the name unchanged when there is no prefix.
+
+    >>> _canonical_tool_name("default__generate_manifest")
+    'generate_manifest'
+    >>> _canonical_tool_name("run_shell_command")
+    'run_shell_command'
+    """
+    if not isinstance(name, str):
+        return name
+    return name.split("__", 1)[1] if "__" in name else name
+
+
 def _build_context(
     res: dict[str, Any], judge_model: Any, use_mcp: bool
 ) -> MetricContext:
@@ -86,6 +103,18 @@ def _build_context(
     latency = res.get("latency")
     retrieval_context = res.get("retrieval_context")
 
+    # Tool names surface with an MCP server prefix (e.g. ``default__generate_manifest``);
+    # expected-tool checks in tasks reference the canonical name (``generate_manifest``).
+    # Normalize only for the judge test cases so tool-call matching isn't brittle;
+    # the on-disk record keeps the raw names.
+    norm_tools = [_canonical_tool_name(t) for t in res.get("tools", [])]
+    norm_trajectory = [
+        {**entry, "name": _canonical_tool_name(entry.get("name", ""))}
+        if isinstance(entry, dict)
+        else entry
+        for entry in trajectory
+    ]
+
     outcome_case = LLMTestCase(
         input=prompt,
         actual_output=actual_output if actual_output else "No response generated",
@@ -95,8 +124,8 @@ def _build_context(
     )
 
     combined_actual = {
-        "tools_used": res.get("tools", []),
-        "execution_trace": trajectory,
+        "tools_used": norm_tools,
+        "execution_trace": norm_trajectory,
     }
     tool_case = LLMTestCase(
         input=prompt,
@@ -106,8 +135,8 @@ def _build_context(
     )
 
     all_context = {
-        "tools_used": res.get("tools", []),
-        "execution_trace": trajectory,
+        "tools_used": norm_tools,
+        "execution_trace": norm_trajectory,
         "text_output": actual_output if actual_output else "No response generated",
     }
     all_case = LLMTestCase(
@@ -124,6 +153,7 @@ def _build_context(
         outcome_case=outcome_case,
         tool_case=tool_case,
         all_case=all_case,
+        generation_only=bool(res.get("generation_only", False)),
     )
 
 

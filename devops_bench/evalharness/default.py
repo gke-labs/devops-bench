@@ -736,6 +736,8 @@ class DefaultHarness(Harness):
             "documentation",
             "capabilities_granted",
             "verification_parse_errors",
+            "generation_only",
+            "validated",
         }
     )
 
@@ -879,6 +881,12 @@ class DefaultHarness(Harness):
                 "skills": list(self._granted_skill_paths),
             },
             "verification_parse_errors": [],
+            # Generation-only (``deployer: noop``) tasks have no cluster, so the
+            # OutcomeValidity judge must not penalize them for "not applying".
+            "generation_only": (task.infrastructure or {}).get("deployer") == "noop",
+            # Only tasks vetted as correct promote to the leaderboard; downstream
+            # ingest gates inclusion on this flag (default False until vetted).
+            "validated": task.validated,
         }
 
     def _drain_scenario(

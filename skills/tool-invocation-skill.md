@@ -13,6 +13,8 @@ NOTE: The test actual output (provided in the test case context) contains the ag
 
 Compare the execution trace tool calls against any required tool calls explicitly mentioned in the test case Expected Output field (e.g., look for 'Expected Tool Call' or similar guidance strings).
 
+NOTE: MCP-provided tools may appear with a server prefix (e.g. `default__generate_manifest`). Match a required tool by its canonical name (the part after `__`): treat `default__generate_manifest` as satisfying an expected `generate_manifest`.
+
 ## Evaluation Criteria
 
 1.  **Tool Correctness**: Did the agent use the appropriate tools for the task?

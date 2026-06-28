@@ -326,3 +326,52 @@ def test_batch_score_insertion_order_matches_legacy_results_json(mocker):
         < idx("GroundingAccuracy")
         < idx("DiagnosisAccuracy")
     )
+
+
+# --- generation_only flow + MCP tool-name normalization -----------------------
+
+
+def test_canonical_tool_name_strips_mcp_prefix():
+    assert pipeline._canonical_tool_name("default__generate_manifest") == "generate_manifest"
+    assert pipeline._canonical_tool_name("run_shell_command") == "run_shell_command"
+
+
+def test_build_context_threads_generation_only(mocker):
+    mocker.patch.object(
+        pipeline, "LLMTestCase", side_effect=lambda **kw: SimpleNamespace(**kw)
+    )
+    ctx = pipeline._build_context(_base_result(generation_only=True), MagicMock(), True)
+    assert ctx.generation_only is True
+    # Absent key defaults to False.
+    assert pipeline._build_context(_base_result(), MagicMock(), True).generation_only is False
+
+
+def test_build_context_normalizes_tool_names_for_judge(mocker):
+    mocker.patch.object(
+        pipeline, "LLMTestCase", side_effect=lambda **kw: SimpleNamespace(**kw)
+    )
+    res = _base_result(
+        tools=["default__generate_manifest"],
+        trajectory=[{"name": "default__generate_manifest", "status": "completed"}],
+    )
+    ctx = pipeline._build_context(res, MagicMock(), True)
+    # Judge sees the canonical name; the on-disk record keeps the raw prefix.
+    assert "generate_manifest" in ctx.tool_case.actual_output
+    assert "default__generate_manifest" not in ctx.tool_case.actual_output
+    assert res["tools"] == ["default__generate_manifest"]
+    assert res["trajectory"][0]["name"] == "default__generate_manifest"
+
+
+def test_outcome_validity_override_only_when_generation_only(mocker):
+    from devops_bench.metrics import outcome_validity
+
+    captured = {}
+    mocker.patch.object(
+        outcome_validity,
+        "GEval",
+        side_effect=lambda **kw: captured.update(kw) or SimpleNamespace(**kw),
+    )
+    outcome_validity.build_outcome_validity_metric(MagicMock(), generation_only=False)
+    assert outcome_validity._GENERATION_ONLY_OVERRIDE not in captured["criteria"]
+    outcome_validity.build_outcome_validity_metric(MagicMock(), generation_only=True)
+    assert outcome_validity._GENERATION_ONLY_OVERRIDE in captured["criteria"]
