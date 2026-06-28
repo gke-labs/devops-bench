@@ -30,7 +30,11 @@
 #   SKILLS_SRC     dir of skill markdowns         (default: ~/devops-bench/skills)
 #   OC_SKILLS_DIR  staging dir for <name>/SKILL.md (default: ~/oc-skills)
 #   VERTEX_MODELS  space-separated model ids to register under google-vertex
-#                  (default: "gemini-3.1-pro-preview gemini-3-flash-preview")
+#                  (default: "gemini-3.1-pro-preview gemini-3-flash-preview
+#                            gemini-3.5-flash")
+#   GENAI_MODELS   space-separated model ids to register under the google
+#                  (google-genai) provider's catalog — only models oc doesn't
+#                  ship by default need listing (default: "gemini-3.5-flash")
 #   OPENCLAW_AGENT oc agent profile for the auth marker (default: main)
 set -euo pipefail
 
@@ -41,7 +45,8 @@ GKE_MCP_BIN="${GKE_MCP_BIN:-${HOME}/gke-mcp}"
 SECRETS_ENV="${SECRETS_ENV:-${HOME}/secrets.env}"
 SKILLS_SRC="${SKILLS_SRC:-${HOME}/devops-bench/skills}"
 OC_SKILLS_DIR="${OC_SKILLS_DIR:-${HOME}/oc-skills}"
-VERTEX_MODELS="${VERTEX_MODELS:-gemini-3.1-pro-preview gemini-3-flash-preview}"
+VERTEX_MODELS="${VERTEX_MODELS:-gemini-3.1-pro-preview gemini-3-flash-preview gemini-3.5-flash}"
+GENAI_MODELS="${GENAI_MODELS:-gemini-3.5-flash}"
 OPENCLAW_AGENT="${OPENCLAW_AGENT:-main}"
 
 while [ $# -gt 0 ]; do
@@ -73,6 +78,39 @@ if [ -f "${SECRETS_ENV}" ]; then
   fi
 else
   echo "==> WARN: ${SECRETS_ENV} not found; skipping oc auth"
+fi
+
+# --- 1b. google-genai catalog overrides ------------------------------------- #
+# Register models oc's built-in catalog doesn't ship (e.g. gemini-3.5-flash)
+# under the google (google-genai) provider so the legacy arm can target
+# `google/<model>` over the API-key endpoint. The provider's transport is
+# built-in, so only the model + agent allowlist entries are added. Idempotent;
+# auth still flows from `oc models auth paste-api-key --provider google` above.
+if [ -n "${GENAI_MODELS}" ]; then
+  OC_CONFIG="${HOME}/.openclaw/openclaw.json" GENAI_MODELS="${GENAI_MODELS}" \
+  python3 - <<'PY'
+import json, os
+path = os.environ["OC_CONFIG"]
+models = os.environ["GENAI_MODELS"].split()
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+except FileNotFoundError:
+    cfg = {}
+prov = cfg.setdefault("models", {}).setdefault("providers", {}).setdefault("google", {})
+prov.setdefault("models", [])
+existing = {m.get("id") for m in prov["models"] if isinstance(m, dict)}
+for m in models:
+    if m not in existing:
+        prov["models"].append({"id": m, "name": m})
+# Allowlist google/<model> for the agent's per-run --model override.
+allow = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("models", {})
+for m in models:
+    allow.setdefault(f"google/{m}", {})
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"==> google (genai) catalog overrides registered: {', '.join(models)}")
+PY
 fi
 
 # --- 2. GKE MCP server ------------------------------------------------------ #
