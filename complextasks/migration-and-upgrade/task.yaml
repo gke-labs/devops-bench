@@ -10,7 +10,11 @@ prompt: |
   You are a Kubernetes platform engineer responsible for the cluster '{{CLUSTER_NAME}}'.
 
   Safely upgrade the cluster to the next minor Kubernetes version, keeping the running
-  applications healthy across the upgrade. The application manifests live in a git repository at
+  applications healthy across the upgrade. This cluster runs on kind, which has no managed
+  control-plane upgrade — perform the upgrade in the way that substrate supports (e.g. an
+  in-place kubeadm node upgrade and/or validating the migrated manifests on a temporary
+  target-version cluster) and confirm the workloads run on the target version. The
+  application manifests live in a git repository at
   '~/migration-repo-{{CLUSTER_NAME}}.git' — treat it as the source of truth and keep it up to date with any
   changes you make along the way.
 
