@@ -199,7 +199,23 @@ If the legacy arm needs capabilities, run `configure-oc.sh --mcp --skills`
    it — **especially the easy-to-miss `gke-nodes-*` SAs** (their orphaning is a
    known bug; see `docs/parallel-evals.md`).
 4. **Prereqs present:** `~/gke-mcp` (executable), `~/oc-skills/` (if using skills),
-   `~/devops-bench/.venv`. If missing, run `scripts/bastion/vm-setup.sh`.
+   `~/devops-bench/.venv`, and — for **chaos tasks** (e.g. `optimize-scale`) — the
+   `fortio` binary on PATH (the chaos agent shells out to it for `generate_load`;
+   without it the load spike silently no-ops). If anything is missing, run
+   `scripts/bastion/vm-setup.sh`.
+5. **Clear stale per-run state before a RERUN of a task** (else `tofu plan` fails
+   with *"could not locate any control plane nodes for cluster …"* against a
+   deleted cluster, or a GitOps seed `rm -rf` trips on a leftover repo): the
+   per-run state dir is keyed by `task__model__arm`, so a prior aborted run's state
+   is reused. Wipe it:
+   ```bash
+   ssh <bastion> 'rm -rf /tmp/devops-bench-runs/<task>__* ; \
+                  for c in $(kind get clusters); do kind delete cluster --name "$c"; done'
+   ```
+   Also clear stale GitOps bare repos the seeds recreate
+   (`~/app-repo.git`, `~/opa-repo.git`, `~/migration-repo.git`) if a prior run left
+   them — if one is **root-owned** (e.g. from an old Docker-based run), the seed's
+   `rm -rf` fails under `set -e`; remove it with `sudo rm -rf`.
 
 ---
 
@@ -367,3 +383,14 @@ table, and the list of failures with their root cause + fix.
   next wake (see `references/resilient-monitoring.md`) rather than going silent.
 - **Progressive disclosure:** read a `references/*.md` file only when its mode
   applies; don't load both for a plain run.
+- **Cluster-mutation blast radius (with-mcp + owner SA).** The bench SA needs broad
+  rights (`owner`/`container.admin`), so gke-mcp exposes *every* real cluster in the
+  project as a writable target. On manifest-generation tasks (computeclass-*,
+  gateway-*, hpa-*) — which should just emit YAML — the agent sometimes runs
+  `gcloud container clusters update/upgrade` against an unrelated cluster it
+  discovers. These ops are long-running with no agent timeout, so the run **hangs**
+  (no score) and may mutate a cluster the eval never provisioned (teardown won't
+  clean it). Mitigations: run such tasks in a project with **no other clusters**,
+  or watch the logs for `clusters update|upgrade|delete` and kill the offending
+  `gcloud` (the agent then falls back to `generate_manifest`). Don't auto-revert a
+  change to a cluster you don't own.
