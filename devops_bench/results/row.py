@@ -105,6 +105,8 @@ class ResultRow(BaseModel):
         input_tokens: Prompt token count, or ``None`` when unreported.
         output_tokens: Completion token count, or ``None`` when unreported.
         status: Terminal record status, ``"success"`` or ``"failed"``.
+        validated: Whether the task is vetted as correct and eligible for the
+            leaderboard; ingest gates promotion on this (default ``False``).
     """
 
     model_config = _MODEL_CONFIG
@@ -124,6 +126,7 @@ class ResultRow(BaseModel):
     input_tokens: int | None
     output_tokens: int | None
     status: str
+    validated: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON-serializable mapping written to ``rows.json``.

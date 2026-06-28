@@ -185,7 +185,10 @@ export function generateRaw() {
                         toolScore: round(Math.min(1, outcomeScore + rng() * 0.1), 4),
                         latencySec: round(20 + rng() * 60, 2),
                         inputTokens: Math.round(8000 + rng() * 30000),
-                        outputTokens: Math.round(300 + rng() * 1500)
+                        outputTokens: Math.round(300 + rng() * 1500),
+                        // Mock rows are all vetted so the seeded demo renders;
+                        // real rows carry per-task validated from the harness.
+                        validated: true
                     });
                 }
             });
@@ -251,6 +254,10 @@ function meanScores(scoreList) {
  * @returns {Setup[]}
  */
 export function derive(rows) {
+    // Leaderboard gate: only tasks vetted as correct (validated) promote. A row
+    // without an explicit validated:true is excluded so an unvetted/buggy task
+    // never counts toward a setup's score.
+    rows = rows.filter(r => r.validated === true);
     // Group rows by setupId.
     const bySetup = new Map();
     for (const r of rows) {

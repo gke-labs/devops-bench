@@ -213,4 +213,22 @@ def test_to_dict_roundtrip_fields():
         "verification_spec",
         "infrastructure",
         "documentation",
+        "validated",
     }
+
+
+def test_validated_defaults_false():
+    assert Task.from_dict({"name": "n"}, name_default="d").validated is False
+
+
+def test_validated_parsed_from_spec():
+    assert Task.from_dict({"name": "n", "validated": True}).validated is True
+
+
+def test_validated_empty_block_coalesces_false():
+    # An empty YAML block (``validated:`` with no value) parses to None.
+    assert Task.from_dict({"name": "n", "validated": None}).validated is False
+
+
+def test_validated_roundtrips_in_to_dict():
+    assert Task.from_dict({"name": "n", "validated": True}).to_dict()["validated"] is True

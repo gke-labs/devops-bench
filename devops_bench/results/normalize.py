@@ -222,6 +222,7 @@ def build_rows(records: Iterable[Mapping[str, Any]], manifest: Manifest) -> list
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 status=record.get("status", "") or "",
+                validated=bool(record.get("validated", False)),
             )
         )
     return rows

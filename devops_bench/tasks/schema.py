@@ -125,6 +125,9 @@ class Task(BaseModel):
             verification subsystem; may be a mapping, list, or raw JSON string.
         infrastructure: Deployer and stack settings for the task environment.
         documentation: Documentation entries, each with per-constraint criticality.
+        validated: Whether the task has been vetted as correct and is eligible to
+            promote to the leaderboard. Defaults to ``False`` so an unvetted task
+            never counts until explicitly marked.
     """
 
     model_config = _STRICT
@@ -139,6 +142,7 @@ class Task(BaseModel):
     verification_spec: Any = None
     infrastructure: dict[str, Any] = Field(default_factory=dict)
     documentation: list[DocumentationEntry] = Field(default_factory=list)
+    validated: bool = False
 
     @classmethod
     def from_dict(
@@ -175,6 +179,7 @@ class Task(BaseModel):
         retrieval = raw.get("retrieval_context", [])
         infrastructure = raw.get("infrastructure", {})
         documentation = raw.get("documentation", [])
+        validated = raw.get("validated", False)
 
         return cls.model_validate(
             {
@@ -190,6 +195,7 @@ class Task(BaseModel):
                 "verification_spec": raw.get("verification_spec"),
                 "infrastructure": {} if infrastructure is None else infrastructure,
                 "documentation": [] if documentation is None else documentation,
+                "validated": False if validated is None else validated,
             }
         )
 

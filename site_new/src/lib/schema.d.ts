@@ -129,4 +129,6 @@ export interface ResultRow {
     inputTokens: number | null;
     /** Null when token usage was not captured. */
     outputTokens: number | null;
+    /** Whether the task is vetted as correct; only validated tasks promote to the leaderboard. */
+    validated: boolean;
 }

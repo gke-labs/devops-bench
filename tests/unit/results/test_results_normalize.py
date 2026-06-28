@@ -165,6 +165,7 @@ def test_build_rows_success_record():
         "inputTokens": 100,
         "outputTokens": 20,
         "status": "success",
+        "validated": False,
     }
 
 
@@ -224,6 +225,7 @@ def test_result_row_keys_match_typescript_interface():
         "latencySec",
         "inputTokens",
         "outputTokens",
+        "validated",
     }
     row = build_rows(
         [{"name": "n", "folder": "f", "status": "success", "scores": {}, "tokens": {}}],
@@ -242,3 +244,14 @@ def test_manifest_to_dict_keys():
         "harness",
         "augmentation",
     }
+
+
+def test_build_rows_propagates_validated():
+    manifest = _manifest()
+    validated_row = build_rows(
+        [{"name": "t", "folder": "f", "status": "success", "validated": True}], manifest
+    )[0]
+    assert validated_row.to_dict()["validated"] is True
+    # Absent key defaults to False (unvetted tasks don't promote).
+    default_row = build_rows([{"name": "t", "folder": "f", "status": "success"}], manifest)[0]
+    assert default_row.to_dict()["validated"] is False
