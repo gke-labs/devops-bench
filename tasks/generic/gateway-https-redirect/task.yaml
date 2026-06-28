@@ -5,7 +5,7 @@ name: "gateway-https-redirect"
 # fall back to the default prebuilt/kind stack and is trivially parallel-safe.
 infrastructure:
   deployer: "noop"
-prompt: "Configure an HTTP-to-HTTPS redirect on public-gw. All traffic coming in on port 80 should be redirected to port 443 with a 301 status code."
+prompt: "Generate the Kubernetes manifest for an HTTP-to-HTTPS redirect on public-gw: all traffic on port 80 should be redirected to port 443 with a 301 status code. Output the manifest only; do not apply it to a cluster."
 expected_output: |
   critical requirements:
 

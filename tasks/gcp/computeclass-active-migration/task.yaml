@@ -5,13 +5,13 @@ name: "computeclass-active-migration"
 # fall back to the default prebuilt/kind stack and is trivially parallel-safe.
 infrastructure:
   deployer: "noop"
-prompt: "Configure the performance-tier ComputeClass to use Active Migration. If a workload is currently running on a fallback N2 instance, GKE should automatically move it to a C3 instance as soon as one becomes available."
+prompt: "Generate the Kubernetes manifest for the performance-tier ComputeClass with Active Migration enabled, so that if a workload is running on a fallback N2 instance, GKE automatically moves it to a C3 instance as soon as one becomes available. Output the manifest only; do not apply it to a cluster."
 expected_output: |
   critical requirements:
 
   - Expected Tool Call: generate_manifest
   - Update/Modify the performance-tier ComputeClass resource.
-  - Configure the spec.activeMigration parameter to true (or optimizeRulePriority).
+  - Set the spec.activeMigration.optimizeRulePriority field to true.
 
   Expected Manifest Generated:
   apiVersion: cloud.google.com/v1
@@ -19,4 +19,5 @@ expected_output: |
   metadata:
     name: performance-tier
   spec:
-    activeMigration: true
+    activeMigration:
+      optimizeRulePriority: true

@@ -1,12 +1,10 @@
 task_id: 4
 name: "modify-deployment"
+# Manifest-transformation task ("Modify this given manifest"): the agent edits
+# the in-context YAML; no cluster access is needed. deployer: noop skips
+# provisioning; generation_only is auto-derived from deployer==noop.
 infrastructure:
-  deployer: "tofu"
-  stack: "prebuilt/minimum"
-  teardown: true
-  variables:
-    node_count: 3
-    machine_type: "e2-standard-2"
+  deployer: "noop"
 prompt: |
   Modify this given Kubernetes manifest for the hypercomputer-d1-frontend app in {{GCP_PROJECT_ID}} project from using the Gemini API to a locally hosted model ```
   apiVersion: apps/v1

@@ -11,7 +11,9 @@ infrastructure:
 prompt: |
   An automated alert for high Time to First Token (TTFT) latency has triggered
   for the 'hypercomputer-agent' service in GKE cluster {{GKE_CLUSTER_NAME}} in
-  project {{GCP_PROJECT_ID}}.
+  project {{GCP_PROJECT_ID}}. This is a post-incident analysis: the live workload
+  is no longer running, so conduct the investigation from the cluster's Cloud
+  Logging history rather than from live kubectl/cluster state.
 
   Write an incident post-mortem report named `analysis_report.md` in your
   workspace detailing:

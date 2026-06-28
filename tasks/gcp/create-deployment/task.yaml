@@ -1,12 +1,10 @@
 task_id: 2
 name: "create-deployment"
+# Manifest-generation task ("Generate ... manifest"): judged on the YAML the
+# agent produces, never applied. deployer: noop skips provisioning so it does not
+# waste a GKE cluster bring-up; generation_only is auto-derived from deployer==noop.
 infrastructure:
-  deployer: "tofu"
-  stack: "prebuilt/minimum"
-  teardown: true
-  variables:
-    node_count: 3
-    machine_type: "e2-standard-2"
+  deployer: "noop"
 prompt: "Generate Kubernetes manifest for deploying our finetuned Gemma 3 12b model to our GKE {{GKE_CLUSTER_NAME}}. I think the models are stored in GCS in bucket hypercomputer-d1-models-{{GCP_PROJECT_ID}}. Ensure that it can scale up and down with traffic."
 expected_output: |
   critical requirements:

@@ -5,24 +5,25 @@ name: "hpa-metric-filtering"
 # fall back to the default prebuilt/kind stack and is trivially parallel-safe.
 infrastructure:
   deployer: "noop"
-prompt: "Configure an AutoscalingMetric resource to scrape a Prometheus gauge named http_requests_total but ensure it only scales based on data points where the version label is set to v2."
+prompt: "Generate the Kubernetes manifest for an AutoscalingMetric resource that scrapes a Prometheus gauge named http_requests_total but only scales based on data points where the version label is set to v2. Output the manifest only; do not apply it to a cluster."
 expected_output: |
   critical requirements:
 
   - Expected Tool Call: generate_manifest
   - Create an GKE-native AutoscalingMetric resource.
   - Set target metric to http_requests_total.
-  - Configure Prometheus label filter (version: v2) inside spec.metric.filter.matchLabels.
+  - Configure Prometheus label filter (version: v2) inside spec.metrics[].gauge.filter.matchLabels.
 
   Expected Manifest Generated:
-  apiVersion: autoscaling.gke.io/v1
+  apiVersion: autoscaling.gke.io/v1beta1
   kind: AutoscalingMetric
   metadata:
     name: http-requests-metric
     namespace: default
   spec:
-    metric:
-      name: http_requests_total
-      filter:
-        matchLabels:
-          version: v2
+    metrics:
+    - gauge:
+        name: http_requests_total
+        filter:
+          matchLabels:
+            version: v2

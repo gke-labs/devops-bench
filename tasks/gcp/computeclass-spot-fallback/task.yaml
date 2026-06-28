@@ -5,7 +5,7 @@ name: "computeclass-spot-fallback"
 # fall back to the default prebuilt/kind stack and is trivially parallel-safe.
 infrastructure:
   deployer: "noop"
-prompt: "Create a ComputeClass named cost-optimized-high-cpu. It should prioritize Spot VMs using the C3 machine family, but fall back to On-Demand N2 instances if Spot capacity is unavailable."
+prompt: "Generate the Kubernetes manifest for a ComputeClass named cost-optimized-high-cpu that prioritizes Spot VMs using the C3 machine family, but falls back to On-Demand N2 instances if Spot capacity is unavailable. Output the manifest only; do not apply it to a cluster."
 expected_output: |
   critical requirements:
 

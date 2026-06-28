@@ -5,7 +5,7 @@ name: "gateway-cloud-armor"
 # fall back to the default prebuilt/kind stack and is trivially parallel-safe.
 infrastructure:
   deployer: "noop"
-prompt: "Apply a Cloud Armor security policy named block-ddos-policy to the external Gateway public-gw using a GCPBackendPolicy."
+prompt: "Generate the Kubernetes manifest for a GCPBackendPolicy that attaches a Cloud Armor security policy named block-ddos-policy to the external Gateway public-gw. Output the manifest only; do not apply it to a cluster."
 expected_output: |
   critical requirements:
 

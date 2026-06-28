@@ -12,7 +12,7 @@ infrastructure:
 # name to the run-unique {{GKE_CLUSTER_NAME}} so concurrent/rerun matrices don't
 # collide. (The repo itself is agent-created and not torn down by the cluster
 # teardown above — cleaning up leaked AR repos is a tracked follow-up.)
-prompt: "Generate a production-ready Kubernetes manifest for the application located at {{APP_LOCATION}} and then deploy it to cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}. When you build and publish the container image, use an Artifact Registry repository named hello-app-{{GKE_CLUSTER_NAME}} so it is unique to this run. I know the app is just a simple hello world, pretend it is a complex app that needs full productionization."
+prompt: "Generate a production-ready Kubernetes manifest for the application located at {{APP_LOCATION}} and then deploy it to cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}. When you build and publish the container image, use an Artifact Registry repository named hello-app-{{GKE_CLUSTER_NAME}} so it is unique to this run. I know the app is just a simple hello world, pretend it is a complex app that needs full productionization (a hardened security context, a NetworkPolicy, and internet exposure)."
 expected_output: |
   critical requirements:
   - Convert program to HTTP server
@@ -29,11 +29,10 @@ expected_output: |
   - Resource Requests
   - Resource Limits
   - Security Context
-  - Allow Privilege Escalation
+  - Disable privilege escalation (allowPrivilegeEscalation: false)
   - Read Only Root Filesystem
   - Run As Non-root
   - Pod Disruption Budget
   - Horizontal Pod Autoscaler
   - Successfully exposed to Internet
-  - Gateway
   - Network Policy

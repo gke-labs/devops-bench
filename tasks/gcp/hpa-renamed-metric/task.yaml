@@ -5,25 +5,26 @@ name: "hpa-renamed-metric"
 # fall back to the default prebuilt/kind stack and is trivially parallel-safe.
 infrastructure:
   deployer: "noop"
-prompt: "Configure an HPA to use a metric that has been renamed during export via the exportName field in its AutoscalingMetric definition."
+prompt: "Generate the Kubernetes manifest for an HPA that scales on a Prometheus metric renamed during export via the prometheusMetricName field in its GKE AutoscalingMetric definition. Output the manifest only; do not apply it to a cluster."
 expected_output: |
   critical requirements:
 
   - Expected Tool Call: generate_manifest
-  - Create an GKE AutoscalingMetric resource containing an exportName mapping parameter.
+  - Create a GKE AutoscalingMetric resource that renames the metric via the prometheusMetricName field (maps the Prometheus metric name to a sanitized autoscaler name).
   - Create a HorizontalPodAutoscaler (HPA) resource.
-  - Reference the exported custom metric in the HPA spec.metrics[] using the exact renamed exportName with the autoscaling.gke.io|... prefix.
+  - Reference the exposed custom metric in the HPA using the autoscaling.gke.io|<AutoscalingMetric-name>|<gauge-name> naming convention.
 
   Expected Manifest Generated:
-  apiVersion: autoscaling.gke.io/v1
+  apiVersion: autoscaling.gke.io/v1beta1
   kind: AutoscalingMetric
   metadata:
     name: web-metric
     namespace: default
   spec:
-    metric:
-      name: original_metric_name
-      exportName: exported-name
+    metrics:
+    - gauge:
+        name: renamed_metric
+        prometheusMetricName: original_metric_name
   ---
   apiVersion: autoscaling/v2
   kind: HorizontalPodAutoscaler
@@ -38,10 +39,10 @@ expected_output: |
     minReplicas: 1
     maxReplicas: 10
     metrics:
-    - type: External
-      external:
+    - type: Pods
+      pods:
         metric:
-          name: autoscaling.gke.io|web-metric|exported-name
+          name: autoscaling.gke.io|web-metric|renamed_metric
         target:
-          type: Value
-          value: 100
+          type: AverageValue
+          averageValue: 100
