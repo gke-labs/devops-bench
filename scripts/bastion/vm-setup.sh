@@ -68,6 +68,30 @@ else
     || echo "    WARN: gemini CLI install failed; gcli agent runs will not work until it's installed."
 fi
 
+# fortio — the load generator the chaos agent shells out to for `generate_load`
+# faults (e.g. the optimize-scale load spike). The chaos system instruction tells
+# the agent to use the `fortio` binary; without it on PATH the spike is a silent
+# no-op (the run can still "pass" via the agent's HPA minReplicas, but the load is
+# never actually applied). Install to ~/bin (idempotent).
+echo "==> fortio check (chaos load generator)"
+if command -v fortio >/dev/null 2>&1; then
+  echo "    fortio present: $(fortio version 2>/dev/null | head -1)"
+else
+  echo "    installing fortio to ~/bin..."
+  FORTIO_VERSION="${FORTIO_VERSION:-1.66.4}"
+  mkdir -p "${HOME}/bin"
+  if curl -fsSL -o /tmp/fortio.tgz \
+       "https://github.com/fortio/fortio/releases/download/v${FORTIO_VERSION}/fortio-linux_amd64-${FORTIO_VERSION}.tgz" \
+     && tar -xzf /tmp/fortio.tgz -C /tmp 2>/dev/null \
+     && cp "$(find /tmp -maxdepth 4 -name fortio -type f 2>/dev/null | head -1)" "${HOME}/bin/fortio" \
+     && chmod +x "${HOME}/bin/fortio"; then
+    echo "    fortio installed: $("${HOME}/bin/fortio" version 2>/dev/null | head -1)"
+    echo "    (ensure ~/bin is on PATH — secrets.env / bench.env exports it for runs)"
+  else
+    echo "    WARN: fortio install failed; chaos generate_load faults (optimize-scale) will no-op."
+  fi
+fi
+
 # Disable Gemini CLI folder-trust gating at the USER level. The gcli agent runs
 # in a fresh, untrusted per-run temp cwd; untrusted folders have their MCP
 # servers (e.g. gke-mcp) suppressed, and a workspace-level setting can't lift it
