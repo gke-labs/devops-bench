@@ -13,6 +13,14 @@ terraform {
 
 provider "kind" {}
 
+locals {
+  # GitOps repo path on the shared bastion host. setup.sh rm -rf's + reseeds it,
+  # so a fixed path would let one run wipe a concurrent run's repo. cluster_name
+  # is run-token-prefixed, making this per-run unique. The task prompt references
+  # the same path via the {{CLUSTER_NAME}} placeholder. An explicit override wins.
+  repo_path = var.repo_path != "" ? var.repo_path : "~/opa-repo-${var.cluster_name}.git"
+}
+
 # Single-node kind cluster (control-plane is schedulable on single-node kind, so
 # the team workloads run here). Kyverno + the workloads are installed by setup.sh.
 resource "kind_cluster" "default" {
@@ -35,7 +43,7 @@ resource "null_resource" "setup" {
     command     = "${path.module}/scripts/setup.sh"
     environment = {
       KUBECONFIG    = pathexpand(var.kubeconfig_path)
-      REPO_PATH     = pathexpand(var.repo_path)
+      REPO_PATH     = pathexpand(local.repo_path)
       MANIFESTS_DIR = "${path.module}/manifests"
     }
   }

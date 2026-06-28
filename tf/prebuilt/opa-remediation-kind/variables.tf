@@ -24,6 +24,6 @@ variable "node_image" {
 
 variable "repo_path" {
   type        = string
-  description = "Local bare git repo (GitOps source of truth) the agent clones the manifests from."
-  default     = "~/opa-repo.git"
+  description = "Local bare git repo (GitOps source of truth). Empty (default) derives a per-run-unique path from cluster_name so concurrent runs on the shared bastion don't collide (see locals)."
+  default     = ""
 }

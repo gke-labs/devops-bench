@@ -34,8 +34,9 @@ clusters, and a **cross-region Cloud SQL** primary/replica pair.
 - **Config drift is pre-seeded.** West is deployed **without** the `app-config` ConfigMap and
   `app-secret` Secret that east has (they are marked `optional`, so west still runs). Post-failover
   validation is expected to surface this drift; the agent reconciles it from the GitOps repo.
-- **GitOps source of truth** is a local **bare git repo** at `~/app-repo.git`, seeded with the
-  app's desired state (including `app-config`/`app-secret`).
+- **GitOps source of truth** is a per-run local **bare git repo** at `~/app-repo-<cluster_name>.git`
+  (run-unique so concurrent runs don't collide; the prompt uses `{{GKE_CLUSTER_NAME}}`), seeded with
+  the app's desired state (including `app-config`/`app-secret`).
 - Both clusters' credentials are merged into the kubeconfig as stable contexts **`east`** and
   **`west`** (the harness only credentials the primary; the setup script adds the standby).
 

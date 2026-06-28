@@ -1,5 +1,13 @@
 task_id: 3
 name: "cp-recovery"
+# KIND-ONLY EXCEPTION to the all-GKE matrix. This task performs control-plane
+# surgery (diagnose a corrupted etcd member, verify a staged snapshot, restore
+# the member to quorum). On GKE the control plane is fully Google-managed and
+# inaccessible, so this is architecturally impossible there — it must run on a
+# real, node-accessible kind cluster on the bastion host. It IS parallel-safe:
+# the kind cluster name comes from the run-token-prefixed {{CLUSTER_NAME}} (so
+# Docker containers/nodes are per-run unique) and the kubeconfig is the per-run
+# $KUBECONFIG, not ~/.kube/config. See docs/bastion.md "Parallel agent support".
 infrastructure:
   deployer: "tofu"
   stack: "prebuilt/cp-recovery-kind"

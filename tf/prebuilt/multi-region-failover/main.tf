@@ -21,18 +21,22 @@ provider "google" {
 }
 
 locals {
-  # The agent runs as this SA; the east module grants it project-wide container.admin
-  # (which reaches both clusters). West passes "" so we don't create a duplicate binding.
-  #
-  # CAUTION (parallel runs): this defaults to the shared openclaw-vm-sa. The
-  # roles/container.admin binding is project-wide and keyed only on (member, role), so two
-  # concurrent GKE tasks granting it to the same SA share one binding -- and whichever
-  # tears down first revokes it out from under the other. For parallel runs, give each run
-  # its own agent SA via var.agent_service_account.
-  agent_sa = var.agent_service_account != "" ? var.agent_service_account : "openclaw-vm-sa@${var.project_id}.iam.gserviceaccount.com"
+  # GitOps repo path on the shared bastion host. Per-run unique (cluster_name is
+  # run-token-prefixed) so concurrent / back-to-back runs don't rm -rf + reseed
+  # each other's repo. setup.sh rm -rf's this path, so a fixed default would let
+  # one run wipe another's source of truth. The task prompt references the same
+  # path via the {{GKE_CLUSTER_NAME}} placeholder. An explicit var.repo_path wins.
+  repo_path = var.repo_path != "" ? var.repo_path : "~/app-repo-${var.cluster_name}.git"
 
-  east_cluster = "${var.cluster_name}-east"
-  west_cluster = "${var.cluster_name}-west"
+  # Region-prefixed cluster names. The discriminator must land in the FIRST 15
+  # chars: tf/modules/gke derives the node SA account_id from
+  # substr(cluster_name, 0, 15), so a "-east"/"-west" *suffix* (past char 15)
+  # would give both clusters the SAME account_id and collide on a single apply.
+  # A leading "e-"/"w-" keeps the run token in-window (cross-run unique) while
+  # distinguishing the two clusters. (cluster_name is already clamped to 40, and
+  # "multi-region-failover" leaves ample room for the 2-char prefix.)
+  east_cluster = "e-${var.cluster_name}"
+  west_cluster = "w-${var.cluster_name}"
 }
 
 # Cloud SQL instance names cannot be reused for ~1 week after deletion, which breaks
@@ -45,23 +49,27 @@ resource "random_id" "suffix" {
 # Two regional (zonal) GKE clusters: east = primary, west = standby.
 # ---------------------------------------------------------------------------
 module "east" {
-  source                = "../../modules/gke"
-  project_id            = var.project_id
-  cluster_name          = local.east_cluster
-  location              = var.zone_primary
-  node_count            = var.node_count_primary
-  machine_type          = var.machine_type
-  agent_service_account = local.agent_sa
+  source       = "../../modules/gke"
+  project_id   = var.project_id
+  cluster_name = local.east_cluster
+  location     = var.zone_primary
+  node_count   = var.node_count_primary
+  machine_type = var.machine_type
+  # BYO-credentials model (see docs/bastion.md): the agent runs as the operator's
+  # broad bastion VM SA, which already holds container.admin out-of-band. This
+  # stack grants NOTHING — a per-run stack must not manage a project IAM binding
+  # on a SHARED principal, because one run's `tofu destroy` would revoke the
+  # binding a concurrent run still needs (teardown contention).
+  agent_service_account = ""
 }
 
 module "west" {
-  source       = "../../modules/gke"
-  project_id   = var.project_id
-  cluster_name = local.west_cluster
-  location     = var.zone_standby
-  node_count   = var.node_count_standby
-  machine_type = var.machine_type
-  # container.admin is granted project-wide by the east module; don't duplicate it.
+  source                = "../../modules/gke"
+  project_id            = var.project_id
+  cluster_name          = local.west_cluster
+  location              = var.zone_standby
+  node_count            = var.node_count_standby
+  machine_type          = var.machine_type
   agent_service_account = ""
 }
 
@@ -232,7 +240,7 @@ resource "null_resource" "setup" {
       EAST_IP       = google_compute_address.east_ip.address
       WEST_IP       = google_compute_address.west_ip.address
       LB_IP         = google_compute_global_address.lb_ip.address
-      REPO_PATH     = var.repo_path
+      REPO_PATH     = local.repo_path
       SQL_PRIMARY   = google_sql_database_instance.primary.name
       SQL_REPLICA   = google_sql_database_instance.replica.name
       MANIFESTS_DIR = "${path.module}/manifests"
