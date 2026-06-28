@@ -14,7 +14,7 @@
 
 """Regression: the REAL ``optimize-scale`` chaos entry parses through ChaosSpec.
 
-Pins a **literal** of the real ``complextasks/optimize-scale`` chaos entry (with
+Pins a **literal** of the real ``tasks/common/optimize-scale`` chaos entry (with
 the harness placeholders already resolved) and asserts it validates through the
 typed :class:`ChaosSpec` and discriminates to
 :class:`GenerateLoadFault` / :class:`TimeTrigger` with the documented

@@ -60,7 +60,7 @@ export JUDGE_PROVIDER="google"
 export JUDGE_MODEL="gemini-3.1-pro-preview"
 export JUDGE_API_KEY="<your-gemini-key>"
 
-python pkg/evaluator/evaluate.py complextasks/opa-remediation/task.yaml
+python pkg/evaluator/evaluate.py tasks/common/opa-remediation/task.yaml
 ```
 
 ## Verify the environment manually (optional Phase-1 smoke test)

@@ -14,7 +14,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 MOCK_PORT="${MOCK_PORT:-11439}"
-TASK_FILE="${1:-tasks/generic/gateway-https-redirect/task.yaml}"
+TASK_FILE="${1:-tasks/noop/gateway-https-redirect/task.yaml}"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {

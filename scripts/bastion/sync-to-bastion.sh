@@ -40,7 +40,6 @@ PATHS=(
   pyproject.toml
   README.md         # required by `pip install .` (pyproject readme = README.md)
   LICENSE
-  complextasks
   tasks
   tf
   scripts

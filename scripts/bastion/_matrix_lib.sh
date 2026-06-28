@@ -35,7 +35,7 @@ BASTION_ZONE="${BASTION_ZONE:-us-central1-a}"
 BASTION_PROJECT="${BASTION_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}"
 REMOTE_DIR="${REMOTE_DIR:-devops-bench}"
 
-MATRIX_TASKS="${MATRIX_TASKS:-complextasks/secret-rotation/task.yaml}"
+MATRIX_TASKS="${MATRIX_TASKS:-tasks/gcp/secret-rotation/task.yaml}"
 MATRIX_MODELS="${MATRIX_MODELS:-gemini-3.1-pro}"
 
 GKE_CLUSTER_NAME="${GKE_CLUSTER_NAME:-eval}"
@@ -101,10 +101,10 @@ pull_dir_retry() {
 
 sanitize() { echo "$1" | tr '/.+ ' '----' | tr -cd 'A-Za-z0-9_-'; }
 
-# ALL -> enumerate every task.yaml under complextasks/ + tasks/; else the list.
+# ALL -> enumerate every task.yaml under tasks/; else the list.
 resolve_tasks() {
   if [ "${MATRIX_TASKS}" = "ALL" ]; then
-    ( cd "${REPO_ROOT}" && find complextasks tasks -name task.yaml 2>/dev/null | sort )
+    ( cd "${REPO_ROOT}" && find tasks -name task.yaml 2>/dev/null | sort )
   else
     printf '%s\n' ${MATRIX_TASKS}
   fi

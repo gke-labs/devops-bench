@@ -151,7 +151,7 @@ podman run --rm \
   -e JUDGE_PROVIDER="google" \
   -e JUDGE_MODEL="gemini-3.1-pro-preview" \
   -e JUDGE_API_KEY="<YOUR_GEMINI_API_KEY>" \
-  devops-bench-harness:latest tasks/gcp/create-deployment/task.yaml --no-infra
+  devops-bench-harness:latest tasks/noop/create-deployment/task.yaml --no-infra
 ```
 
 You can also drive it purely via env vars by setting `BENCH_SOURCE` (or the

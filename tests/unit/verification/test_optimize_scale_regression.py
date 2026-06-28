@@ -36,7 +36,7 @@ from devops_bench.verification.verifiers import (
     ScalingCompleteVerifier,
 )
 
-# The migrated optimize-scale verification spec — what ``complextasks/optimize-scale``
+# The migrated optimize-scale verification spec — what ``tasks/common/optimize-scale``
 # would author in native YAML once §7b lands. The structural change vs. the legacy
 # spec: the ``name`` string becomes metadata on a ``type: parallel`` node, and the
 # member checks live in a ``checks`` list.

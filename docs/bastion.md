@@ -131,7 +131,7 @@ then `source ~/bench.env`.
 ```bash
 cd ~/devops-bench && source .venv/bin/activate
 source ~/bench.env
-devops-bench complextasks/secret-rotation/task.yaml
+devops-bench tasks/gcp/secret-rotation/task.yaml
 ```
 
 The harness provisions the GKE cluster + Secret Manager + External Secrets
@@ -185,12 +185,12 @@ common=( GCP_PROJECT_ID=<proj> GKE_CLUSTER_NAME=secret-rot GCP_LOCATION=us-centr
 # Arm A — legacy (MCP+skills from the GLOBAL ~/.openclaw config set above)
 env "${common[@]}" RUN_ID=legacy-$(date +%s) \
     BENCH_AGENT_TYPE=cli OPENCLAW_LOCAL=true \
-    python3 pkg/evaluator/evaluate.py complextasks/secret-rotation/task.yaml &
+    python3 pkg/evaluator/evaluate.py tasks/gcp/secret-rotation/task.yaml &
 
 # Arm B — refactored (MCP+skills via env -> isolated openclaw.json)
 env "${common[@]}" RUN_ID=refac-$(date +%s) \
     BENCH_AGENT_TYPE=openclaw AGENT_MCP_SERVER="$HOME/gke-mcp" AGENT_SKILLS_PATHS="$HOME/oc-skills" \
-    python3 -m devops_bench --parallel complextasks/secret-rotation/task.yaml \
+    python3 -m devops_bench --parallel tasks/gcp/secret-rotation/task.yaml \
       --project <proj> --cluster secret-rot --results-root results/refac &
 wait
 # then: python3 scripts/compare_results.py --legacy <A>/results.json --refactor <B>/results.json
@@ -206,12 +206,12 @@ gemini CLI is not parallel-safe), resume-after-drop, and Vertex setup.
 node-level access that GKE's managed control plane doesn't allow, so they run on
 real **kind** clusters on the bastion:
 
-- `complextasks/cp-recovery` — control-plane surgery (restore a corrupted etcd
+- `tasks/kind/cp-recovery` — control-plane surgery (restore a corrupted etcd
   member to quorum); impossible on GKE's node-inaccessible control plane.
-- `complextasks/opa-remediation` — Kyverno policy remediation on a kind cluster.
-- `complextasks/migration-and-upgrade` — kind-based cluster upgrade; the agent
+- `tasks/common/opa-remediation` — Kyverno policy remediation on a kind cluster.
+- `tasks/common/migration-and-upgrade` — kind-based cluster upgrade; the agent
   also spins a throwaway target-version kind cluster to validate manifests.
-- `tasks/generic/debug-crashloop` — investigation task on a small kind cluster.
+- `tasks/kind/debug-crashloop` — investigation task on a small kind cluster.
 
 All are parallel-safe (kind cluster name derives from the run-token-prefixed
 cluster name → per-run-unique Docker containers/nodes; per-run `$KUBECONFIG`; and

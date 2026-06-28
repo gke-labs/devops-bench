@@ -59,7 +59,7 @@ export JUDGE_PROVIDER="google"
 export JUDGE_MODEL="gemini-3.1-pro-preview"
 export JUDGE_API_KEY="<your-gemini-key>"
 
-python pkg/evaluator/evaluate.py complextasks/migration-and-upgrade/task.yaml
+python pkg/evaluator/evaluate.py tasks/common/migration-and-upgrade/task.yaml
 ```
 
 On kind, "upgrade" is reframed: the agent validates the migrated manifests on a temporary kind
@@ -110,7 +110,7 @@ done
 > creation may still 403.
 
 ```bash
-# In complextasks/migration-and-upgrade/task.yaml, set:
+# In tasks/common/migration-and-upgrade/task.yaml, set:
 #   stack: "prebuilt/migration-and-upgrade"
 
 export GCP_PROJECT_ID="<your-project-id>"
@@ -120,7 +120,7 @@ export NAMESPACE="migration"
 export OPENCLAW_LOCAL="true"
 # ...same agent/judge vars as above...
 
-python pkg/evaluator/evaluate.py complextasks/migration-and-upgrade/task.yaml
+python pkg/evaluator/evaluate.py tasks/common/migration-and-upgrade/task.yaml
 ```
 
 Notes:
