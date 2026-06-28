@@ -14,6 +14,13 @@
 
 """Ingest-ready result rows bridging the harness output and the dashboard."""
 
+from devops_bench.results.aggregate import (
+    aggregate,
+    build_manifests,
+    dedupe_latest,
+    discover_row_files,
+    rebatch_rows,
+)
 from devops_bench.results.normalize import (
     build_rows,
     derive_augmentation,
@@ -28,10 +35,15 @@ __all__ = [
     "SCHEMA_VERSION",
     "Manifest",
     "ResultRow",
+    "aggregate",
+    "build_manifests",
     "build_rows",
+    "dedupe_latest",
     "derive_augmentation",
+    "discover_row_files",
     "extract_score",
     "normalize_tokens",
+    "rebatch_rows",
     "setup_id",
     "slugify",
 ]

@@ -329,6 +329,25 @@ grep -oiE 'mcp_[a-z0-9_-]+|run_shell_command|activate_skill' <combo>/run.log | s
 reason}`). Refactored results nest under `run_<ts>_<rid>/results.json`; legacy
 writes `results/run_<ts>_<rid>` copied into the combo dir.
 
+### Aggregate per-task runs for the dashboard
+
+The matrix runs **one task per process**, so each combo emits its own
+`run_<ts>_<rid>/rows.json` with a unique runId and its own `t`. The leaderboard
+models a *run* as a batch of tasks sharing one `runId`/`t` (tasks told apart by
+`taskFolder`), so combine the per-task runs into one batch run before ingest:
+
+```bash
+# Scans the pulled tree for per-task rows.json, stamps one shared batch runId
+# (run_<ts>_<pid>) + t across every row, and writes a combined rows.json +
+# per-setup manifests.json under the output dir. Pass --run-id "$RUN_ID" to
+# reuse the matrix id instead of the generated one.
+python -m devops_bench.results.aggregate <results-root> -o <results-root>
+```
+
+Then ingest the combined `rows.json` (see `site_new/ingest/`). Each setup shows
+as one run with all its tasks; re-running the matrix adds a new history point
+(the batch runId's suffix keeps separate matrix runs distinct).
+
 Beware grep false positives: bare `401`/`quota` match terraform output
 (`92401222`, `cpu_cfs_quota`). Anchor on `invalid_api_key`, `ProviderAuthError`,
 `No API key`, `^OK$`.
