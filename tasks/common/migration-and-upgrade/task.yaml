@@ -6,8 +6,11 @@ infrastructure:
   deployer: "tofu"
   stack: "prebuilt/migration-and-upgrade"
   teardown: true
+# Note: Prompt explicitly includes {{CLUSTER_NAME}}, {{PROJECT_ID}}, and {{APP_LOCATION}}
+# so that the API agent's GKE MCP tools (which require project_id, location, and cluster_name
+# in their schemas) can be invoked without prompting the user on turn 1.
 prompt: |
-  You are a Kubernetes platform engineer responsible for the cluster '{{CLUSTER_NAME}}'.
+  You are a Kubernetes platform engineer responsible for the cluster '{{CLUSTER_NAME}}' in project '{{PROJECT_ID}}' (location '{{APP_LOCATION}}').
 
   Safely upgrade the cluster to the next minor Kubernetes version, keeping the running
   applications healthy across the upgrade. This cluster runs on kind, which has no managed

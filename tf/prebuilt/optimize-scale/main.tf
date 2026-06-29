@@ -42,12 +42,13 @@ data "google_client_config" "default" {
 }
 
 provider "kubernetes" {
-  host                   = var.cloud_provider == "gcp" ? "https://${module.cluster.endpoint}" : null
+  host                   = var.cloud_provider == "gcp" ? "https://${module.cluster.endpoint}" : module.cluster.endpoint
   token                  = var.cloud_provider == "gcp" ? data.google_client_config.default[0].access_token : null
-  cluster_ca_certificate = var.cloud_provider == "gcp" ? base64decode(module.cluster.cluster_ca_certificate) : null
-
-  config_path = var.cloud_provider == "kind" ? module.cluster.kubeconfig_path : null
+  client_certificate     = var.cloud_provider == "kind" ? module.cluster.client_certificate : null
+  client_key             = var.cloud_provider == "kind" ? module.cluster.client_key : null
+  cluster_ca_certificate = var.cloud_provider == "gcp" ? base64decode(module.cluster.cluster_ca_certificate) : (var.cloud_provider == "kind" ? module.cluster.cluster_ca_certificate : null)
 }
+
 
 # Pre-seeded target workload the agent must optimize. It is deliberately
 # misconfigured for autoscaling: NO resource requests/limits and NO HPA. The

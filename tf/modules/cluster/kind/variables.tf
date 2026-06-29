@@ -14,3 +14,15 @@ variable "node_image" {
   description = "The kind node image to use"
   default     = "kindest/node:v1.29.2"
 }
+
+variable "project_id" {
+  type        = string
+  description = "The GCP project ID (or local-kind)"
+  default     = "local-kind"
+}
+
+variable "location" {
+  type        = string
+  description = "The cluster location (or local)"
+  default     = "local"
+}

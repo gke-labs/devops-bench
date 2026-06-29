@@ -55,6 +55,8 @@ class MCPClient:
         except ImportError as exc:  # pragma: no cover - exercised via MissingDependencyError
             raise MissingDependencyError("the API agent's MCP client", "mcp") from exc
 
+        import os
+
         # Split the command so a multi-word server_path (e.g. "uv run mcp-server")
         # is spawned as program + args rather than a single executable name; the
         # stdio transport spawns without a shell, so an unsplit command would fail
@@ -65,8 +67,14 @@ class MCPClient:
                 "MCP server_path is empty; set AGENT_TARGET/MCP_SERVER_PATH to the "
                 "MCP server command."
             )
-        server_params = StdioServerParameters(command=parts[0], args=parts[1:])
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+        server_params = StdioServerParameters(
+            command=parts[0],
+            args=parts[1:],
+            env=dict(os.environ),
+        )
+        stdio_transport = await self.exit_stack.enter_async_context(
+            stdio_client(server_params)
+        )
         self.read_stream, self.write_stream = stdio_transport
         self.session = await self.exit_stack.enter_async_context(
             ClientSession(self.read_stream, self.write_stream)

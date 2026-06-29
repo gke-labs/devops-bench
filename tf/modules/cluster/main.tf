@@ -33,5 +33,7 @@ module "kind" {
   cluster_name    = var.cluster_name
   kubeconfig_path = var.kubeconfig_path
   node_image      = var.node_image
+  project_id      = var.project_id
+  location        = var.location != "" ? var.location : "local"
 }
 

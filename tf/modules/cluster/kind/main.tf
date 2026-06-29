@@ -13,3 +13,15 @@ resource "kind_cluster" "default" {
   kubeconfig_path = pathexpand(var.kubeconfig_path)
   wait_for_ready  = true
 }
+
+resource "null_resource" "rename_context" {
+  depends_on = [kind_cluster.default]
+
+  triggers = {
+    kubeconfig = var.kubeconfig_path
+  }
+
+  provisioner "local-exec" {
+    command = "kubectl --kubeconfig=${pathexpand(var.kubeconfig_path)} config rename-context kind-${var.cluster_name} gke_${var.project_id}_${var.location}_${var.cluster_name}"
+  }
+}

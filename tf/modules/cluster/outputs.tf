@@ -9,16 +9,27 @@ output "location" {
 }
 
 output "endpoint" {
-  value       = var.cloud_provider == "gcp" ? try(module.gke[0].endpoint, "") : "127.0.0.1"
+  value       = var.cloud_provider == "gcp" ? try(module.gke[0].endpoint, "") : try(module.kind[0].endpoint, "")
   description = "Cluster control plane endpoint"
 }
 
 output "cluster_ca_certificate" {
-  value       = var.cloud_provider == "gcp" ? try(module.gke[0].cluster_ca_certificate, "") : ""
+  value       = var.cloud_provider == "gcp" ? try(module.gke[0].cluster_ca_certificate, "") : try(module.kind[0].cluster_ca_certificate, "")
   description = "Cluster CA certificate"
+}
+
+output "client_certificate" {
+  value       = var.cloud_provider == "kind" ? try(module.kind[0].client_certificate, "") : ""
+  description = "Client certificate for KinD"
+}
+
+output "client_key" {
+  value       = var.cloud_provider == "kind" ? try(module.kind[0].client_key, "") : ""
+  description = "Client key for KinD"
 }
 
 output "kubeconfig_path" {
   value       = var.cloud_provider == "kind" ? try(module.kind[0].kubeconfig_path, "") : ""
   description = "Local path to the kubeconfig file"
 }
+

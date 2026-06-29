@@ -70,6 +70,7 @@ class KindProvider(Provider):
         """
         variables = custom_variables.copy()
         variables.setdefault("cloud_provider", "kind")
+        variables.setdefault("project_id", ctx.project_id or _LOCAL_PROJECT)
         variables.setdefault("cluster_name", ctx.cluster_name or _DEFAULT_CLUSTER_NAME)
         variables.setdefault("location", "local")
         kubeconfig_path = get_env("KUBECONFIG") or str(

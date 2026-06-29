@@ -2,10 +2,13 @@ task_id: 20
 name: "opa-remediation"
 infrastructure:
   deployer: "tofu"
-  stack: "prebuilt/opa-remediation-kind"
+  stack: "prebuilt/opa-remediation"
   teardown: true
+# Note: Prompt explicitly includes {{CLUSTER_NAME}}, {{PROJECT_ID}}, and {{APP_LOCATION}}
+# so that the API agent's GKE MCP tools (which require project_id, location, and cluster_name
+# in their schemas) can be invoked without prompting the user on turn 1.
 prompt: |
-  You are the platform engineer on call for the Kubernetes cluster '{{CLUSTER_NAME}}'. Its
+  You are the platform engineer on call for the Kubernetes cluster '{{CLUSTER_NAME}}' in project '{{PROJECT_ID}}' (location '{{APP_LOCATION}}'). Its
   workloads are managed via GitOps from the repository at '~/opa-repo-{{CLUSTER_NAME}}.git' (the source of truth).
 
   Audit the current state of the cluster, remediate any problems you find with the running
