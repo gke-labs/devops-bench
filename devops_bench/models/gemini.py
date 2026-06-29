@@ -16,7 +16,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import logging
+import random
 from typing import Any
 
 from devops_bench.core.config import get_env
@@ -31,6 +34,43 @@ except ImportError:  # pragma: no cover - exercised only without the SDK
     types = None
 
 __all__ = ["GeminiClientAdapter", "filter_schema_for_gemini"]
+
+_log = logging.getLogger(__name__)
+
+# Bounded exponential backoff for transient Vertex/Gemini failures. A single
+# unretried 429 (RESOURCE_EXHAUSTED) is the dominant flash failure mode and
+# otherwise hard-fails the whole run.
+_MAX_RETRIES = 5
+_BASE_DELAY_SEC = 1.0
+_MAX_DELAY_SEC = 30.0
+_RETRYABLE_STATUS = frozenset({429, 503})
+_RETRYABLE_TOKENS = ("RESOURCE_EXHAUSTED", "UNAVAILABLE", "429", "503")
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Whether a Gemini API error is a transient quota/availability failure.
+
+    Retries HTTP 429 (RESOURCE_EXHAUSTED) and 503 (UNAVAILABLE), matched on the
+    SDK error's ``code`` attribute when present and falling back to the message
+    text (the SDK surfaces the status in the string for wrapped errors).
+
+    Args:
+        exc: The exception raised by the SDK call.
+
+    Returns:
+        True if the call is worth retrying.
+    """
+    code = getattr(exc, "code", None)
+    if code in _RETRYABLE_STATUS:
+        return True
+    text = str(exc)
+    return any(token in text for token in _RETRYABLE_TOKENS)
+
+
+def _backoff_delay(attempt: int) -> float:
+    """Full-jitter exponential backoff delay for ``attempt`` (0-based)."""
+    ceiling = min(_MAX_DELAY_SEC, _BASE_DELAY_SEC * (2**attempt))
+    return random.uniform(0.0, ceiling)
 
 _SUPPORTED_SCHEMA_FIELDS = frozenset(
     {
@@ -169,11 +209,28 @@ class GeminiClientAdapter(LLMClient):
         if tools and hasattr(tools, "function_declarations") and tools.function_declarations:
             config_args["tools"] = [tools]
 
-        return await self.client.aio.models.generate_content(
-            model=self.model_name,
-            contents=gemini_contents,
-            config=types.GenerateContentConfig(**config_args),
-        )
+        config = types.GenerateContentConfig(**config_args)
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                return await self.client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=gemini_contents,
+                    config=config,
+                )
+            except Exception as exc:  # noqa: BLE001 - retry transient, re-raise the rest
+                if attempt >= _MAX_RETRIES or not _is_retryable(exc):
+                    raise
+                delay = _backoff_delay(attempt)
+                _log.warning(
+                    "gemini generate_content transient failure (%s); retry %d/%d in %.1fs",
+                    exc,
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+        # Unreachable: the final attempt either returns or re-raises above.
+        raise AssertionError("unreachable: generate_content retry loop exhausted")
 
     def format_tools(self, mcp_tools: Any) -> Any:
         return types.Tool(
