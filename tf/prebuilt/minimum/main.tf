@@ -17,8 +17,8 @@ terraform {
 }
 
 provider "google" {
-  project = var.project_id
-  region  = var.location
+  project = var.project_id != "" ? var.project_id : null
+  region  = var.location != "" && var.location != "local" ? var.location : null
 }
 
 # Sweep the Artifact Registry repo the deploy-hello-app agent creates
