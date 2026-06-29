@@ -14,6 +14,14 @@ clean. The loop fixes the *eval*, not the model.
 > verification/judge produce **sane scores**. A genuine **model miss** — a clean
 > trajectory that just scores low on a hard task — is a *successful* validation,
 > not a failure to fix. Do not edit the task to make a weak model pass.
+>
+> **But first rule out a silent capture failure, which masquerades as a low
+> score.** Before reading a low score as a model miss, assert the run's
+> `trajectory` is **non-empty** (and `tools` populated for tool-using tasks). An
+> empty trajectory on a task the agent clearly acted on is **INVALID** — a harness
+> capture failure (e.g. `oc sessions` exiting 127 because Node isn't on PATH), not
+> a model miss — and must be fixed and re-run, not recorded. See the empty-traj /
+> `exit 127` row in [`known_issues.md`](../../../docs/appendix/known_issues.md).
 
 This skill is pointer-driven. The run mechanics, monitoring, and self-healing
 loop all live in shared references — read them, don't restate them:
