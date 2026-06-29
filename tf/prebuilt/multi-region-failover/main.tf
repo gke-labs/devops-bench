@@ -49,12 +49,13 @@ resource "random_id" "suffix" {
 # Two regional (zonal) GKE clusters: east = primary, west = standby.
 # ---------------------------------------------------------------------------
 module "east" {
-  source       = "../../modules/cluster/gke"
-  project_id   = var.project_id
-  cluster_name = local.east_cluster
-  location     = var.zone_primary
-  node_count   = var.node_count_primary
-  machine_type = var.machine_type
+  source                = "../../modules/cluster"
+  cloud_provider        = "gcp"
+  project_id            = var.project_id
+  cluster_name          = local.east_cluster
+  location              = var.zone_primary
+  node_count            = var.node_count_primary
+  machine_type          = var.machine_type
   # BYO-credentials model (see docs/bastion.md): the agent runs as the operator's
   # broad bastion VM SA, which already holds container.admin out-of-band. This
   # stack grants NOTHING — a per-run stack must not manage a project IAM binding
@@ -64,7 +65,8 @@ module "east" {
 }
 
 module "west" {
-  source                = "../../modules/cluster/gke"
+  source                = "../../modules/cluster"
+  cloud_provider        = "gcp"
   project_id            = var.project_id
   cluster_name          = local.west_cluster
   location              = var.zone_standby

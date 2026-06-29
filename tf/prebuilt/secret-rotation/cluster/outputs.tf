@@ -1,9 +1,9 @@
 output "cluster_name" {
-  value = module.gke.cluster_name
+  value = module.cluster.cluster_name
 }
 
 output "cluster_location" {
-  value = module.gke.cluster_location
+  value = module.cluster.location
 }
 
 output "secret_rotation_sa_email" {
@@ -16,10 +16,10 @@ output "secret_id" {
 }
 
 output "endpoint" {
-  value = module.gke.endpoint
+  value = module.cluster.endpoint
 }
 
 output "cluster_ca_certificate" {
-  value = module.gke.cluster_ca_certificate
+  value = module.cluster.cluster_ca_certificate
 }
 
