@@ -72,6 +72,7 @@ def test_get_deployer_tofu_default_stack(mocker, base_config):
     )
     assert isinstance(deployer, TFDeployer)
     assert deployer.variables == {
+        "cloud_provider": "kind",
         "cluster_name": base_config["cluster_name"],
         "location": "local",
         "kubeconfig_path": _expected_kubeconfig(),
@@ -98,6 +99,7 @@ def test_get_deployer_tofu_custom_stack_and_vars(mocker, base_config):
     )
     assert isinstance(deployer, TFDeployer)
     assert deployer.variables == {
+        "cloud_provider": "gcp",
         "project_id": base_config["project_id"],
         "cluster_name": "custom-cluster",
         "location": base_config["location"],
@@ -117,6 +119,7 @@ def test_get_deployer_tofu_kind_stack(mocker, base_config):
     )
     assert isinstance(deployer, TFDeployer)
     assert deployer.variables == {
+        "cloud_provider": "kind",
         "cluster_name": base_config["cluster_name"],
         "location": "local",
         "kubeconfig_path": _expected_kubeconfig(),

@@ -91,6 +91,7 @@ class GcpProvider(Provider):
             ``NAMESPACE`` environment variable when present.
         """
         variables = custom_variables.copy()
+        variables.setdefault("cloud_provider", "gcp")
         variables.setdefault("project_id", ctx.project_id)
         variables.setdefault("cluster_name", ctx.cluster_name)
         variables.setdefault("location", ctx.location)

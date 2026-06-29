@@ -1,26 +1,40 @@
-variable "project_id" {
-  description = "The GCP project ID"
+variable "cloud_provider" {
   type        = string
+  description = "The target cloud provider (gcp, kind)"
 }
 
 variable "cluster_name" {
-  description = "The name of the GKE cluster"
   type        = string
+  description = "Name of the cluster to provision"
 }
 
 variable "location" {
-  description = "GCP location (region or zone)"
   type        = string
-  default     = "us-central1-a"
+  description = "Region/zone (GCP) or 'local' (KinD)"
+  default     = ""
 }
 
-
 variable "node_count" {
-  type    = number
-  default = 1
+  type        = number
+  description = "Number of worker nodes"
+  default     = 1
 }
 
 variable "machine_type" {
-  type    = string
-  default = "g2-standard-4"
+  type        = string
+  description = "VM instance type"
+  default     = "g2-standard-4"
+}
+
+# Provider-specific optional variables
+variable "project_id" {
+  type        = string
+  description = "GCP Project ID"
+  default     = ""
+}
+
+variable "kubeconfig_path" {
+  type        = string
+  description = "Target path to write kubeconfig (KinD-only)"
+  default     = "~/.kube/config"
 }
