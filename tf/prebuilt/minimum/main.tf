@@ -19,21 +19,35 @@ provider "google" {
 # Sweep the Artifact Registry repo the deploy-hello-app agent creates
 # (hello-app-<cluster>, project-global and NOT in this stack's tofu state) so it
 # doesn't leak across runs — the cluster teardown alone never removes it. No-op
-# for the other tasks on this stack (the repo won't exist). Region is derived
-# from the zone var (us-central1-a -> us-central1).
+# for the other tasks on this stack (the repo won't exist).
+#
+# The repo's region is NOT pinned (the agent picks it, and a multi-region default
+# like `us` is common), so deleting at one derived location would miss a repo
+# that landed elsewhere. Instead, discover wherever the run-unique repo lives by
+# listing the project's repos and delete it at its own location. The name match
+# is an exact suffix on the run-unique cluster, so a sibling run's repo is never
+# touched.
 resource "null_resource" "ar_cleanup" {
   triggers = {
-    project  = var.project_id
-    repo     = "hello-app-${var.cluster_name}"
-    location = replace(var.location, "/-[a-z]$/", "")
+    project = var.project_id
+    repo    = "hello-app-${var.cluster_name}"
   }
 
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      gcloud artifacts repositories delete '${self.triggers.repo}' \
-        --location='${self.triggers.location}' --project='${self.triggers.project}' \
-        --quiet 2>/dev/null || true
+      gcloud artifacts repositories list --project='${self.triggers.project}' \
+        --format='value(name)' 2>/dev/null \
+      | while IFS= read -r full; do
+          case "$full" in
+            */repositories/'${self.triggers.repo}')
+              loc=$(printf '%s\n' "$full" | sed -E 's#.*/locations/([^/]+)/repositories/.*#\1#')
+              gcloud artifacts repositories delete '${self.triggers.repo}' \
+                --location="$loc" --project='${self.triggers.project}' \
+                --quiet 2>/dev/null || true
+              ;;
+          esac
+        done
     EOT
   }
 }
