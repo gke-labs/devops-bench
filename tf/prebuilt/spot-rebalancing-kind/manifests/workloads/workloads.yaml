@@ -1,0 +1,216 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apps
+  labels:
+    purpose: cost-optimization
+---
+# CRITICAL / stateful — must stay on on-demand capacity (cannot tolerate Spot
+# preemption). Also over-provisioned: requests far exceed the rightsizing
+# report's recommendation.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: apps
+  labels:
+    app: payments-api
+    workload-tier: critical
+  annotations:
+    fault-tolerant: "false"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payments-api
+  template:
+    metadata:
+      labels:
+        app: payments-api
+        workload-tier: critical
+    spec:
+      containers:
+        - name: app
+          image: nginx:1.27.4
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payments-api
+  namespace: apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: payments-api
+---
+# CRITICAL / stateful — session data store, must stay on-demand.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: session-store
+  namespace: apps
+  labels:
+    app: session-store
+    workload-tier: critical
+  annotations:
+    fault-tolerant: "false"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: session-store
+  template:
+    metadata:
+      labels:
+        app: session-store
+        workload-tier: critical
+    spec:
+      containers:
+        - name: redis
+          image: redis:7
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "250m"
+              memory: "512Mi"
+---
+# FAULT-TOLERANT / batch — Spot-eligible. Also over-provisioned.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: image-resizer
+  namespace: apps
+  labels:
+    app: image-resizer
+    workload-tier: batch
+  annotations:
+    fault-tolerant: "true"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: image-resizer
+  template:
+    metadata:
+      labels:
+        app: image-resizer
+        workload-tier: batch
+    spec:
+      containers:
+        - name: app
+          image: nginx:1.27.4
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: image-resizer
+  namespace: apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: image-resizer
+---
+# FAULT-TOLERANT / batch — Spot-eligible. Heavily over-provisioned.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-builder
+  namespace: apps
+  labels:
+    app: report-builder
+    workload-tier: batch
+  annotations:
+    fault-tolerant: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: report-builder
+  template:
+    metadata:
+      labels:
+        app: report-builder
+        workload-tier: batch
+    spec:
+      containers:
+        - name: app
+          image: nginx:1.27.4
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "1"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: report-builder
+  namespace: apps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: report-builder
+---
+# FAULT-TOLERANT / batch — Spot-eligible. Already right-sized (not in the report).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-shipper
+  namespace: apps
+  labels:
+    app: log-shipper
+    workload-tier: batch
+  annotations:
+    fault-tolerant: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: log-shipper
+  template:
+    metadata:
+      labels:
+        app: log-shipper
+        workload-tier: batch
+    spec:
+      containers:
+        - name: app
+          image: httpd:2.4
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"

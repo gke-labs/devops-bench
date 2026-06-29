@@ -1,0 +1,46 @@
+task_id: 22
+name: "spot-rebalancing"
+# Cost-efficiency rebalancing: migrate fault-tolerant workloads onto Spot
+# capacity and rightsize over-provisioned ones, without downtime. Each run
+# provisions its own multi-node kind cluster (1 control-plane + 1 on-demand
+# worker + 2 Spot workers) pre-seeded with a mixed-criticality fleet and a
+# delivered rightsizing report. Spot nodes carry the real GKE Spot label
+# ('cloud.google.com/gke-spot=true') + a NoSchedule taint, so the agent's
+# actions (tolerations + node affinity) are exactly what they'd be on GKE.
+# Parallel-SAFE: kind cluster name is the run-token-prefixed {{CLUSTER_NAME}}
+# (Docker nodes per-run unique), the kubeconfig is the per-run $KUBECONFIG, and
+# the report host path derives from cluster_name. No GKE quota.
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/spot-rebalancing-kind"
+  teardown: true
+prompt: |
+  You are the platform FinOps engineer for the Kubernetes cluster '{{CLUSTER_NAME}}'.
+  Monthly compute spend is too high and needs to come down by roughly 30%.
+
+  The cluster has a mix of node capacity: standard on-demand nodes and cheaper,
+  preemptible Spot nodes (labeled 'cloud.google.com/gke-spot=true' and tainted to
+  reserve them for workloads that opt in). Today every workload runs on on-demand
+  capacity. A rightsizing report has been delivered to
+  '~/rightsizing-report-{{CLUSTER_NAME}}.json'.
+
+  Bring the cost down without sacrificing reliability: move the workloads that can
+  safely tolerate disruption onto Spot capacity, keep the ones that cannot where
+  they are, and rightsize the over-provisioned workloads. Decide which workloads
+  are safe to move from their own metadata, and make every change in a way that
+  keeps the services available throughout.
+
+  When you are done, write a cost optimization report to 'cost-optimization-report.md'
+  for the FinOps team.
+expected_output: |
+  critical requirements:
+
+  GRADING NOTE: Grade on outcome and sound reasoning. Any correct mechanism for targeting Spot capacity (nodeSelector or nodeAffinity on 'cloud.google.com/gke-spot') plus the matching toleration is acceptable, as is any safe (batched/rolling, PDB-respecting) rollout method. The projected-savings figure need not be exact as long as the reasoning is sound and meets the ~30% target.
+
+  - Agent profiles the workloads in the 'apps' namespace and classifies them using their own metadata (the 'workload-tier' label / 'fault-tolerant' annotation): it identifies the fault-tolerant/batch workloads ('image-resizer', 'report-builder', 'log-shipper') as Spot-eligible and the critical/stateful workloads ('payments-api', 'session-store') as not Spot-eligible.
+  - Agent migrates each Spot-eligible workload onto the Spot nodes by adding both the toleration for the 'cloud.google.com/gke-spot=true:NoSchedule' taint and a node selector / node affinity for the 'cloud.google.com/gke-spot=true' label.
+  - After rebalancing, the Spot-eligible workloads' pods are actually Running on Spot-labeled nodes, while the critical/stateful workloads remain on the on-demand node (never scheduled onto Spot and given no Spot toleration).
+  - Agent rightsizes the over-provisioned workloads named in the report ('payments-api', 'image-resizer', 'report-builder') so their CPU/memory requests are approximately the recommended values.
+  - The rebalancing and rightsizing are performed without downtime: replicas stay available throughout (batched/rolling updates, PodDisruptionBudgets respected) and no Spot-eligible workload is left unschedulable or crash-looping.
+  - Agent writes 'cost-optimization-report.md' documenting which workloads it moved to Spot and which it kept on-demand (with the reasoning), the rightsizing it applied, and a projected cost reduction that meets the ~30% target with sound reasoning.
+validated: false
