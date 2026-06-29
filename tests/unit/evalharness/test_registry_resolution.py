@@ -26,7 +26,7 @@ import pytest
 
 from devops_bench.agents import AGENTS, AgentConfig, AgentHarness, AgentResult
 from devops_bench.core import NotRegisteredError
-from devops_bench.evalharness.default import DefaultHarness
+from devops_bench.evalharness.default import DefaultEvalHarness
 
 
 class _DummyAgent(AgentHarness):
@@ -64,7 +64,7 @@ def test_dummy_agent_resolves_with_no_harness_edit(
     dummy_agent_registered: None,
 ) -> None:
     """A third-party-registered agent flows through the orchestrator unchanged."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     harness.agent_type = "dummy"
 
     agent = harness.resolve_agent("dummy")
@@ -77,7 +77,7 @@ def test_dummy_agent_resolves_with_no_harness_edit(
 
 def test_legacy_alias_normalizes_to_canonical_key() -> None:
     """``cli`` / ``binary`` legacy types still resolve to the Gemini agent."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
 
     # ``cli`` is the legacy alias for the gemini agent; resolution must not
     # require a path table — the alias map normalizes to ``gemini`` and the
@@ -89,7 +89,7 @@ def test_legacy_alias_normalizes_to_canonical_key() -> None:
 
 def test_unknown_agent_type_raises_not_registered() -> None:
     """An agent key with no registration produces ``NotRegisteredError``."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
 
     with pytest.raises(NotRegisteredError):
         harness.resolve_agent("not-a-real-agent-key")

@@ -18,7 +18,7 @@ The orchestrator is the only layer allowed to consume every component, so it
 sits structurally close to the heavy optional dependencies. Light init is now a
 guideline, not a rule: importing the package may pull ``deepeval`` / ``mcp``.
 What it must **never** pull is a provider model SDK: the metrics judge is
-imported lazily inside ``DefaultHarness._score``, the API agent's SDK loads at
+imported lazily inside ``DefaultEvalHarness._score``, the API agent's SDK loads at
 construction, and the chaos fault's agent + models chain loads only when the
 fault actually injects.
 """
@@ -77,5 +77,5 @@ def test_harness_exports_present() -> None:
     # All four public symbols are eagerly imported now (no ``__getattr__``).
     assert pkg.Harness.__name__ == "Harness"
     assert pkg.ResultReporter.__name__ == "ResultReporter"
-    assert pkg.DefaultHarness.__name__ == "DefaultHarness"
+    assert pkg.DefaultEvalHarness.__name__ == "DefaultEvalHarness"
     assert pkg.ScenarioManager.__name__ == "ScenarioManager"

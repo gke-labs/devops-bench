@@ -29,7 +29,7 @@ import yaml
 from devops_bench.chaos import ChaosSpec
 from devops_bench.chaos.faults.generate_load import GenerateLoadFault
 from devops_bench.chaos.triggers.time_delay import TimeTrigger
-from devops_bench.evalharness.default import DefaultHarness
+from devops_bench.evalharness.default import DefaultEvalHarness
 from devops_bench.tasks import FileSystemTaskLoader
 from devops_bench.verification import (
     ParallelSpec,
@@ -45,8 +45,8 @@ _TASK_DIR = _REPO_ROOT / "tasks" / "common" / "optimize-scale"
 _TASK_YAML = _TASK_DIR / "task.yaml"
 
 
-def _harness() -> DefaultHarness:
-    return DefaultHarness(project_id="proj", cluster_name="cluster")
+def _harness() -> DefaultEvalHarness:
+    return DefaultEvalHarness(project_id="proj", cluster_name="cluster")
 
 
 def test_optimize_scale_chaos_parses_through_harness() -> None:

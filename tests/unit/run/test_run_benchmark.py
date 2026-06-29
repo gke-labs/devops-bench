@@ -77,7 +77,7 @@ def _reset_fake_instances() -> None:
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, *, task_count: int = 5) -> None:
-    monkeypatch.setattr("devops_bench.evalharness.DefaultHarness", FakeHarness)
+    monkeypatch.setattr("devops_bench.evalharness.DefaultEvalHarness", FakeHarness)
     monkeypatch.setattr(
         "devops_bench.tasks.FileSystemTaskLoader.load_tasks", _fake_load_tasks(task_count)
     )

@@ -154,7 +154,7 @@ def run_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
     run_env.apply()
     cluster_name = run_env.cluster_name(cluster_name)
 
-    from devops_bench.evalharness import DefaultHarness, ResultReporter
+    from devops_bench.evalharness import DefaultEvalHarness, ResultReporter
     from devops_bench.tasks import FileSystemTaskLoader
 
     judge = None
@@ -170,7 +170,7 @@ def run_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
     reporter = ResultReporter(
         config.results_root, run_id=run_env.run_id if run_env.isolated else None
     )
-    harness = DefaultHarness(
+    harness = DefaultEvalHarness(
         project_id,
         cluster_name,
         judge_model=judge,

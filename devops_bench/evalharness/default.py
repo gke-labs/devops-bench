@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""DefaultHarness: wires agents, chaos, verification, and metrics into one pipeline."""
+"""DefaultEvalHarness: wires agents, chaos, verification, and metrics into one pipeline."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ from devops_bench.evalharness.scenario import (
 from devops_bench.tasks import Task
 from devops_bench.verification import VerificationSpec
 
-__all__ = ["DefaultHarness"]
+__all__ = ["DefaultEvalHarness"]
 
 _log = get_logger("evalharness.default")
 
@@ -112,7 +112,7 @@ def _ensure_builtin_agents_registered() -> None:
             _log.debug("optional agent module %s not importable: %s", module, exc)
 
 
-class DefaultHarness(Harness):
+class DefaultEvalHarness(Harness):
     """Standard harness wiring every component into one pipeline.
 
     Each task flows through provisioning, optional background chaos, agent

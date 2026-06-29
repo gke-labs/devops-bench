@@ -22,8 +22,8 @@ Two invariants are pinned here:
 2. **Success and failed records carry the *same* top-level key set.** A
    downstream parser iterating one shape can never ``KeyError`` crossing
    into the other. The tests drive the production code path by invoking
-   :meth:`DefaultHarness._build_success_record` /
-   :meth:`DefaultHarness._build_failed_record` on a stub
+   :meth:`DefaultEvalHarness._build_success_record` /
+   :meth:`DefaultEvalHarness._build_failed_record` on a stub
    :class:`AgentResult` and asserting ``set(record.keys()) == required_keys``.
    A hand-rolled dict would let the builders drift silently — these tests
    intentionally exercise the real builders.
@@ -37,7 +37,7 @@ from pathlib import Path
 import pytest
 
 from devops_bench.agents.result import AgentResult, ToolCall
-from devops_bench.evalharness.default import DefaultHarness
+from devops_bench.evalharness.default import DefaultEvalHarness
 from devops_bench.evalharness.reporter import ResultReporter
 from devops_bench.tasks import Task
 
@@ -178,7 +178,7 @@ def test_write_run_artifacts_emits_rows_and_manifest(
     """
     monkeypatch.setenv("AGENT_MODEL", "alpha-pro")
     reporter = ResultReporter(results_root=tmp_path)
-    harness = DefaultHarness(
+    harness = DefaultEvalHarness(
         project_id="p", cluster_name="c", agent_type="gemini", reporter=reporter
     )
     run_dir = reporter.new_run_dir()
@@ -260,7 +260,7 @@ def test_legacy_success_record_keys_are_emitted_verbatim(
     hand-rolled dict, which let the builder drift away from the golden
     schema undetected. Today the key set is asserted on the actual output.
     """
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     task = _stub_task()
     agent_res = _stub_agent_result()
 
@@ -300,7 +300,7 @@ def test_legacy_failed_record_keys_are_emitted_verbatim(
     + ``score``), so a parser iterating one would ``KeyError`` on the
     other. The symmetric union pinned here removes that asymmetry.
     """
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     task = _stub_task()
     exc = RuntimeError("deployer.up() failed")
 
@@ -330,7 +330,7 @@ def test_success_and_failed_records_have_identical_top_level_keys(
     pinned away here so a future change has to break this test to
     re-introduce the asymmetry.
     """
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     task = _stub_task()
 
     success = harness._build_success_record(  # noqa: SLF001
@@ -356,14 +356,14 @@ def test_record_keys_class_constant_matches_golden(isolated_env: None) -> None:
     golden constant in this test file — a single coordinated edit catches
     drift in either direction.
     """
-    assert DefaultHarness._RECORD_KEYS == _RESULTS_JSON_REQUIRED_KEYS  # noqa: SLF001
+    assert DefaultEvalHarness._RECORD_KEYS == _RESULTS_JSON_REQUIRED_KEYS  # noqa: SLF001
 
 
 def test_verification_parse_errors_flow_into_success_record(
     isolated_env: None,
 ) -> None:
     """Verification-spec parse failures land on ``verification_parse_errors``."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_success_record(  # noqa: SLF001
         task=_stub_task(),
         prompt="p",
@@ -388,7 +388,7 @@ def test_verification_parse_errors_flow_into_failed_record(
     A verification authoring failure must never be lost to a deployer
     crash — the operator should see both on the failed record.
     """
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_failed_record(  # noqa: SLF001
         _stub_task(),
         RuntimeError("boom"),
@@ -401,7 +401,7 @@ def test_verification_parse_errors_flow_into_failed_record(
 
 def test_record_carries_generation_only_and_validated(isolated_env: None) -> None:
     """``generation_only`` tracks ``deployer: noop``; ``validated`` rides from the task."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     noop_task = Task.from_dict(
         {
             "task_id": "n",
@@ -432,7 +432,7 @@ def _vetted_task() -> Task:
 
 def test_success_record_validated_requires_clean_run(isolated_env: None) -> None:
     """A vetted task promotes only when the run had no error and ran tools."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_success_record(  # noqa: SLF001 - testing internals
         task=_vetted_task(),
         prompt="p",
@@ -451,7 +451,7 @@ def test_success_record_validated_false_on_errored_run(isolated_env: None) -> No
     while the record still reads ``status:"success"``; the run-level gate must
     reject it.
     """
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_success_record(  # noqa: SLF001 - testing internals
         task=_vetted_task(),
         prompt="p",
@@ -467,7 +467,7 @@ def test_success_record_validated_false_on_errored_run(isolated_env: None) -> No
 
 def test_success_record_validated_false_on_empty_trajectory(isolated_env: None) -> None:
     """A vetted task with no recorded tool calls does not promote."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_success_record(  # noqa: SLF001 - testing internals
         task=_vetted_task(),
         prompt="p",
@@ -481,7 +481,7 @@ def test_success_record_validated_false_on_empty_trajectory(isolated_env: None) 
 
 def test_failed_record_never_validated(isolated_env: None) -> None:
     """A failed run never promotes, even on a vetted task."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_failed_record(  # noqa: SLF001 - testing internals
         _vetted_task(), RuntimeError("boom")
     )

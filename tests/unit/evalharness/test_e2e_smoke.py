@@ -15,7 +15,7 @@
 """End-to-end smoke test (e2e plan §8 / harness handoff §10).
 
 Drives the real ``tasks/common/optimize-scale`` task through
-:meth:`DefaultHarness.run` against the :class:`NoOpDeployer`, with the agent
+:meth:`DefaultEvalHarness.run` against the :class:`NoOpDeployer`, with the agent
 and the deepeval judge stubbed (no network, no provider SDK, no real
 ``kubectl``), but exercising the **real** wiring: deployer → chaos
 trigger/action seam → verification mapping lookup → metrics registry loop →
@@ -45,7 +45,7 @@ from devops_bench.chaos import ChaosResult
 from devops_bench.chaos.faults.generate_load import GenerateLoadFault
 from devops_bench.chaos.triggers.time_delay import TimeTrigger
 from devops_bench.evalharness import default as harness_default
-from devops_bench.evalharness.default import DefaultHarness
+from devops_bench.evalharness.default import DefaultEvalHarness
 from devops_bench.tasks import FileSystemTaskLoader
 from devops_bench.verification import VerificationResult, VerifierAgent
 
@@ -183,7 +183,7 @@ def test_optimize_scale_smoke_end_to_end(
     assert len(tasks) == 1
 
     # Re-route results into the tmp dir so we leave no artifacts behind.
-    harness = DefaultHarness(
+    harness = DefaultEvalHarness(
         project_id="proj",
         cluster_name="cluster",
         judge_model=object(),
@@ -307,7 +307,7 @@ def test_smoke_uses_workspace_path_for_artifact_diff(
 ) -> None:
     """Artifact diff is rooted at ``RunContext.workspace_path``, not literal cwd."""
     tasks = FileSystemTaskLoader().load_tasks(str(_OPTIMIZE_SCALE_DIR))
-    harness = DefaultHarness(
+    harness = DefaultEvalHarness(
         project_id="proj",
         cluster_name="cluster",
         judge_model=object(),

@@ -28,7 +28,7 @@ from unittest.mock import patch
 
 import pytest
 
-from devops_bench.evalharness.default import DefaultHarness
+from devops_bench.evalharness.default import DefaultEvalHarness
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ def test_harness_reads_use_mcp_once_at_construction(
     with patch("devops_bench.evalharness.default.get_bool", wraps=__import__(
         "devops_bench.core", fromlist=["get_bool"]
     ).get_bool) as wrapped:
-        harness = DefaultHarness(project_id="p", cluster_name="c")
+        harness = DefaultEvalHarness(project_id="p", cluster_name="c")
 
         bench_use_mcp_reads = [
             call for call in wrapped.call_args_list if call.args and call.args[0] == "BENCH_USE_MCP"
@@ -81,7 +81,7 @@ def test_use_mcp_flows_into_agent_capabilities_and_metrics(
     monkeypatch.setenv("AGENT_MCP_SERVER", "echo hi")
     monkeypatch.setenv("AGENT_ALLOWED_TOOLS", "run_command")
 
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
 
     # Agent side: a False ``use_mcp`` gates off the MCP binding even when the
     # env names a server — only the harness decides whether MCP runs.
@@ -121,7 +121,7 @@ def test_use_mcp_true_grants_mcp_binding(
     monkeypatch.setenv("AGENT_MCP_SERVER", "/path/to/mcp")
     monkeypatch.setenv("AGENT_ALLOWED_TOOLS", "tool_a,tool_b")
 
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     config = harness.build_agent_config()
 
     assert config.capabilities.tools_enabled is True
