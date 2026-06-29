@@ -40,9 +40,6 @@ Default models: `gemini` → `gemini-3.1-pro-preview`; `claude` → backend-spec
 
 A few things worth calling out:
 
-- **`google-vertex` is not a separate adapter.** It resolves to the `gemini`
-  adapter with a `vertex` backend hint, so the *provider key* — not key presence
-  — selects Vertex AI. There is no distinct Vertex module.
 - **Vertex and Bedrock are keyless.** `google-vertex`, `anthropic-vertex`, and
   `anthropic-bedrock` authenticate via ADC / AWS credentials; the contract never
   forces an API key onto them (their key-env list is empty). The bare
