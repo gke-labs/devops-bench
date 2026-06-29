@@ -164,6 +164,20 @@ def test_build_env_threads_api_key_and_model_into_gemini_vars():
     assert env["X"] == "y"
 
 
+def test_build_env_vertex_key_routes_to_cloud_api_key():
+    # google-vertex routes a provided key to GOOGLE_CLOUD_API_KEY (the vertex
+    # transport var), not the google-genai vars.
+    env = _build_env(AgentConfig(model="gemini-2.5-pro", api_key="abc", provider="google-vertex"))
+    assert env["GOOGLE_CLOUD_API_KEY"] == "abc"
+    assert "GEMINI_API_KEY" not in env and "GOOGLE_API_KEY" not in env
+
+
+def test_build_env_keyless_writes_no_key_var():
+    # No api_key (Vertex/ADC): no key env var is written regardless of provider.
+    env = _build_env(AgentConfig(model="gemini-2.5-pro", provider="google-vertex"))
+    assert not {"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_API_KEY"} & env.keys()
+
+
 def test_gemini_agent_registered_under_canonical_key():
     assert AGENTS.get("gemini") is GeminiCliAgent
 
