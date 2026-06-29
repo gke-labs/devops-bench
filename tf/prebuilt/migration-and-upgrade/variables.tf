@@ -1,17 +1,24 @@
+variable "cloud_provider" {
+  type        = string
+  description = "The target cloud provider (gcp, kind)"
+}
+
 variable "project_id" {
-  type = string
+  type        = string
+  description = "GCP Project ID"
+  default     = ""
 }
 
 variable "cluster_name" {
-  type = string
+  type        = string
+  description = "Name of the cluster to provision"
 }
 
 variable "location" {
-  type = string
+  type        = string
+  description = "Region/zone (GCP) or 'local' (KinD)"
 }
 
-# Passed by the GCP deployer (from NAMESPACE). Unused here but declared to avoid
-# an undeclared-variable warning.
 variable "namespace" {
   type    = string
   default = "default"
@@ -20,11 +27,19 @@ variable "namespace" {
 variable "start_version" {
   type        = string
   description = "GKE Kubernetes version the cluster starts at (the agent upgrades to the next minor)."
-  # NOTE: GKE's supported version range drifts over time, so this default WILL go
-  # stale and eventually be rejected ("No valid versions with the prefix ..."). Set
-  # it to a currently-supported minor that ALSO has a next minor available; check
-  # with: gcloud container get-server-config --zone <zone>
-  default = "1.33"
+  default     = "1.33"
+}
+
+variable "node_image" {
+  type        = string
+  description = "Pinned kindest/node image at the START version the agent upgrades from."
+  default     = "kindest/node:v1.30.0@sha256:047357ac0cfea04663786a612ba1eaba9702bef25227a794b52890dd8bcd692e"
+}
+
+variable "kubeconfig_path" {
+  type        = string
+  description = "Path kind writes the kubeconfig to (read by the agent)."
+  default     = "~/.kube/config"
 }
 
 variable "repo_path" {
