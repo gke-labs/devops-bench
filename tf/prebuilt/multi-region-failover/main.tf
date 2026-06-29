@@ -45,7 +45,7 @@ resource "random_id" "suffix" {
 # Two regional (zonal) GKE clusters: east = primary, west = standby.
 # ---------------------------------------------------------------------------
 module "east" {
-  source                = "../../modules/gke"
+  source                = "../../modules/cluster/gke"
   project_id            = var.project_id
   cluster_name          = local.east_cluster
   location              = var.zone_primary
@@ -55,7 +55,7 @@ module "east" {
 }
 
 module "west" {
-  source       = "../../modules/gke"
+  source       = "../../modules/cluster/gke"
   project_id   = var.project_id
   cluster_name = local.west_cluster
   location     = var.zone_standby

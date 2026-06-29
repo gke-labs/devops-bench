@@ -8,7 +8,7 @@ terraform {
 }
 
 module "gke" {
-  source                = "../../../modules/gke"
+  source                = "../../../modules/cluster/gke"
   project_id            = var.project_id
   cluster_name          = var.cluster_name
   location              = var.location

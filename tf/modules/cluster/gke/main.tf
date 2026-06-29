@@ -32,6 +32,12 @@ resource "google_project_iam_member" "gke_nodes_metadata_writer" {
   member  = "serviceAccount:${google_service_account.gke_nodes.email}"
 }
 
+resource "google_project_iam_member" "gke_nodes_artifact_registry_reader" {
+  project = var.project_id
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${google_service_account.gke_nodes.email}"
+}
+
 resource "google_project_iam_member" "agent_container_admin" {
   count   = var.agent_service_account != "" ? 1 : 0
   project = var.project_id
@@ -70,6 +76,25 @@ resource "google_container_cluster" "primary" {
   }
 }
 
+locals {
+  # Map abstract types to GKE native guest accelerator strings
+  abstract_gpu_map = {
+    "l4"   = "nvidia-l4"
+    "a100" = "nvidia-tesla-a100"
+    "t4"   = "nvidia-tesla-t4"
+  }
+
+  # Fallback machine-to-GPU auto-deduction
+  machine_to_gpu_map = {
+    "g2-standard-4" = "nvidia-l4"
+    "a2-highgpu-1g" = "nvidia-tesla-a100"
+  }
+
+  # Determine final GPU attachment parameters
+  enable_gpu = var.gpu_type != "" || length(regexall("^g2-|^a2-", var.machine_type)) > 0
+  gpu_type   = var.gpu_type != "" ? lookup(local.abstract_gpu_map, var.gpu_type, "nvidia-l4") : lookup(local.machine_to_gpu_map, var.machine_type, "nvidia-l4")
+}
+
 resource "google_container_node_pool" "primary_nodes" {
   name       = "primary-node-pool"
   location   = var.location
@@ -85,6 +110,17 @@ resource "google_container_node_pool" "primary_nodes" {
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform"
     ]
+
+    dynamic "guest_accelerator" {
+      for_each = local.enable_gpu ? [1] : []
+      content {
+        type  = local.gpu_type
+        count = var.gpu_count
+        gpu_driver_installation_config {
+          gpu_driver_version = "DEFAULT"
+        }
+      }
+    }
 
     dynamic "workload_metadata_config" {
       for_each = var.enable_workload_identity ? [1] : []

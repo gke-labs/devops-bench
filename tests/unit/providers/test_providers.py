@@ -50,6 +50,7 @@ def test_registry_populated():
 def test_gcp_resolve_variables_fills_defaults(ctx):
     variables = GcpProvider().resolve_variables(ctx, {"node_count": 5, "cluster_name": "override"})
     assert variables == {
+        "cloud_provider": "gcp",
         "project_id": "test-project",
         "cluster_name": "override",  # custom value preserved
         "location": "us-central1-a",
