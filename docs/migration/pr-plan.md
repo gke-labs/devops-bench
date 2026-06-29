@@ -1,10 +1,7 @@
 # Migration: PR execution plan
 
 ### Documentation directory map
-- For high-level steps for gke-labs maintainers, see [README.md](./README.md).
-- For a deep dive into component design and principles, see [component-design.md](./component-design.md).
-- For target directory layouts and glossary, see [directory-structure.md](./directory-structure.md).
-- For details on proving the plan using a local sandbox, see [VALIDATION.md](./VALIDATION.md).
+- For the high-level migration runbook for gke-labs maintainers, see [README.md](./README.md).
 
 This document maps out the phased execution strategy to migrate `devops-bench` from `gke-labs/devops-bench` (the *incubator*) to `kubernetes-sigs/devops-bench` (the *canonical* home) as small, reviewable Pull Requests.
 
@@ -14,7 +11,7 @@ This document maps out the phased execution strategy to migrate `devops-bench` f
 
 To ensure a smooth, error-free upstream review process, every PR must adhere to these structural constraints:
 
-1. **Co-locate Implementation and Unit Tests**: As outlined in the [architectural principles](./component-design.md#1-core-principles), each module or package must migrate together with its corresponding unit tests under `tests/unit/` in a single PR. 
+1. **Co-locate Implementation and Unit Tests**: Each module or package must migrate together with its corresponding unit tests under `tests/unit/` in a single PR.
 2. **Prioritize Interfaces and Registries**: Basic classes, registries, and Abstract Base Classes (ABCs) must land before the concrete implementations that import them to ensure clean dependency trees.
 3. **Keep the Frontier Documented**: Immediately after an upstream PR merges, uncomment its paths in `migrated.bara.sky` in a small, reviewed `gke-labs` PR (refer to [README.md](./README.md) §4 Step 2.2 for details). This locks the paths and activates the back-sync bot.
 4. **All PRs are Disposable**: If a forward PR becomes stale, close it and re-assemble a clean one using `prep-export.sh`.
@@ -103,7 +100,7 @@ With all leaves and components in place, the core run loop can now migrate.
 
 - **3a. Run orchestration (`harness/`)**:
   - **Paths**: `devops_bench/evalharness/` (base, default, scenario, artifacts), `tests/unit/evalharness/`.
-  - **Details**: Integrates the `ScenarioManager` (controlling chaos and verification) with the `DefaultHarness` (managing task loops, provisioning, execution, and teardown).
+  - **Details**: Integrates the `ScenarioManager` (controlling chaos and verification) with the `DefaultEvalHarness` (managing task loops, provisioning, execution, and teardown).
 
 ---
 

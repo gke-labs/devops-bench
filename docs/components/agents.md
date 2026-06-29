@@ -1,0 +1,126 @@
+# Agents
+
+An **agent harness** is the thing under test. It drives one AI agent against one
+task prompt and hands back a typed result the rest of the benchmark can score.
+Everything in this layer lives under `devops_bench/agents/`.
+
+The base class is `AgentHarness` (`devops_bench/agents/base.py`). It owns two
+concerns so subclasses never have to: the base `run()` stamps wall-clock
+**latency** onto every result, and it wraps the agent in a **safety net** — any
+crash inside the agent is caught and turned into an errored result, so one faulty
+agent never aborts the whole benchmark. Subclasses implement a single method,
+`_execute()`, which does the provider-specific work and returns an `AgentResult`.
+
+```text
+agent.run(prompt) -> AgentResult     # base: latency + safety net
+   └─ agent._execute(prompt)         # subclass: build invocation, parse, return
+```
+
+## Supported harnesses
+
+Three harnesses ship today. Each self-registers under a canonical key.
+
+| Key | Wraps | How it runs | Capabilities |
+| --- | --- | --- | --- |
+| `gemini` | The Google **Gemini CLI** binary | Headless subprocess; trajectory parsed from `--output-format stream-json` on stdout | MCP, skills, rules, allowed-tools |
+| `openclaw` | The **Openclaw Agent CLI** | `openclaw agent --local` with per-run isolated state/config; trajectory via `openclaw sessions export-trajectory` | MCP, skills, rules |
+| `api` | **In-process** model call | Calls `get_model(provider, model)` and runs a model-agnostic MCP tool-use loop (`max_turns`, default 50) | MCP (spawns a stdio server), skills (served as tools), rules (system instruction) |
+
+> `oc` is just a shorthand alias for the `openclaw` CLI; this doc uses `openclaw` throughout.
+
+> [!NOTE]
+> The `gemini` key names the CLI **harness** — the program that drives the agent.
+> It is not the gemini **model**. You can run the gemini *model* through the `api`
+> harness, or run a non-gemini model through the `gemini` CLI, because the harness
+> and the model are chosen independently (see [Harness vs model](#harness-vs-model)).
+> The aliases `cli` and `binary` both resolve to `gemini`.
+
+## Harness vs model
+
+A harness does **not** hardcode a model. It reads `AGENT_PROVIDER` and
+`AGENT_MODEL` from its config and maps them onto whatever it drives.
+
+Only the `api` harness talks to the models layer directly — it calls
+`get_model(provider, model)` and runs the tool-use loop in-process. The CLI
+harnesses (`gemini`, `openclaw`) pass the model and provider through to their
+binaries instead: the Gemini CLI gets `GEMINI_MODEL` in its environment, and
+openclaw gets a `--model provider/id` flag. Either way, the model is a runtime
+input, never baked into the harness.
+
+For everything about providers, model ids, and how `get_model` resolves them, see
+[Model providers](./model_providers.md).
+
+## Configuring a harness for an eval
+
+Configuration is env-driven. The benchmark reads neutral `AGENT_*` variables and
+each harness maps them onto its target.
+
+**Selecting the harness**
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `BENCH_AGENT_TYPE` | resolves to `gemini` (`cli` → `gemini`) | The canonical key or an alias. The `--agent-type` flag overrides it. |
+
+**Agent config**
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `AGENT_MODEL` | unset | Model id; flows to the harness's target. |
+| `AGENT_PROVIDER` | unset | Provider key (e.g. `gemini`, `anthropic`, `google-vertex`). |
+| `AGENT_API_KEY` | unset | Mapped onto the provider-specific key var by the harness. |
+| `AGENT_TARGET` | unset | Path to the CLI binary (`gemini` / `oc`). Ignored by `api`. |
+| `AGENT_TIMEOUT_SEC` | `600` | Wall-clock budget for each external call. |
+| `AGENT_MAX_TURNS` | harness default (50 for `api`) | Caps the `api` tool-use loop. |
+
+**Capabilities**
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `BENCH_USE_MCP` | `true` | Master gate. `false` drops the MCP binding entirely. |
+| `AGENT_MCP_SERVER` | unset | Shell-quoted argv for the MCP server (e.g. `"uv run gke-mcp"`). |
+| `AGENT_ALLOWED_TOOLS` | unset | CSV of pre-approved tool names. |
+| `AGENT_SKILLS_PATHS` | unset | CSV of directories to discover `SKILL.md` files under. |
+| `AGENT_RULES_TEXT` | unset | Operator-brief text handed to the agent. |
+
+### Example: gemini CLI with MCP + skills
+
+```bash
+export BENCH_AGENT_TYPE=gemini
+export AGENT_PROVIDER=gemini
+export AGENT_MODEL=gemini-2.5-pro
+export AGENT_API_KEY="$GEMINI_API_KEY"
+export AGENT_TARGET=gemini
+
+export BENCH_USE_MCP=true
+export AGENT_MCP_SERVER="uv run gke-mcp"
+export AGENT_ALLOWED_TOOLS="list_clusters,get_pods"
+export AGENT_SKILLS_PATHS="/opt/skills/gke,/opt/skills/k8s"
+```
+
+### Example: api harness on Claude with MCP off
+
+```bash
+export BENCH_AGENT_TYPE=api
+export AGENT_PROVIDER=anthropic
+export AGENT_MODEL=claude-sonnet-4-5
+export AGENT_API_KEY="$ANTHROPIC_API_KEY"
+
+export BENCH_USE_MCP=false      # no MCP server is spawned; tools are dropped
+```
+
+## Capabilities
+
+MCP tools, skills, and rules are the three augmentation axes, and they are
+independent — an agent may run with any combination, or none. Each is expressed
+as a structural Protocol (`SupportsMcp`, `SupportsSkills`, `SupportsRules` in
+`devops_bench/agents/capabilities/`): a harness satisfies a Protocol simply by
+assigning the matching binding attribute. **MCP** wires the agent to a tool
+server, **skills** drop `SKILL.md` files the agent can discover, and **rules**
+supply an operator brief. Setting `BENCH_USE_MCP=false` drops the MCP binding
+entirely, so the agent sees no tools and the scorer agrees that none ran — skills
+and rules are unaffected.
+
+## Adding your own harness
+
+Want to wrap a different agent? See
+[Add an agent harness](../how-to/add-an-agent-harness.md).
