@@ -654,6 +654,13 @@ def test_build_env_unknown_provider_raises():
         _build_env(AgentConfig(api_key="k", provider="mystery"))
 
 
+def test_build_env_unknown_provider_raises_even_when_keyless():
+    """Validation is unconditional — a typoed provider fails loud on a keyless
+    (Vertex/ADC) run too, not only when a key is set."""
+    with pytest.raises(ConfigError):
+        _build_env(AgentConfig(provider="google-vertyx"))
+
+
 def test_model_override_raises_for_unpinned_transport():
     """A catalog-override model whose provider has no pinned transport fails loud
     rather than shipping a transport-less entry (which would 401 via the OpenAI

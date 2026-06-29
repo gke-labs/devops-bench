@@ -21,6 +21,8 @@ import os
 import subprocess
 from types import SimpleNamespace
 
+import pytest
+
 from devops_bench.agents import AGENTS, AgentConfig
 from devops_bench.agents.capabilities import (
     AgentRules,
@@ -38,7 +40,7 @@ from devops_bench.agents.cli.gemini_cli.agent import (
     _build_env,
     _build_settings,
 )
-from devops_bench.core.errors import SubprocessError
+from devops_bench.core.errors import ConfigError, SubprocessError
 
 
 def _stream(*events: dict) -> str:
@@ -176,6 +178,12 @@ def test_build_env_keyless_writes_no_key_var():
     # No api_key (Vertex/ADC): no key env var is written regardless of provider.
     env = _build_env(AgentConfig(model="gemini-2.5-pro", provider="google-vertex"))
     assert not {"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_API_KEY"} & env.keys()
+
+
+def test_build_env_unknown_provider_raises_even_when_keyless():
+    # Validation is unconditional — a typoed provider fails loud on a keyless run.
+    with pytest.raises(ConfigError):
+        _build_env(AgentConfig(model="gemini-2.5-pro", provider="google-vertyx"))
 
 
 def test_gemini_agent_registered_under_canonical_key():

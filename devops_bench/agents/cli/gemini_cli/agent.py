@@ -154,6 +154,9 @@ def _build_env(config: AgentConfig) -> dict[str, str]:
     Raises:
         ConfigError: If ``config.provider`` is not a known provider.
     """
+    # Resolve unconditionally so an unknown provider fails loud even on a keyless
+    # (Vertex/ADC) run, not only when a key happens to be set.
+    spec = resolve_provider(config.provider)
     overlay: dict[str, str] = {
         # Disable the Gemini CLI's OTLP exporters; otherwise they block/hang
         # trying to reach an unreachable collector endpoint in headless runs.
@@ -163,7 +166,7 @@ def _build_env(config: AgentConfig) -> dict[str, str]:
         "OTEL_SDK_DISABLED": "true",
     }
     if config.api_key:
-        for var in resolve_provider(config.provider).api_key_envs:
+        for var in spec.api_key_envs:
             overlay[var] = config.api_key
     if config.model:
         overlay["GEMINI_MODEL"] = config.model
