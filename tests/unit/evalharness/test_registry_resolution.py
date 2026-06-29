@@ -75,15 +75,15 @@ def test_dummy_agent_resolves_with_no_harness_edit(
     assert isinstance(_DummyAgent.last_config, AgentConfig)
 
 
-def test_legacy_alias_normalizes_to_canonical_key() -> None:
-    """``cli`` / ``binary`` legacy types still resolve to the Gemini agent."""
+def test_alias_normalizes_to_canonical_key() -> None:
+    """``gemini-cli`` resolves to the canonical ``gemini`` agent."""
     harness = DefaultEvalHarness(project_id="p", cluster_name="c")
 
-    # ``cli`` is the legacy alias for the gemini agent; resolution must not
-    # require a path table — the alias map normalizes to ``gemini`` and the
+    # ``gemini-cli`` is the friendly alias for the gemini agent; resolution must
+    # not require a path table — the alias map normalizes to ``gemini`` and the
     # registry returns the registered class.
     agent_cls = AGENTS.get("gemini")
-    agent = harness.resolve_agent("cli")
+    agent = harness.resolve_agent("gemini-cli")
     assert isinstance(agent, agent_cls)
 
 

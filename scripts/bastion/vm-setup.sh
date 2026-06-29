@@ -155,7 +155,7 @@ export GCP_LOCATION="us-central1-a"
 export NAMESPACE="secret-rotation-run-1"
 
 # --- Agent (openclaw / oc) ---
-export BENCH_AGENT_TYPE="cli"
+export BENCH_AGENT_TYPE="openclaw"
 export AGENT_TARGET="oc"
 export AGENT_PROVIDER="google"
 export AGENT_MODEL="gemini-3.1-pro-preview"

@@ -134,7 +134,7 @@ def test_no_infra_uses_placeholders(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
 def test_agent_type_flag_overrides_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _patch(monkeypatch)
-    monkeypatch.setenv("BENCH_AGENT_TYPE", "cli")
+    monkeypatch.setenv("BENCH_AGENT_TYPE", "gemini-cli")
     config = BenchmarkConfig(
         source="src",
         no_infra=True,
@@ -144,4 +144,4 @@ def test_agent_type_flag_overrides_env(monkeypatch: pytest.MonkeyPatch, tmp_path
     run_benchmark(config)
     # The flag is injected into the harness constructor, not written to env.
     assert FakeHarness.instances[0].agent_type == "api"
-    assert os.environ.get("BENCH_AGENT_TYPE") == "cli"
+    assert os.environ.get("BENCH_AGENT_TYPE") == "gemini-cli"
