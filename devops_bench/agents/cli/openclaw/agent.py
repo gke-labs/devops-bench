@@ -51,9 +51,11 @@ from the granted bindings, so the agent structurally satisfies
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -79,6 +81,32 @@ if TYPE_CHECKING:  # pragma: no cover - typing-only import
     from devops_bench.agents.capabilities import McpBinding
 
 __all__ = ["OpenClawAgent"]
+
+
+def _ensure_node_on_path(env_overlay: dict[str, str]) -> dict[str, str]:
+    """Return ``env_overlay`` with the nvm Node bin dir prepended to ``PATH``.
+
+    The agent *turn* runs ``oc`` through a bash command that sources nvm, but the
+    ``oc sessions`` / ``export-trajectory`` extraction calls run ``oc`` as a direct
+    argv subprocess (``run()`` never uses a shell). On an nvm-managed host Node is
+    not on the inherited ``PATH``, so those calls fail with
+    ``exit 127: /usr/bin/env: 'node': No such file or directory`` and the
+    trajectory comes back **silently empty** (deflating every tool/trajectory
+    score). Prepend the nvm Node bin dir so the direct subprocess finds Node too.
+
+    No-op when Node is already discoverable on ``PATH`` or nvm is absent.
+    """
+    if shutil.which("node"):
+        return env_overlay
+    nvm_dir = os.path.expanduser(os.environ.get("NVM_DIR") or "~/.nvm")
+    bins = sorted(glob.glob(os.path.join(nvm_dir, "versions", "node", "*", "bin")))
+    if not bins:
+        return env_overlay
+    node_bin = bins[-1]  # newest installed Node version
+    merged = dict(env_overlay)
+    existing = merged.get("PATH") or os.environ.get("PATH", "")
+    merged["PATH"] = f"{node_bin}{os.pathsep}{existing}" if existing else node_bin
+    return merged
 
 _log = get_logger("agents.cli.openclaw.agent")
 
@@ -457,6 +485,11 @@ class OpenClawAgent(AgentHarness):
             caller falls back to the ansi-stripped subprocess stdout when empty.
         """
         errors: list[str] = []
+        # The agent turn sources nvm inside a bash command, but these extraction
+        # calls run oc as a direct argv subprocess (no shell), so on nvm-managed
+        # hosts Node isn't on PATH -> `oc sessions` exits 127 and the trajectory
+        # is silently emptied. Make Node discoverable for the direct calls.
+        env_overlay = _ensure_node_on_path(env_overlay)
         try:
             sessions = run(
                 [oc_bin, "sessions", "--agent", self.agent_name, "--json"],

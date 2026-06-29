@@ -90,6 +90,26 @@ else
     echo "    WARN: fortio install failed; chaos generate_load faults (optimize-scale) will no-op."
   fi
 fi
+
+# node on a stable PATH — the oc trajectory extraction (`oc sessions` /
+# `export-trajectory`) runs oc as a direct, non-login subprocess, so an
+# nvm-managed Node that's only on the *login* PATH isn't found → `oc sessions`
+# exits 127 and the trajectory is silently emptied (deflating every score).
+# Symlink the nvm Node into ~/bin (already on the runner PATH) so the direct
+# subprocess resolves it. Idempotent; no-op when Node is already system-wide.
+echo "==> node-on-PATH check (oc trajectory extraction)"
+if PATH="${HOME}/bin:${PATH}" command -v node >/dev/null 2>&1; then
+  echo "    node resolvable on the runner PATH: $(PATH="${HOME}/bin:${PATH}" command -v node)"
+else
+  export NVM_DIR="${NVM_DIR:-${HOME}/.nvm}"; [ -s "${NVM_DIR}/nvm.sh" ] && . "${NVM_DIR}/nvm.sh"
+  NODE_BIN="$(command -v node 2>/dev/null)"
+  if [ -n "${NODE_BIN}" ]; then
+    mkdir -p "${HOME}/bin"; ln -sf "${NODE_BIN}" "${HOME}/bin/node"
+    echo "    linked ${HOME}/bin/node -> ${NODE_BIN}"
+  else
+    echo "    WARN: node not found; oc trajectory extraction will exit 127 and empty trajectories."
+  fi
+fi
 # The chaos agent runs `fortio` via run_command in a NON-login shell, whose PATH
 # does NOT include ~/bin — so symlink fortio into /usr/local/bin (which IS on the
 # default PATH). Without this the optimize-scale load spike silently no-ops even
