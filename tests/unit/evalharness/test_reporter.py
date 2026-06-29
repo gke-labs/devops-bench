@@ -423,3 +423,66 @@ def test_record_carries_generation_only_and_validated(isolated_env: None) -> Non
     assert tofu_rec["generation_only"] is False
     assert noop_rec["validated"] is True
     assert tofu_rec["validated"] is False
+
+
+def _vetted_task() -> Task:
+    """A vetted (``validated: true``) task for run-level gating tests."""
+    return Task.from_dict({"task_id": "v", "name": "vetted", "validated": True})
+
+
+def test_success_record_validated_requires_clean_run(isolated_env: None) -> None:
+    """A vetted task promotes only when the run had no error and ran tools."""
+    harness = DefaultHarness(project_id="p", cluster_name="c")
+    record = harness._build_success_record(  # noqa: SLF001 - testing internals
+        task=_vetted_task(),
+        prompt="p",
+        expected_output="e",
+        agent_res=_stub_agent_result(),
+        chaos_report={},
+        perf_report={},
+    )
+    assert record["validated"] is True
+
+
+def test_success_record_validated_false_on_errored_run(isolated_env: None) -> None:
+    """An errored run (429 / timeout) on a vetted task must not promote.
+
+    ``AgentResult.errored`` yields an empty trajectory + populated ``errors``
+    while the record still reads ``status:"success"``; the run-level gate must
+    reject it.
+    """
+    harness = DefaultHarness(project_id="p", cluster_name="c")
+    record = harness._build_success_record(  # noqa: SLF001 - testing internals
+        task=_vetted_task(),
+        prompt="p",
+        expected_output="e",
+        agent_res=AgentResult.errored("429 RESOURCE_EXHAUSTED"),
+        chaos_report={},
+        perf_report={},
+    )
+    assert record["status"] == "success"
+    assert record["errors"]
+    assert record["validated"] is False
+
+
+def test_success_record_validated_false_on_empty_trajectory(isolated_env: None) -> None:
+    """A vetted task with no recorded tool calls does not promote."""
+    harness = DefaultHarness(project_id="p", cluster_name="c")
+    record = harness._build_success_record(  # noqa: SLF001 - testing internals
+        task=_vetted_task(),
+        prompt="p",
+        expected_output="e",
+        agent_res=AgentResult(output="text only", trajectory=[]),
+        chaos_report={},
+        perf_report={},
+    )
+    assert record["validated"] is False
+
+
+def test_failed_record_never_validated(isolated_env: None) -> None:
+    """A failed run never promotes, even on a vetted task."""
+    harness = DefaultHarness(project_id="p", cluster_name="c")
+    record = harness._build_failed_record(  # noqa: SLF001 - testing internals
+        _vetted_task(), RuntimeError("boom")
+    )
+    assert record["validated"] is False
