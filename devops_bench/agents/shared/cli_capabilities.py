@@ -58,10 +58,14 @@ def build_mcp_servers(mcp_servers: tuple[McpBinding, ...]) -> dict[str, dict]:
         if not binding.command:
             continue
         name = binding.name or f"mcp{index}"
-        entry: dict = {"command": binding.command[0]}
+        cmd = binding.command[0]
+        if cmd.startswith(".") or os.path.exists(cmd):
+            cmd = os.path.abspath(cmd)
+        entry: dict = {"command": cmd}
         if len(binding.command) > 1:
             entry["args"] = list(binding.command[1:])
         servers[name] = entry
+
     return servers
 
 
