@@ -92,6 +92,28 @@ def test_client_selection_default(mocker):
     assert adapter.model_name == "gemini-3.1-pro-preview"
 
 
+def test_backend_vertex_forces_vertex_even_with_api_key(mocker):
+    client_cls = mocker.patch.object(gemini.genai, "Client")
+    # An API key is present, but backend="vertex" (the google-vertex provider)
+    # must still build the Vertex client — provider decides, not key presence.
+    mocker.patch.dict(
+        os.environ, {"AGENT_API_KEY": "k", "GCP_PROJECT_ID": "proj"}, clear=True
+    )
+
+    GeminiClientAdapter(backend="vertex")
+
+    client_cls.assert_called_once_with(vertexai=True, project="proj", location="global")
+
+
+def test_backend_none_keeps_inference(mocker):
+    client_cls = mocker.patch.object(gemini.genai, "Client")
+    mocker.patch.dict(os.environ, {"AGENT_API_KEY": "k"}, clear=True)
+
+    GeminiClientAdapter(backend=None)
+
+    client_cls.assert_called_once_with(api_key="k")
+
+
 # --- format_tools -------------------------------------------------------------
 
 
