@@ -22,13 +22,14 @@ variable "location" {
 
 variable "node_count" {
   type    = number
-  default = null
+  default = 3
 }
 
 variable "machine_type" {
   type    = string
-  default = null
+  default = "e2-standard-2"
 }
+
 
 variable "node_image" {
   description = "The KinD node image to use"
