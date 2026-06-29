@@ -66,17 +66,29 @@ yourprovider-sdk = ["yourprovider-sdk>=1.0.0"]
 all = ["devops-bench[google-genai,anthropic,openai,yourprovider-sdk]"]
 ```
 
-### 4. (Optional) add an alias
+### 4. (Optional) register it in the provider contract
 
-If your provider is known by more than one name, map the alternates to your
-canonical key in `_ALIASES` in `devops_bench/models/base.py`:
+`AGENT_PROVIDER` resolves through the shared contract in
+`devops_bench/core/model_providers.py` — the one place every harness (the `api`
+runner and the `gemini`/`openclaw` CLIs) reads. If your provider needs aliases, a
+distinct backend, a non-default API-key env var, or keyless (ADC-style) auth, add
+a `ProviderSpec` row to `_SPECS` and its alias(es) to `_ALIASES` there:
 
 ```python
-_ALIASES = {
-    ...
-    "your-alt-name": "<key>",
-}
+_SPECS["your-key"] = ProviderSpec(
+    canonical="your-key",
+    adapter_family="<key>",          # the MODELS.get() key from step 1
+    oc_provider="your-key",          # openclaw wire-provider id
+    api_key_envs=("YOURPROVIDER_API_KEY",),  # () if keyless
+    keyless_ok=False,
+    backend=None,                    # or a backend hint your adapter reads
+)
+_ALIASES["your-alt-name"] = "your-key"
 ```
+
+A provider whose `adapter_family` maps to your new module's registered key works
+through `get_model()` automatically. An unknown provider raises `ConfigError`
+listing the known ones.
 
 ### 5. Nothing else to wire up
 

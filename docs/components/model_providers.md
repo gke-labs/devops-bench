@@ -16,22 +16,39 @@ change.
 
 ## Supported providers and models
 
-A provider key selects an adapter. Aliases are alternate spellings that resolve
-to the same adapter. Backends are the transports a single adapter can reach,
-chosen at runtime from the environment.
+Every harness — the `api` runner and the `gemini`/`openclaw` CLIs — resolves
+`AGENT_PROVIDER` through one shared contract
+(`devops_bench/core/model_providers.py`). A provider resolves to an *adapter
+family* (which `LLMClient` the `api` harness builds), a *backend* hint
+(genai/vertex/bedrock), the *openclaw wire-provider*, and the *API-key env
+var(s)* a CLI harness sets — so the same `AGENT_*` config behaves identically
+across harnesses.
 
-| Provider key | Aliases | Backends | Default model | SDK / install extra |
-| --- | --- | --- | --- | --- |
-| `gemini` | `google`, `google-vertex`, `google_vertex` | Google AI Studio API key, Vertex AI | `gemini-3.1-pro-preview` | `google-genai` |
-| `claude` | `anthropic` | Anthropic API, Vertex AI, Amazon Bedrock | backend-specific (`api` → `claude-sonnet-4-5`; Bedrock requires `AGENT_MODEL`) | `anthropic` |
-| `ollama` | — | local OpenAI-compatible server | `gemma4:2b` | `openai` |
+| Provider key | Aliases | Adapter family | Backend | Key env var(s) | Keyless |
+| --- | --- | --- | --- | --- | --- |
+| `google` | `gemini` | `gemini` | genai (API key) | `GEMINI_API_KEY`, `GOOGLE_API_KEY` | no |
+| `google-vertex` | `google_vertex` | `gemini` | Vertex AI | `GOOGLE_CLOUD_API_KEY` | yes (ADC) |
+| `anthropic` | `claude` | `claude` | inferred (api/vertex/bedrock) | `ANTHROPIC_API_KEY` | no |
+| `anthropic-vertex` | `anthropic_vertex` | `claude` | Vertex AI | — | yes (ADC) |
+| `anthropic-bedrock` | `anthropic_bedrock` | `claude` | Amazon Bedrock | — | yes (AWS creds) |
+| `openai` | — | `openai` | — | `OPENAI_API_KEY` | no |
+| `ollama` | — | `ollama` | local OpenAI-compatible server | optional `AGENT_API_KEY` | yes |
+
+Default models: `gemini` → `gemini-3.1-pro-preview`; `claude` → backend-specific
+(`api` → `claude-sonnet-4-5`; Bedrock requires `AGENT_MODEL`); `ollama` →
+`gemma4:2b`.
 
 A few things worth calling out:
 
-- **`google-vertex` is not a separate adapter.** It is an alias that resolves to
-  the `gemini` adapter, which then picks Vertex AI at runtime based on the
-  environment (a `GCP_PROJECT_ID` with no API key). There is no distinct Vertex
-  module.
+- **`google-vertex` is not a separate adapter.** It resolves to the `gemini`
+  adapter with a `vertex` backend hint, so the *provider key* — not key presence
+  — selects Vertex AI. There is no distinct Vertex module.
+- **Vertex and Bedrock are keyless.** `google-vertex`, `anthropic-vertex`, and
+  `anthropic-bedrock` authenticate via ADC / AWS credentials; the contract never
+  forces an API key onto them (their key-env list is empty). The bare
+  `anthropic` provider still infers its backend from the environment.
+- **Ollama accepts an optional key.** It defaults to a dummy the local server
+  ignores, but uses `AGENT_API_KEY` when set (for remote/hosted endpoints).
 - **Install extras are named by PyPI package, not by provider key.** The extras
   are `google-genai`, `anthropic`, `openai`, and `all` — a different axis from
   the provider keys above. The most surprising consequence: the `openai` extra
@@ -55,33 +72,40 @@ There are three roles, and each reads its own environment variables.
 | Judge | `JUDGE_PROVIDER` | `JUDGE_MODEL` | Also settable via the `--judge-provider` / `--judge-model` CLI flags. |
 | Chaos agent | `CHAOS_PROVIDER` | `CHAOS_MODEL` | Falls back to `AGENT_PROVIDER` / `AGENT_MODEL` when unset. |
 
-When no provider is given anywhere, `get_model()` defaults to `gemini`.
+When no provider is given anywhere, the contract defaults to `google`.
 
-### Backend-selecting variables
+### Backend selection
 
-Within a provider, these variables choose the transport:
+The cleanest way to pick a backend is the **provider key** itself —
+`google-vertex`, `anthropic-vertex`, and `anthropic-bedrock` select Vertex AI /
+Bedrock deterministically, independent of which keys happen to be in the
+environment. These also flow consistently into the CLI harnesses.
+
+These variables still influence backend/transport details:
 
 | Variable | Effect |
 | --- | --- |
-| `GCP_PROJECT_ID` + `GCP_VERTEX_LOCATION` | Selects Vertex AI for both `gemini` and `claude`. `GCP_VERTEX_LOCATION` defaults to `global`. |
-| `ANTHROPIC_BACKEND` | Forces the Claude backend: `api`, `vertex`, or `bedrock`. Overrides the inference below. |
-| `AWS_REGION` / `AWS_DEFAULT_REGION` | Selects the Claude Bedrock backend. |
+| `GCP_PROJECT_ID` + `GCP_VERTEX_LOCATION` | Vertex project/region (`GCP_VERTEX_LOCATION` defaults to `global`). |
+| `ANTHROPIC_BACKEND` | Forces the Claude backend (`api`/`vertex`/`bedrock`) for the bare `anthropic` provider. |
+| `AWS_REGION` / `AWS_DEFAULT_REGION` | Region for the Claude Bedrock backend. |
 | `OLLAMA_BASE_URL` | Endpoint for the Ollama server (defaults to `http://localhost:11434/v1`). |
 
-For Claude, if you don't force `ANTHROPIC_BACKEND`, the adapter infers a backend:
-an API key (`AGENT_API_KEY` / `ANTHROPIC_API_KEY`) selects `api`, then
-`GCP_PROJECT_ID` selects `vertex`, then an AWS region selects `bedrock`, with
-`vertex` as the final fallback.
+For the bare `anthropic` provider (no explicit `-vertex`/`-bedrock` key and no
+`ANTHROPIC_BACKEND`), the adapter still infers a backend: an API key
+(`AGENT_API_KEY` / `ANTHROPIC_API_KEY`) selects `api`, then `GCP_PROJECT_ID`
+selects `vertex`, then an AWS region selects `bedrock`, with `vertex` as the
+final fallback.
 
 > [!NOTE]
-> When the agent harness is a CLI (the `gemini` or `openclaw` agents),
-> `AGENT_PROVIDER` / `AGENT_MODEL` / `AGENT_API_KEY` are mapped onto that CLI's
-> own environment variables instead of going through `get_model()`. For example,
-> the gemini CLI agent receives `GEMINI_MODEL`, `GOOGLE_API_KEY`, and
-> `GEMINI_API_KEY`. Only the `api` harness calls `get_model()` directly. This
-> per-harness divergence is a known inconsistency we plan to unify (tracked in
-> [#147](https://github.com/gke-labs/devops-bench/issues/147)). See
-> [agents.md](./agents.md) for how each harness consumes its config today.
+> **All harnesses share one provider contract.** The `api` runner and the
+> `gemini`/`openclaw` CLIs all resolve `AGENT_PROVIDER` through
+> `devops_bench/core/model_providers.py`. The `api` harness uses it to pick the
+> adapter family and backend for `get_model()`; the CLI harnesses use it to route
+> `AGENT_API_KEY` onto the binary's provider-specific env var(s) (e.g. `google` →
+> `GEMINI_API_KEY` + `GOOGLE_API_KEY`, `google-vertex` → `GOOGLE_CLOUD_API_KEY`)
+> and, for openclaw, to pin the per-run model-catalog transport. A keyless
+> provider routes no key. (This unifies the former per-harness divergence,
+> [#147](https://github.com/gke-labs/devops-bench/issues/147).)
 
 ## Configuration examples
 
@@ -114,14 +138,14 @@ export AGENT_MODEL=claude-sonnet-4-5
 export AGENT_API_KEY="$YOUR_ANTHROPIC_KEY"
 ```
 
-**Claude on Vertex AI:**
+**Claude on Vertex AI (no key — uses ADC + project):**
 
 ```bash
-export AGENT_PROVIDER=claude
-export ANTHROPIC_BACKEND=vertex
+export AGENT_PROVIDER=anthropic-vertex
 export AGENT_MODEL=claude-sonnet-4-5@20250929
 export GCP_PROJECT_ID=my-gcp-project
 export GCP_VERTEX_LOCATION=global
+# The provider key selects Vertex; no AGENT_API_KEY is needed or used.
 ```
 
 **Ollama (local server):**
