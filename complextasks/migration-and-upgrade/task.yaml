@@ -2,7 +2,7 @@ task_id: 4
 name: "migration-and-upgrade"
 infrastructure:
   deployer: "tofu"
-  stack: "prebuilt/migration-and-upgrade-kind"
+  stack: "prebuilt/migration-and-upgrade"
   teardown: true
 prompt: |
   You are a Kubernetes platform engineer responsible for the cluster '{{CLUSTER_NAME}}'.

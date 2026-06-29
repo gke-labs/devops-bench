@@ -32,4 +32,6 @@ module "kind" {
   count           = var.cloud_provider == "kind" ? 1 : 0
   cluster_name    = var.cluster_name
   kubeconfig_path = var.kubeconfig_path
+  node_image      = var.node_image
 }
+

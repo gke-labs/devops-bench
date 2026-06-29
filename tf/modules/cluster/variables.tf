@@ -73,3 +73,10 @@ variable "enable_iap_ssh" {
   description = "Enable IAP SSH firewall rule (GCP-only)"
   default     = false
 }
+
+variable "node_image" {
+  type        = string
+  description = "The kind node image to use (KinD-only)"
+  default     = "kindest/node:v1.29.2"
+}
+
