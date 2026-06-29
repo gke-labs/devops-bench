@@ -95,6 +95,15 @@ stale per-run state and orphaned cloud resources are the top cause of a "fresh"
 matrix failing instantly. For leaked clusters / `gke-nodes-*` SAs / secrets, use
 the `cleanup-orphaned-resources` skill.
 
+**Smoke-gate before the full matrix.** Launch **one cheap combo first** (a `noop`
+or `kind` task is fastest — no GKE provision) and verify its `results.json` has a
+**non-empty `trajectory`** (and `tools` populated for tool-using tasks), not just
+`exit=0`. An empty trajectory on a task the agent clearly acted on is a *silent*
+capture failure that scores still "succeed" through — it deflates every
+tool/checklist score (e.g. the `oc sessions` Node-not-on-PATH bug in
+[known_issues.md](../../../docs/appendix/known_issues.md)). **Abort and fix before
+spending the full matrix** rather than discovering it across N invalid runs.
+
 Then launch per [running-evals.md](../../references/running-evals.md): build the
 env from Phase 1, run the wrapper as a background job, and **capture each
 `STAMP`** (`RESUME_STAMP=<stamp>`) plus the combo list in durable state. To run
