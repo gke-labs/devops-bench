@@ -64,6 +64,13 @@ curl -fsSL https://raw.githubusercontent.com/GoogleCloudPlatform/gke-mcp/main/in
 bash /tmp/gke-mcp-install.sh
 rm -f /tmp/gke-mcp-install.sh
 
+echo "==> uv (Python package/venv manager used by the harness setup)"
+# Install system-wide so every user's vm-setup.sh can run `uv sync`. Download to
+# a file first (a dropped `curl | sh` can execute a truncated installer).
+curl -fsSL https://astral.sh/uv/install.sh -o /tmp/uv-install.sh
+env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh /tmp/uv-install.sh
+rm -f /tmp/uv-install.sh
+
 echo "==> versions"
 tofu version || true
 node --version || true
@@ -71,6 +78,7 @@ gcloud --version | head -1 || true
 kubectl version --client 2>/dev/null | head -1 || true
 oc --version || true
 python3 --version || true
+uv --version || true
 
 touch /var/lib/bench-bastion-ready
 echo "==> bench-bastion startup complete: $(date -u +%FT%TZ)"

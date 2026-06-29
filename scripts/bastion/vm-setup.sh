@@ -35,12 +35,12 @@ fi
 
 cd "${REPO_DIR}"
 
-echo "==> creating venv + installing the harness (.[all])"
-python3 -m venv .venv
+echo "==> creating venv + installing the harness (uv sync --extra all)"
+# uv is installed system-wide by the VM startup script. It creates/manages .venv
+# from the lockfile, so we don't hand-roll a venv or use pip here.
+uv sync --frozen --extra all
 # shellcheck disable=SC1091
 source .venv/bin/activate
-pip install --upgrade pip
-pip install ".[all]"
 
 echo "==> openclaw key check"
 # The harness does NOT pass an API key to oc; openclaw must hold the agent
