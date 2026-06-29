@@ -69,6 +69,8 @@ python -m devops_bench --no-infra tasks/noop/create-deployment/task.yaml
 
 Results land in `results/run_<timestamp>/`, with `results.json` (full scored output), `rows.json` (flattened, ingest-ready rows), and `manifest.json` (run metadata).
 
+**Working through a coding agent?** Instead of assembling the command yourself, point it at the `run-eval` skill — it picks local vs bastion, sets up auth, launches, and watches the run for you. See [the skills overview](docs/getting-started.md#skills-in-this-repo).
+
 For real GKE/kind runs and parallel matrices, see the [run-evals how-to](docs/how-to/run-evals.md).
 
 ## Live results

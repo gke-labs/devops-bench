@@ -104,13 +104,20 @@ When you're ready to run something for real, follow [how-to/run-evals.md](./how-
 
 ## Skills in this repo
 
-The repo ships **skills for coding agents** in `.agents/skills/` — orchestration skills you invoke to run and review evals:
+The repo ships **skills for coding agents** in `.agents/skills/` — you invoke them to run,
+validate, review, and maintain evals. They are agent-agnostic (Claude Code, Antigravity, Codex);
+shared mechanics live in `.agents/references/`.
 
 | Skill | Purpose | When to use |
 | --- | --- | --- |
-| `run-eval` | Run ONE eval (1 task × 1 model × 1 config) end-to-end with monitoring and recovery. | Running a single eval. |
-| `run-parallel-evals` | Run a Task × Model × AgentConfig matrix on the bastion with retry and optional self-healing. | Matrices and comparisons. |
-| `devops-bench-review` | Review a PR or working tree across correctness, parallel-safety, task/stack conventions, and docs conventions. | Reviewing devops-bench changes. |
+| `run-eval` | Run one eval (1 task × 1 model × 1 config), local or bastion. | The easy entrypoint for a single run. |
+| `validate-eval` | Validate a new eval in a self-healing loop until it provisions, runs, and grades correctly. | Vetting a newly added task. |
+| `run-parallel-evals` | Run a Task × Model × AgentConfig matrix with monitoring, retry, and optional self-healing. | Matrices and comparisons. |
+| `devops-bench-review` | Review a code change — correctness, testability, maintainability, API hygiene, domain modeling, conventions. | Reviewing a code diff. |
+| `task-review` | Review a new task — schema, rubric quality, parallel-safety, infra config, leaks. | Vetting a new or changed task. |
+| `docs-sync` | Update the docs a code change affects, and prune known-issues that code has fixed. | After changing code. |
+| `cleanup-orphaned-resources` | Find and remove leaked cloud resources left by aborted runs. | Cleaning up after failures. |
+| `diagnose-eval-failure` | Explain why a model failed an eval, from its trajectory and the judge's reasons. | Understanding a low score. |
 
 ## Where to go next
 
