@@ -46,12 +46,20 @@ class OllamaClientAdapter(LLMClient):
         model_name: Model override; falls back to ``AGENT_MODEL`` when omitted.
         base_url: Endpoint override; falls back to ``OLLAMA_BASE_URL`` and then
             the local default when omitted.
+        backend: Accepted for a uniform adapter signature; ignored (Ollama has no
+            backend variants).
 
     Raises:
         MissingDependencyError: If the ``openai`` SDK is not installed.
     """
 
-    def __init__(self, model_name: str | None = None, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        model_name: str | None = None,
+        base_url: str | None = None,
+        *,
+        backend: str | None = None,
+    ) -> None:
         if AsyncOpenAI is None:
             raise MissingDependencyError("the Ollama model adapter", "openai")
 
@@ -60,8 +68,11 @@ class OllamaClientAdapter(LLMClient):
         if not base_url:
             base_url = get_env("OLLAMA_BASE_URL", _DEFAULT_BASE_URL)
 
-        # api_key is required by the openai client but unused by Ollama.
-        self.client = AsyncOpenAI(base_url=base_url, api_key="ollama")
+        # Ollama supports optional key-based auth (e.g. a remote/hosted endpoint);
+        # use ``AGENT_API_KEY`` when set, else a dummy the local server ignores
+        # (the openai client requires a non-empty key).
+        api_key = get_env("AGENT_API_KEY") or "ollama"
+        self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self.model_name = model_name
 
     async def generate_content(

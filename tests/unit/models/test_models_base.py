@@ -20,7 +20,7 @@ import os
 
 import pytest
 
-from devops_bench.core.errors import NotRegisteredError
+from devops_bench.core.errors import ConfigError, NotRegisteredError
 from devops_bench.models.base import MODELS, LLMClient, get_model
 
 
@@ -130,5 +130,37 @@ def test_get_model_passes_model_name(mocker):
 def test_get_model_unknown_provider_raises(mocker):
     from devops_bench.models import claude, gemini  # noqa: F401
 
-    with pytest.raises(NotRegisteredError):
+    with pytest.raises(ConfigError):
         get_model(provider="does-not-exist")
+
+
+def test_get_model_openai_resolves_but_has_no_adapter():
+    # ``openai`` is a known provider in the contract but ships no adapter module,
+    # so resolution succeeds and the registry lookup raises NotRegisteredError.
+    with pytest.raises(NotRegisteredError):
+        get_model(provider="openai")
+
+
+def test_get_model_passes_vertex_backend_to_gemini(mocker):
+    from devops_bench.models import gemini
+
+    client_cls = mocker.patch.object(gemini.genai, "Client")
+    mocker.patch.dict(os.environ, {"GCP_PROJECT_ID": "p"}, clear=True)
+    get_model(provider="google-vertex")
+
+    # google-vertex -> backend="vertex" -> the adapter builds the Vertex client.
+    client_cls.assert_called_once_with(vertexai=True, project="p", location="global")
+
+
+def test_get_model_passes_vertex_backend_to_claude(mocker):
+    from devops_bench.models import claude
+
+    vertex_cls = mocker.patch.object(claude, "AsyncAnthropicVertex")
+    # An API key is present, but the anthropic-vertex provider must still use
+    # Vertex (backend hint decouples auth from key presence).
+    mocker.patch.dict(
+        os.environ, {"AGENT_API_KEY": "sk-test", "AGENT_MODEL": "claude-x"}, clear=True
+    )
+    get_model(provider="anthropic-vertex")
+
+    vertex_cls.assert_called_once()

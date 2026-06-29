@@ -21,23 +21,12 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from devops_bench.core.config import get_env
+from devops_bench.core.model_providers import resolve_provider
 from devops_bench.core.registry import Registry
 
 __all__ = ["LLMClient", "MODELS", "get_model"]
 
 MODELS: Registry[type[LLMClient]] = Registry("models")
-
-# Adapter modules are named by model family (``gemini``, ``claude``) and
-# self-register under that canonical key via ``@MODELS.register``; ``ollama`` is
-# the runtime exception. Company/runtime names are accepted as aliases here.
-# ``google-vertex`` resolves to the gemini adapter, which selects Vertex AI at
-# runtime via ``GOOGLE_GENAI_USE_VERTEXAI`` rather than a distinct adapter.
-_ALIASES = {
-    "google": "gemini",
-    "google-vertex": "gemini",
-    "google_vertex": "gemini",
-    "anthropic": "claude",
-}
 
 
 class LLMClient(ABC):
@@ -107,11 +96,15 @@ def get_model(
     """Construct the LLM client for a provider.
 
     When ``provider`` is omitted it is read from the ``AGENT_PROVIDER``
-    environment variable, defaulting to ``"gemini"``.
+    environment variable, defaulting to ``"google"``. The provider is resolved
+    through the shared contract (:func:`devops_bench.core.model_providers.resolve_provider`),
+    which maps it to the adapter family and a backend hint forwarded to the
+    adapter — the same contract the CLI harnesses use.
 
     Args:
-        provider: Registry key such as ``"gemini"``/``"google"``/
-            ``"google-vertex"``, ``"claude"``/``"anthropic"``, or ``"ollama"``.
+        provider: Provider alias such as ``"gemini"``/``"google"``/
+            ``"google-vertex"``, ``"claude"``/``"anthropic"``/
+            ``"anthropic-vertex"``, ``"openai"``, or ``"ollama"``.
             Case-insensitive.
         model_name: Optional model override passed to the adapter; when omitted
             the adapter reads ``AGENT_MODEL`` (or its own default).
@@ -121,15 +114,18 @@ def get_model(
         An instantiated :class:`LLMClient` for the selected provider.
 
     Raises:
-        NotRegisteredError: If ``provider`` has no registered adapter.
+        ConfigError: If ``provider`` is not a known alias.
+        NotRegisteredError: If the resolved adapter family has no registered
+            adapter (e.g. ``openai``).
         MissingDependencyError: If the selected provider's SDK is not installed.
     """
-    key = (provider or get_env("AGENT_PROVIDER", "gemini")).lower()
-    key = _ALIASES.get(key, key)
-    # Import only the requested provider's adapter module so it self-registers.
-    # An unknown key has no module; leave it to surface as NotRegisteredError.
+    spec = resolve_provider(provider if provider is not None else get_env("AGENT_PROVIDER"))
+    key = spec.adapter_family
+    # Import only the resolved adapter family's module so it self-registers. An
+    # unregistered family (e.g. ``openai``) has no module; leave it to surface as
+    # NotRegisteredError from ``MODELS.get``.
     module = f"{__package__}.{key}"
     if importlib.util.find_spec(module) is not None:
         importlib.import_module(module)
     adapter_cls = MODELS.get(key)
-    return adapter_cls(model_name=model_name, **kwargs)
+    return adapter_cls(model_name=model_name, backend=spec.backend, **kwargs)

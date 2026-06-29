@@ -72,6 +72,9 @@ class ClaudeClientAdapter(LLMClient):
             backend-specific default when omitted.
         max_tokens: Per-response output token cap; falls back to
             ``AGENT_MAX_TOKENS`` and then a sane default when omitted.
+        backend: Backend hint from the provider contract (``"vertex"`` /
+            ``"bedrock"``); overrides env inference. ``None`` infers from the
+            environment (the bare ``anthropic`` provider).
 
     Raises:
         MissingDependencyError: If the ``anthropic`` SDK is not installed.
@@ -79,11 +82,21 @@ class ClaudeClientAdapter(LLMClient):
             backend is selected without ``AGENT_MODEL`` set.
     """
 
-    def __init__(self, model_name: str | None = None, max_tokens: int | None = None) -> None:
+    def __init__(
+        self,
+        model_name: str | None = None,
+        max_tokens: int | None = None,
+        *,
+        backend: str | None = None,
+    ) -> None:
         if AsyncAnthropic is None:
             raise MissingDependencyError("the Anthropic model adapter", "anthropic")
 
-        backend = self._select_backend()
+        # An explicit backend hint from the provider contract
+        # (``anthropic-vertex`` -> ``vertex``, ``anthropic-bedrock`` -> ``bedrock``)
+        # wins, decoupling Vertex/Bedrock auth from API-key presence; the bare
+        # ``anthropic`` provider passes ``None`` and still infers from the env.
+        backend = backend or self._select_backend()
 
         if not model_name:
             model_name = get_env("AGENT_MODEL", _DEFAULT_MODELS.get(backend))
