@@ -174,6 +174,65 @@ def test_generate_content_invokes_sdk(mocker):
     assert kwargs["contents"]  # converted gemini messages
 
 
+class _FakeAPIError(Exception):
+    """SDK-like error carrying an HTTP status ``code``."""
+
+    def __init__(self, code, message=""):
+        super().__init__(message or str(code))
+        self.code = code
+
+
+def test_generate_content_retries_on_429_then_succeeds(mocker):
+    client = mocker.patch.object(gemini.genai, "Client").return_value
+    sleep = mocker.patch.object(gemini.asyncio, "sleep", new=AsyncMock())
+    generate = AsyncMock(side_effect=[_FakeAPIError(429, "RESOURCE_EXHAUSTED"), "resp"])
+    client.aio.models.generate_content = generate
+
+    adapter = GeminiClientAdapter()
+    result = asyncio.run(
+        adapter.generate_content([{"role": "user", "content": "hi"}], None, None)
+    )
+
+    assert result == "resp"
+    assert generate.await_count == 2
+    sleep.assert_awaited_once()
+
+
+def test_generate_content_does_not_retry_non_retryable(mocker):
+    client = mocker.patch.object(gemini.genai, "Client").return_value
+    sleep = mocker.patch.object(gemini.asyncio, "sleep", new=AsyncMock())
+    generate = AsyncMock(side_effect=_FakeAPIError(400, "INVALID_ARGUMENT"))
+    client.aio.models.generate_content = generate
+
+    adapter = GeminiClientAdapter()
+    try:
+        asyncio.run(adapter.generate_content([{"role": "user", "content": "hi"}], None, None))
+    except _FakeAPIError as exc:
+        assert exc.code == 400
+    else:  # pragma: no cover - the call must propagate
+        raise AssertionError("expected the non-retryable error to propagate")
+
+    assert generate.await_count == 1
+    sleep.assert_not_awaited()
+
+
+def test_generate_content_gives_up_after_max_retries(mocker):
+    client = mocker.patch.object(gemini.genai, "Client").return_value
+    mocker.patch.object(gemini.asyncio, "sleep", new=AsyncMock())
+    generate = AsyncMock(side_effect=_FakeAPIError(503, "UNAVAILABLE"))
+    client.aio.models.generate_content = generate
+
+    adapter = GeminiClientAdapter()
+    try:
+        asyncio.run(adapter.generate_content([{"role": "user", "content": "hi"}], None, None))
+    except _FakeAPIError as exc:
+        assert exc.code == 503
+    else:  # pragma: no cover
+        raise AssertionError("expected the error to propagate after retries")
+
+    assert generate.await_count == gemini._MAX_RETRIES + 1
+
+
 def test_generate_content_includes_system_instruction(mocker):
     client = mocker.patch.object(gemini.genai, "Client").return_value
     captured: dict = {}
