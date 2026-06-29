@@ -215,6 +215,10 @@ For long or hands-off matrices, the **`run-parallel-evals`** skill drives this w
 lifecycle with monitoring and infra-flake retry built in, plus opt-in
 resilient-monitoring and self-healing modes.
 
+**Related skills.** To vet a *new* task in a self-healing loop, use **`validate-eval`**. To clear
+leaked cloud resources after aborted runs, use **`cleanup-orphaned-resources`**. To understand *why*
+a model scored low on a run, use **`diagnose-eval-failure`**.
+
 ---
 
 ## Where results go & how to read them

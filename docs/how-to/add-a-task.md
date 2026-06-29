@@ -139,6 +139,14 @@ A few more habits that keep tasks healthy:
 - **Leave `validated: false` until you've actually run it.** The flag gates leaderboard inclusion; promoting an unvetted task pollutes the results.
 - **Prefer `noop` when a cluster adds nothing.** Generation-only tasks are faster, cheaper, and inherently collision-free.
 
-## Using the review skill
+## Reviewing and validating your task
 
-Before you send a task for review, run the `devops-bench-review` skill (in `.agents/skills/`) over your changes. It checks task and stack conventions and, most importantly, hunts for the parallel-safety problems above — shared state that would make your task fail when the full matrix runs at once. It's review-only: it analyzes statically and may run unit tests and linters, but it never provisions infra or runs an eval. See the [skills section in getting started](../getting-started.md#skills-in-this-repo) for how to invoke it.
+Before you submit, run the `task-review` skill (in `.agents/skills/`) over your task. It checks the
+schema and rubric quality and, most importantly, hunts the parallel-safety problems above — shared
+state that would make your task fail when the full matrix runs at once. It's review-only: static
+analysis plus maybe unit tests and linters, never provisioning infra or running an eval. (For changes
+to the harness *code* rather than a task, use `devops-bench-review` instead.)
+
+To actually prove the task runs and grades correctly, use the `validate-eval` skill, which runs it in
+a self-healing loop and recommends setting `validated: true` once it's green. See the [skills section
+in getting started](../getting-started.md#skills-in-this-repo) for how to invoke them.
