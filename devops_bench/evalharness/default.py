@@ -69,9 +69,11 @@ _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
 
 # Aliases normalized to canonical agent keys before registry lookup.
 _AGENT_TYPE_ALIASES: dict[str, str] = {
-    "cli": "gemini",
-    "binary": "gemini",
+    "gemini-cli": "gemini",
 }
+
+# Default agent type when neither --agent-type nor BENCH_AGENT_TYPE is set.
+_DEFAULT_AGENT_TYPE = "gemini-cli"
 
 # Default target deployment + namespace used both for placeholder
 # substitution in the agent prompt and as the chaos port-forward target, so the
@@ -158,9 +160,11 @@ class DefaultEvalHarness(Harness):
         self._judge_model = judge_model
         self.results_root = results_root
         resolved_agent_type = (
-            agent_type if agent_type is not None else get_env("BENCH_AGENT_TYPE", "cli")
+            agent_type
+            if agent_type is not None
+            else get_env("BENCH_AGENT_TYPE", _DEFAULT_AGENT_TYPE)
         )
-        self.agent_type = (resolved_agent_type or "cli").lower()
+        self.agent_type = (resolved_agent_type or _DEFAULT_AGENT_TYPE).lower()
         self.no_infra = no_infra if no_infra is not None else get_bool("BENCH_NO_INFRA")
         self.no_teardown = (
             no_teardown if no_teardown is not None else get_bool("BENCH_NO_TEARDOWN")
@@ -213,7 +217,7 @@ class DefaultEvalHarness(Harness):
         resolves the same way with no harness edit.
 
         Args:
-            agent_type: Configured agent type (e.g. ``cli`` / ``api`` /
+            agent_type: Configured agent type (e.g. ``gemini-cli`` / ``api`` /
                 ``gemini`` / ``openclaw``).
 
         Returns:

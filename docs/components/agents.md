@@ -33,7 +33,7 @@ Three harnesses ship today. Each self-registers under a canonical key.
 > It is not the gemini **model**. You can run the gemini *model* through the `api`
 > harness, or run a non-gemini model through the `gemini` CLI, because the harness
 > and the model are chosen independently (see [Harness vs model](#harness-vs-model)).
-> The aliases `cli` and `binary` both resolve to `gemini`.
+> The alias `gemini-cli` also resolves to `gemini`, and is the default agent type.
 
 ## Harness vs model
 
@@ -59,7 +59,7 @@ each harness maps them onto its target.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `BENCH_AGENT_TYPE` | resolves to `gemini` (`cli` → `gemini`) | The canonical key or an alias. The `--agent-type` flag overrides it. |
+| `BENCH_AGENT_TYPE` | `gemini-cli` (resolves to `gemini`) | The canonical key or an alias. The `--agent-type` flag overrides it. |
 
 **Agent config**
 
