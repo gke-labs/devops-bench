@@ -124,7 +124,13 @@ function setupId(def) {
     const augPart = def.augmentation.length
         ? `-${def.augmentation.slice().sort().join("-")}`
         : "";
-    return `${def.model}-${def.harness}${augPart}`.replace(/[^a-z0-9-]/gi, "");
+    // Same slug algorithm as ingest/catalog.mjs and the Python producer
+    // (results/normalize.slugify): lower-case, collapse non-alphanumeric runs to
+    // a single dash, trim — so a mock and a real id for the same arm coincide.
+    return `${def.model}-${def.harness}${augPart}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
 }
 
 function runId(t) {

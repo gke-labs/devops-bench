@@ -57,17 +57,21 @@ _OUTPUT_TOKEN_KEYS = (
     "output",
 )
 
-# Characters allowed in a setup id; everything else is dropped so the id is a
-# safe document key. Mirrors the dashboard seeder's sanitization.
-_DISALLOWED_ID_CHARS = re.compile(r"[^A-Za-z0-9-]")
+# Runs of characters outside ``[a-z0-9]`` collapse to a single ``-``. Mirrors the
+# dashboard's ``catalog.mjs`` / seeder ``slugify`` so the model component of a
+# setup id matches the model catalog doc key (``gemini-3.1-pro`` ->
+# ``gemini-3-1-pro``, not ``gemini-31-pro``).
+_DISALLOWED_ID_CHARS = re.compile(r"[^a-z0-9]+")
 
 
 def slugify(text: str) -> str:
     """Reduce ``text`` to a document-key-safe slug.
 
-    Any character outside ``[A-Za-z0-9-]`` (including spaces) is dropped and case
-    is preserved, mirroring the dashboard seeder's id sanitization so a real and
-    a mock setup id for the same arm coincide.
+    Lower-cases ``text``, collapses each run of characters outside ``[a-z0-9]``
+    to a single ``-``, and strips leading/trailing dashes. This is byte-for-byte
+    the dashboard's ``catalog.mjs`` / seeder ``slugify`` algorithm, so the same
+    arm yields the same id across the producer, the seeder, and the catalog join
+    (e.g. ``gemini-3.1-pro`` -> ``gemini-3-1-pro``).
 
     Args:
         text: Arbitrary identifier text.
@@ -75,7 +79,7 @@ def slugify(text: str) -> str:
     Returns:
         The sanitized slug (possibly empty).
     """
-    return _DISALLOWED_ID_CHARS.sub("", text)
+    return _DISALLOWED_ID_CHARS.sub("-", text.lower()).strip("-")
 
 
 def setup_id(model: str, harness: str, augmentation: Iterable[str]) -> str:

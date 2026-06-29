@@ -73,7 +73,15 @@ def test_setup_id_is_order_independent():
 
 
 def test_setup_id_strips_unsafe_chars():
-    assert setup_id("gemini 2.5/pro", "api", []) == "gemini25pro-api"
+    # Runs of unsafe chars collapse to a single dash and the id is lower-cased,
+    # matching catalog.mjs (NOT dropped, which would give "gemini25pro-api").
+    assert setup_id("gemini 2.5/pro", "api", []) == "gemini-2-5-pro-api"
+
+
+def test_setup_id_matches_catalog_slug_for_dotted_model():
+    # The setup id's model component must equal the model catalog doc key that
+    # catalog.mjs slugify produces, so the rows<->catalog join holds.
+    assert setup_id("gemini-3.1-pro", "gemini-cli", []) == "gemini-3-1-pro-gemini-cli"
 
 
 # -- normalize_tokens --------------------------------------------------------
