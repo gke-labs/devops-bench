@@ -5,9 +5,9 @@ metadata:
   labels:
     purpose: cost-optimization
 ---
-# CRITICAL / stateful — must stay on on-demand capacity (cannot tolerate Spot
-# preemption). Also over-provisioned: requests far exceed the rightsizing
-# report's recommendation.
+# CRITICAL / stateful — cannot tolerate Spot preemption, must stay on on-demand
+# capacity. Also over-provisioned: requests far exceed the rightsizing report's
+# recommendation.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,8 +16,6 @@ metadata:
   labels:
     app: payments-api
     workload-tier: critical
-  annotations:
-    fault-tolerant: "false"
 spec:
   replicas: 2
   selector:
@@ -53,7 +51,7 @@ spec:
     matchLabels:
       app: payments-api
 ---
-# CRITICAL / stateful — session data store, must stay on-demand.
+# CRITICAL / stateful — session data store, must stay on on-demand.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -62,8 +60,6 @@ metadata:
   labels:
     app: session-store
     workload-tier: critical
-  annotations:
-    fault-tolerant: "false"
 spec:
   replicas: 1
   selector:
@@ -88,7 +84,7 @@ spec:
               cpu: "250m"
               memory: "512Mi"
 ---
-# FAULT-TOLERANT / batch — Spot-eligible. Also over-provisioned.
+# BATCH — fault-tolerant, safe to run on Spot. Also over-provisioned.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -97,8 +93,6 @@ metadata:
   labels:
     app: image-resizer
     workload-tier: batch
-  annotations:
-    fault-tolerant: "true"
 spec:
   replicas: 3
   selector:
@@ -134,7 +128,7 @@ spec:
     matchLabels:
       app: image-resizer
 ---
-# FAULT-TOLERANT / batch — Spot-eligible. Heavily over-provisioned.
+# BATCH — fault-tolerant, safe to run on Spot. Heavily over-provisioned.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -143,8 +137,6 @@ metadata:
   labels:
     app: report-builder
     workload-tier: batch
-  annotations:
-    fault-tolerant: "true"
 spec:
   replicas: 2
   selector:
@@ -180,7 +172,7 @@ spec:
     matchLabels:
       app: report-builder
 ---
-# FAULT-TOLERANT / batch — Spot-eligible. Already right-sized (not in the report).
+# BATCH — fault-tolerant, safe to run on Spot. Already right-sized (not in the report).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -189,8 +181,6 @@ metadata:
   labels:
     app: log-shipper
     workload-tier: batch
-  annotations:
-    fault-tolerant: "true"
 spec:
   replicas: 2
   selector:

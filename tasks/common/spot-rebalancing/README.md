@@ -31,9 +31,10 @@ Runs on **kind** (local, on the runner VM) — no cloud dependency, no GKE quota
 - The report host path derives from `cluster_name` (which the harness
   run-token-prefixes), so concurrent runs on the shared bastion never collide. The
   prompt references it via `{{CLUSTER_NAME}}`.
-- **Nothing tells the agent which workloads to move** — criticality is encoded in
-  each workload's `workload-tier` label / `fault-tolerant` annotation, which the
-  agent must read and act on.
+- **Nothing tells the agent which workloads to move** — each workload carries a
+  `workload-tier` label (`critical` vs `batch`) that the agent must read and map to
+  a Spot policy itself (batch/fault-tolerant tolerate preemption; critical/stateful
+  do not); the fix (tolerations, affinity, rightsizing) is never named.
 
 ### The fleet (namespace `apps`)
 
@@ -54,7 +55,7 @@ PodDisruptionBudgets so "without downtime" is a real constraint.
 
 | SOT step | Realization in this task |
 | --- | --- |
-| 1. Workload profiling & priority categorization | Classify the fleet by `workload-tier`/`fault-tolerant` metadata + the rightsizing report into Spot-eligible vs must-stay-on-demand. |
+| 1. Workload profiling & priority categorization | Classify the fleet by the `workload-tier` label + the rightsizing report into Spot-eligible vs must-stay-on-demand. |
 | 2. Bin-packing & Spot node-pool provisioning | The Spot pool is pre-provisioned (tainted/labeled); the agent targets it with tolerations + node affinity, and may spread replicas across the distinct Spot instance families. |
 | 3. Orchestrated workload migration | Add Spot tolerations + affinity and roll the fault-tolerant workloads onto Spot capacity in a batched, PDB-respecting way that keeps replicas available. |
 | 4. Real-time preemption handling | *Not scored* — a real Spot preemption within the 30s grace window can't be triggered deterministically on any substrate. The Spot-readiness (tolerations/affinity + replica spread + PDBs) captures the intent. |

@@ -37,10 +37,10 @@ expected_output: |
 
   GRADING NOTE: Grade on outcome and sound reasoning. Any correct mechanism for targeting Spot capacity (nodeSelector or nodeAffinity on 'cloud.google.com/gke-spot') plus the matching toleration is acceptable, as is any safe (batched/rolling, PDB-respecting) rollout method. The projected-savings figure need not be exact as long as the reasoning is sound and meets the ~30% target.
 
-  - Agent profiles the workloads in the 'apps' namespace and classifies them using their own metadata (the 'workload-tier' label / 'fault-tolerant' annotation): it identifies the fault-tolerant/batch workloads ('image-resizer', 'report-builder', 'log-shipper') as Spot-eligible and the critical/stateful workloads ('payments-api', 'session-store') as not Spot-eligible.
+  - Agent profiles the workloads in the 'apps' namespace and classifies them by their own metadata (the 'workload-tier' label) plus the nature of each service: it identifies the batch / fault-tolerant workloads ('image-resizer', 'report-builder', 'log-shipper') as Spot-eligible and the critical/stateful workloads ('payments-api', 'session-store') as not Spot-eligible.
   - Agent migrates each Spot-eligible workload onto the Spot nodes by adding both the toleration for the 'cloud.google.com/gke-spot=true:NoSchedule' taint and a node selector / node affinity for the 'cloud.google.com/gke-spot=true' label.
   - After rebalancing, the Spot-eligible workloads' pods are actually Running on Spot-labeled nodes, while the critical/stateful workloads remain on the on-demand node (never scheduled onto Spot and given no Spot toleration).
   - Agent rightsizes the over-provisioned workloads named in the report ('payments-api', 'image-resizer', 'report-builder') so their CPU/memory requests are approximately the recommended values.
   - The rebalancing and rightsizing are performed without downtime: replicas stay available throughout (batched/rolling updates, PodDisruptionBudgets respected) and no Spot-eligible workload is left unschedulable or crash-looping.
   - Agent writes 'cost-optimization-report.md' documenting which workloads it moved to Spot and which it kept on-demand (with the reasoning), the rightsizing it applied, and a projected cost reduction that meets the ~30% target with sound reasoning.
-validated: true
+validated: false
