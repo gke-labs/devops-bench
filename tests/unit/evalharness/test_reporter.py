@@ -432,7 +432,7 @@ def _vetted_task() -> Task:
 
 def test_success_record_validated_requires_clean_run(isolated_env: None) -> None:
     """A vetted task promotes only when the run had no error and ran tools."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_success_record(  # noqa: SLF001 - testing internals
         task=_vetted_task(),
         prompt="p",
@@ -451,7 +451,7 @@ def test_success_record_validated_false_on_errored_run(isolated_env: None) -> No
     while the record still reads ``status:"success"``; the run-level gate must
     reject it.
     """
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_success_record(  # noqa: SLF001 - testing internals
         task=_vetted_task(),
         prompt="p",
@@ -467,7 +467,7 @@ def test_success_record_validated_false_on_errored_run(isolated_env: None) -> No
 
 def test_success_record_validated_false_on_empty_trajectory(isolated_env: None) -> None:
     """A vetted task with no recorded tool calls does not promote."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_success_record(  # noqa: SLF001 - testing internals
         task=_vetted_task(),
         prompt="p",
@@ -481,7 +481,7 @@ def test_success_record_validated_false_on_empty_trajectory(isolated_env: None) 
 
 def test_failed_record_never_validated(isolated_env: None) -> None:
     """A failed run never promotes, even on a vetted task."""
-    harness = DefaultHarness(project_id="p", cluster_name="c")
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_failed_record(  # noqa: SLF001 - testing internals
         _vetted_task(), RuntimeError("boom")
     )
