@@ -35,10 +35,8 @@ This document is the official, step-by-step action plan for **`gke-labs` reposit
 - **Phase 3 (Retire)**: Once 100% of required modules are migrated, archive and retire the `gke-labs` repository.
 
 ### Document index
-- For the target directory layout and path mapping, see [directory-structure.md](./directory-structure.md).
-- For a deep dive into component design and principles, see [component-design.md](./component-design.md).
-- For the Stage-by-Stage PR sequence, see [pr-plan.md](./pr-plan.md).
-- For instructions on validating the setup on a test branch, see [VALIDATION.md](./VALIDATION.md).
+- For the stage-by-stage PR sequence, see [pr-plan.md](./pr-plan.md).
+- For the temporary legacy↔refactor regression gate used during the cutover, see [legacy-comparison.md](./legacy-comparison.md).
 
 ---
 
