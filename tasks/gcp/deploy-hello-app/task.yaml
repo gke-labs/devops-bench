@@ -10,8 +10,9 @@ infrastructure:
 # Parallel note: all runs share one GCP project, and the agent creates an
 # Artifact Registry repo (a project-global resource). The prompt pins the repo
 # name to the run-unique {{GKE_CLUSTER_NAME}} so concurrent/rerun matrices don't
-# collide. (The repo itself is agent-created and not torn down by the cluster
-# teardown above — cleaning up leaked AR repos is a tracked follow-up.)
+# collide. The repo is agent-created and not torn down by the cluster teardown,
+# so the prebuilt/minimum stack sweeps hello-app-{{GKE_CLUSTER_NAME}} on destroy,
+# discovering its location so a repo created in any region is removed.
 prompt: "Generate a production-ready Kubernetes manifest for the application located at {{APP_LOCATION}} and then deploy it to cluster {{GKE_CLUSTER_NAME}} in project {{GCP_PROJECT_ID}}. When you build and publish the container image, use an Artifact Registry repository named hello-app-{{GKE_CLUSTER_NAME}} so it is unique to this run. I know the app is just a simple hello world, pretend it is a complex app that needs full productionization (a hardened security context, a NetworkPolicy, and internet exposure)."
 expected_output: |
   critical requirements:
