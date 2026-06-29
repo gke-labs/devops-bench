@@ -96,9 +96,7 @@ def test_backend_vertex_forces_vertex_even_with_api_key(mocker):
     client_cls = mocker.patch.object(gemini.genai, "Client")
     # An API key is present, but backend="vertex" (the google-vertex provider)
     # must still build the Vertex client — provider decides, not key presence.
-    mocker.patch.dict(
-        os.environ, {"AGENT_API_KEY": "k", "GCP_PROJECT_ID": "proj"}, clear=True
-    )
+    mocker.patch.dict(os.environ, {"AGENT_API_KEY": "k", "GCP_PROJECT_ID": "proj"}, clear=True)
 
     GeminiClientAdapter(backend="vertex")
 
@@ -211,9 +209,7 @@ def test_generate_content_retries_on_429_then_succeeds(mocker):
     client.aio.models.generate_content = generate
 
     adapter = GeminiClientAdapter()
-    result = asyncio.run(
-        adapter.generate_content([{"role": "user", "content": "hi"}], None, None)
-    )
+    result = asyncio.run(adapter.generate_content([{"role": "user", "content": "hi"}], None, None))
 
     assert result == "resp"
     assert generate.await_count == 2

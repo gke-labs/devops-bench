@@ -15,10 +15,10 @@
 """Unit tests for the model-provider contract."""
 
 import pytest
+from pydantic import ValidationError
 
 from devops_bench.core.errors import ConfigError
 from devops_bench.core.model_providers import (
-    ProviderSpec,
     known_providers,
     resolve_provider,
 )
@@ -27,8 +27,24 @@ from devops_bench.core.model_providers import (
 _ROWS = [
     ("gemini", "google", "gemini", "google", ("GEMINI_API_KEY", "GOOGLE_API_KEY"), False, None),
     ("google", "google", "gemini", "google", ("GEMINI_API_KEY", "GOOGLE_API_KEY"), False, None),
-    ("google-vertex", "google-vertex", "gemini", "google-vertex", ("GOOGLE_CLOUD_API_KEY",), True, "vertex"),
-    ("google_vertex", "google-vertex", "gemini", "google-vertex", ("GOOGLE_CLOUD_API_KEY",), True, "vertex"),
+    (
+        "google-vertex",
+        "google-vertex",
+        "gemini",
+        "google-vertex",
+        ("GOOGLE_CLOUD_API_KEY",),
+        True,
+        "vertex",
+    ),
+    (
+        "google_vertex",
+        "google-vertex",
+        "gemini",
+        "google-vertex",
+        ("GOOGLE_CLOUD_API_KEY",),
+        True,
+        "vertex",
+    ),
     ("anthropic", "anthropic", "claude", "anthropic", ("ANTHROPIC_API_KEY",), False, None),
     ("claude", "anthropic", "claude", "anthropic", ("ANTHROPIC_API_KEY",), False, None),
     ("anthropic-vertex", "anthropic-vertex", "claude", "anthropic-vertex", (), True, "vertex"),
@@ -39,9 +55,7 @@ _ROWS = [
 ]
 
 
-@pytest.mark.parametrize(
-    "raw,canonical,family,oc_provider,api_key_envs,keyless,backend", _ROWS
-)
+@pytest.mark.parametrize("raw,canonical,family,oc_provider,api_key_envs,keyless,backend", _ROWS)
 def test_resolve_provider_table(
     raw, canonical, family, oc_provider, api_key_envs, keyless, backend
 ):
@@ -87,7 +101,7 @@ def test_only_vertex_bedrock_ollama_are_keyless():
 
 def test_provider_spec_is_frozen():
     spec = resolve_provider("google")
-    with pytest.raises(Exception):  # pydantic raises on mutation of a frozen model
+    with pytest.raises(ValidationError):  # frozen pydantic model rejects mutation
         spec.canonical = "other"
 
 

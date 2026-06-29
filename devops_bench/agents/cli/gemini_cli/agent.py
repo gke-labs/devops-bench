@@ -226,14 +226,10 @@ class GeminiCliAgent(AgentHarness):
         with tempfile.TemporaryDirectory(prefix="gemini-run-") as tmpdir:
             workdir = Path(tmpdir)
             if rules_text:
-                (workdir / _GEMINI_RULES_FILE).write_text(
-                    rules_text, encoding="utf-8"
-                )
+                (workdir / _GEMINI_RULES_FILE).write_text(rules_text, encoding="utf-8")
 
             gemini_dir = workdir / _GEMINI_CONFIG_DIR
-            skill_names = materialize_skills(
-                gemini_dir / _GEMINI_SKILLS_DIR, caps.skills.paths
-            )
+            skill_names = materialize_skills(gemini_dir / _GEMINI_SKILLS_DIR, caps.skills.paths)
             settings = _build_settings(caps.mcp_servers, skills_enabled=bool(skill_names))
             if settings:
                 gemini_dir.mkdir(parents=True, exist_ok=True)

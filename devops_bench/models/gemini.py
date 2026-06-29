@@ -72,6 +72,7 @@ def _backoff_delay(attempt: int) -> float:
     ceiling = min(_MAX_DELAY_SEC, _BASE_DELAY_SEC * (2**attempt))
     return random.uniform(0.0, ceiling)
 
+
 _SUPPORTED_SCHEMA_FIELDS = frozenset(
     {
         "type",

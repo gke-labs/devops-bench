@@ -215,9 +215,7 @@ def test_oc_model_id_preserves_full_id():
 
 def test_oc_model_id_normalizes_full_id_provider_segment():
     # A full id whose wire is an alias is normalized through the contract.
-    assert _oc_model_id(AgentConfig(model="gemini/gemini-2.5-pro")) == (
-        "google/gemini-2.5-pro"
-    )
+    assert _oc_model_id(AgentConfig(model="gemini/gemini-2.5-pro")) == ("google/gemini-2.5-pro")
 
 
 def test_oc_model_id_passes_through_unknown_full_id_wire():

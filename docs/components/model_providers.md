@@ -104,8 +104,7 @@ final fallback.
 > `AGENT_API_KEY` onto the binary's provider-specific env var(s) (e.g. `google` →
 > `GEMINI_API_KEY` + `GOOGLE_API_KEY`, `google-vertex` → `GOOGLE_CLOUD_API_KEY`)
 > and, for openclaw, to pin the per-run model-catalog transport. A keyless
-> provider routes no key. (This unifies the former per-harness divergence,
-> [#147](https://github.com/gke-labs/devops-bench/issues/147).)
+> provider routes no key.
 
 ## Configuration examples
 

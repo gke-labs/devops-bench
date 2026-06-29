@@ -46,8 +46,10 @@ class ProviderSpec(BaseModel):
             ``MODELS.get`` (e.g. ``gemini`` / ``claude`` / ``ollama``).
         oc_provider: openclaw wire-provider id used in ``provider/model`` and the
             per-run ``_PROVIDER_TRANSPORT`` lookup.
-        api_key_envs: Env var name(s) a CLI harness sets from ``config.api_key``;
-            empty for keyless backends (Vertex ADC, Bedrock, ollama).
+        api_key_envs: Env var name(s) a CLI harness sets from ``config.api_key``.
+            Empty for ``anthropic-vertex`` / ``anthropic-bedrock`` / ``ollama``
+            (no key is ever threaded). ``google-vertex`` is keyless-ok but still
+            routes a *provided* key to ``GOOGLE_CLOUD_API_KEY``.
         keyless_ok: Whether the backend can authenticate without a key (Vertex
             ADC, Bedrock AWS creds, local ollama).
         backend: Adapter backend hint (``"vertex"`` / ``"bedrock"``), or ``None``
@@ -67,8 +69,10 @@ class ProviderSpec(BaseModel):
 # Canonical provider id -> spec. Two axes are encoded here: ``adapter_family``
 # (``google`` and ``google-vertex`` both build the ``gemini`` adapter) and the
 # backend/transport/key-routing (which differ between them). Vertex and Bedrock
-# are keyless (ADC / AWS creds), so they carry no ``api_key_envs`` and must never
-# have an API key forced onto them.
+# are keyless-ok (ADC / AWS creds) and need no key; ``anthropic-vertex`` /
+# ``anthropic-bedrock`` / ``ollama`` carry empty ``api_key_envs`` so a key is
+# never forced onto them, while ``google-vertex`` still routes a provided key to
+# ``GOOGLE_CLOUD_API_KEY`` (the vertex transport var, not the google-genai one).
 _SPECS: dict[str, ProviderSpec] = {
     "google": ProviderSpec(
         canonical="google",
@@ -177,7 +181,6 @@ def resolve_provider(provider: str | None, *, default: str = "google") -> Provid
     canonical = _ALIASES.get(raw)
     if canonical is None:
         raise ConfigError(
-            f"unknown agent provider {provider!r}; known providers: "
-            f"{', '.join(known_providers())}"
+            f"unknown agent provider {provider!r}; known providers: {', '.join(known_providers())}"
         )
     return _SPECS[canonical]

@@ -321,7 +321,12 @@ def test_parse_stream_json_real_cli_schema():
         {
             "type": "result",
             "status": "success",
-            "stats": {"total_tokens": 31489, "input_tokens": 31225, "output_tokens": 35, "cached": 12173},
+            "stats": {
+                "total_tokens": 31489,
+                "input_tokens": 31225,
+                "output_tokens": 35,
+                "cached": 12173,
+            },
         },
     )
     output, trajectory, tokens, errors = parse_stream_json(blob)
@@ -353,6 +358,7 @@ def test_parse_stream_json_marks_failed_tool_result_status_field():
 
 def test_run_does_not_invoke_subprocess_when_skipped(monkeypatch):
     """Sanity: parse_stream_json must not shell out (catches an import-time hazard)."""
+
     def boom(*_a, **_kw):
         raise AssertionError("parse_stream_json should not run subprocess")
 
@@ -362,6 +368,7 @@ def test_run_does_not_invoke_subprocess_when_skipped(monkeypatch):
 
 # Tests for the now-deleted legacy surface — these documents what is gone for
 # good and will fail-fast if the dead modules are ever reintroduced.
+
 
 def test_legacy_run_cli_agent_is_gone():
     assert not hasattr(gemini_mod, "run_cli_agent")
@@ -459,9 +466,7 @@ def test_execute_writes_gemini_md_with_rules_text_before_subprocess(monkeypatch)
         gemini_md = Path(cwd) / "GEMINI.md" if cwd else None
         captured["gemini_md_exists"] = bool(gemini_md and gemini_md.exists())
         captured["gemini_md_text"] = (
-            gemini_md.read_text(encoding="utf-8")
-            if captured["gemini_md_exists"]
-            else None
+            gemini_md.read_text(encoding="utf-8") if captured["gemini_md_exists"] else None
         )
         return SimpleNamespace(stdout="", stderr="", returncode=0)
 
