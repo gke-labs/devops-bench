@@ -48,6 +48,7 @@ from devops_bench.agents.shared.cli_capabilities import (
     materialize_skills,
 )
 from devops_bench.core import SubprocessError, get_logger
+from devops_bench.core.model_providers import resolve_provider
 from devops_bench.core.subprocess import run
 
 if TYPE_CHECKING:  # pragma: no cover - typing-only import
@@ -136,15 +137,22 @@ def _build_env(config: AgentConfig) -> dict[str, str]:
     """Build the env overlay that makes the Gemini CLI run model-agnostic.
 
     Maps the benchmark's neutral ``AGENT_*`` fields onto the variables the
-    Gemini CLI expects (``GOOGLE_API_KEY``/``GEMINI_API_KEY``/``GEMINI_MODEL``)
-    and disables OTLP telemetry exporters that otherwise hang on broken
-    endpoints. The model is never hardcoded; it flows from ``config.model``.
+    Gemini CLI expects: ``config.api_key`` is routed onto the provider's API-key
+    env var(s) via the shared contract
+    (:func:`~devops_bench.core.model_providers.resolve_provider`), and
+    ``config.model`` onto ``GEMINI_MODEL``. OTLP telemetry exporters are disabled
+    so they don't hang on broken endpoints. The model is never hardcoded; it
+    flows from ``config.model``. A keyless backend (e.g. Vertex/ADC) writes no
+    key.
 
     Args:
         config: Resolved :class:`AgentConfig` for this run.
 
     Returns:
         A mapping suitable for ``core.subprocess.run``'s ``extra_env``.
+
+    Raises:
+        ConfigError: If ``config.provider`` is not a known provider.
     """
     overlay: dict[str, str] = {
         # Disable the Gemini CLI's OTLP exporters; otherwise they block/hang
@@ -155,8 +163,8 @@ def _build_env(config: AgentConfig) -> dict[str, str]:
         "OTEL_SDK_DISABLED": "true",
     }
     if config.api_key:
-        overlay["GOOGLE_API_KEY"] = config.api_key
-        overlay["GEMINI_API_KEY"] = config.api_key
+        for var in resolve_provider(config.provider).api_key_envs:
+            overlay[var] = config.api_key
     if config.model:
         overlay["GEMINI_MODEL"] = config.model
     if config.extra_env:
