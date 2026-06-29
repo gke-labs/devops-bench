@@ -104,6 +104,11 @@ export function derive(rows, opts = {}) {
     const catalog = opts.catalog || SETUP_CATALOG || {};
     const palette = opts.palette || PALETTE;
 
+    // TODO(follow-up): gate inclusion on `r.validated === true` here (the mock
+    // seeder already does) so only vetted runs reach the leaderboard. Deliberately
+    // deferred: enforcing it now would drop most existing rows until the task
+    // catalog is vetted/organized. Re-enable with load.mjs:validateRow requiring
+    // `validated` once that cleanup lands.
     // Group rows by setupId (the join key the whole UI keys on).
     const bySetup = new Map();
     for (const r of rows) {

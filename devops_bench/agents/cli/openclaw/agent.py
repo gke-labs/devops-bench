@@ -312,6 +312,11 @@ class OpenClawAgent(AgentHarness):
 
             command = _build_local_command(self.config, final_prompt, self.agent_name, oc_bin)
 
+            # TODO(follow-up): on TimeoutExpired this SIGKILLs only the bash
+            # child, orphaning the oc/gcloud/kubectl/MCP process tree (which keeps
+            # consuming Vertex quota). Run in its own process group
+            # (start_new_session=True) and os.killpg(...) on timeout. Tracked as a
+            # separate, more intrusive change to generalize across all CLI agents.
             try:
                 completed = subprocess.run(
                     command,

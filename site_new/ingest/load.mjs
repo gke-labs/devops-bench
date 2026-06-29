@@ -44,6 +44,9 @@ export function validateRow(row) {
     if (!row || typeof row !== "object" || Array.isArray(row)) {
         return ["not an object"];
     }
+    // TODO(follow-up): enforce `validated` as a required boolean once the
+    // leaderboard gate is enabled in derive.mjs (deferred pending task-catalog
+    // cleanup). Fixtures omit it today, so it is not yet required here.
     const str = k => {
         if (typeof row[k] !== "string" || row[k] === "") errs.push(`${k}: required non-empty string`);
     };
