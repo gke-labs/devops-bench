@@ -46,8 +46,9 @@ resource "kind_cluster" "c2" {
 # clusters and inject the mTLS fault. Runs during `tofu apply`, before the agent.
 resource "null_resource" "setup" {
   triggers = {
-    c1 = kind_cluster.c1.name
-    c2 = kind_cluster.c2.name
+    c1            = kind_cluster.c1.name
+    c2            = kind_cluster.c2.name
+    kubeconfig_c2 = pathexpand("${var.kubeconfig_path}-c2")
   }
 
   provisioner "local-exec" {
@@ -60,5 +61,13 @@ resource "null_resource" "setup" {
       MANIFESTS_DIR = "${path.module}/manifests"
       ISTIO_VERSION = var.istio_version
     }
+  }
+
+  # cluster-2 writes its own kubeconfig file; the kind cluster is destroyed by its
+  # resource, but that stray file would linger — remove it on teardown.
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = "rm -f '${self.triggers.kubeconfig_c2}'"
   }
 }
