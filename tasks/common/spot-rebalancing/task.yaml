@@ -43,4 +43,4 @@ expected_output: |
   - Agent rightsizes the over-provisioned workloads named in the report ('payments-api', 'image-resizer', 'report-builder') so their CPU/memory requests are approximately the recommended values.
   - The rebalancing and rightsizing are performed without downtime: each change is rolled out so replicas stay available throughout (a rolling update keeps the workload serving while pods reschedule onto Spot), and no Spot-eligible workload is left unschedulable or crash-looping.
   - Agent writes 'cost-optimization-report.md' documenting which workloads it moved to Spot and which it kept on-demand (with the reasoning), the rightsizing it applied, and a projected cost reduction that meets the ~30% target with sound reasoning.
-validated: false
+validated: true
