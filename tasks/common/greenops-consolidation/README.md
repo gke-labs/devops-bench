@@ -21,9 +21,10 @@ Runs on **kind** (local, on the runner VM) — no cloud dependency, no GKE quota
   - deploys the workload fleet. With four empty workers at bring-up the scheduler
     spreads the pods roughly one-per-node, so every worker carries a little load —
     the underutilized state the agent must consolidate,
-  - waits for the fleet to become Available so the agent starts healthy,
-  - delivers the carbon-aware capacity report to a per-run file
-    `~/carbon-report-<cluster_name>.json`.
+  - waits for the fleet to become Available so the agent starts healthy.
+- A declarative `local_file` resource delivers the carbon-aware capacity report to
+  a per-run file `~/carbon-report-<cluster_name>.json` (removed automatically on
+  `tofu destroy`).
 - The report host path derives from `cluster_name` (which the harness
   run-token-prefixes), so concurrent runs on the shared bastion never collide. The
   prompt references it via `{{CLUSTER_NAME}}`.
@@ -92,7 +93,7 @@ export JUDGE_PROVIDER="google"
 export JUDGE_MODEL="gemini-3.1-pro-preview"
 export JUDGE_API_KEY="<your-gemini-key>"
 
-python pkg/evaluator/evaluate.py tasks/common/greenops-consolidation/task.yaml
+python -m devops_bench tasks/common/greenops-consolidation/task.yaml
 ```
 
 ## Verify the environment manually (optional smoke test)
