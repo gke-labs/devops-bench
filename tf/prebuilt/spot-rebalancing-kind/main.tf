@@ -8,16 +8,20 @@ terraform {
       source  = "hashicorp/null"
       version = ">= 3.0.0"
     }
+    local = {
+      source  = "hashicorp/local"
+      version = ">= 2.0.0"
+    }
   }
 }
 
 provider "kind" {}
 
 locals {
-  # Host-side artifact on the shared bastion. setup.sh overwrites it, so a fixed
-  # path would let one run clobber a concurrent run's report. cluster_name is
-  # run-token-prefixed, making it per-run unique. The task prompt references the
-  # same path via the {{CLUSTER_NAME}} placeholder. An explicit override wins.
+  # Host-side artifact on the shared bastion. cluster_name is run-token-prefixed,
+  # making it per-run unique so concurrent runs never collide. The task prompt
+  # references the same path via the {{CLUSTER_NAME}} placeholder. An explicit
+  # override wins.
   report_path = var.report_path != "" ? var.report_path : "~/rightsizing-report-${var.cluster_name}.json"
 }
 
@@ -49,12 +53,20 @@ resource "kind_cluster" "default" {
   }
 }
 
-# Outside-the-cluster setup: label/taint the pools, deploy the fleet, deliver the
-# rightsizing report. Runs during `tofu apply`, before the agent starts.
+# Deliver the rightsizing (VPA) report declaratively. Managed by TF, so it is
+# removed automatically on `tofu destroy` — no teardown shell needed.
+resource "local_file" "rightsizing_report" {
+  filename = pathexpand(local.report_path)
+  content  = file("${path.module}/manifests/rightsizing-report.json")
+}
+
+# Outside-the-cluster setup: label/taint the node pools and deploy the fleet. The
+# node taints/labels need kubectl (the kind provider can't express per-node taints
+# declaratively); the fleet apply + readiness wait round it out. Runs during
+# `tofu apply`, before the agent starts.
 resource "null_resource" "setup" {
   triggers = {
-    cluster     = kind_cluster.default.name
-    report_path = pathexpand(local.report_path)
+    cluster = kind_cluster.default.name
   }
 
   provisioner "local-exec" {
@@ -62,17 +74,7 @@ resource "null_resource" "setup" {
     command     = "${path.module}/scripts/setup.sh"
     environment = {
       KUBECONFIG    = pathexpand(var.kubeconfig_path)
-      REPORT_PATH   = pathexpand(local.report_path)
       MANIFESTS_DIR = "${path.module}/manifests"
     }
-  }
-
-  # Remove the host-side report on teardown. The kind cluster is destroyed by its
-  # own resource; the report lives outside the cluster, so clean it up here so a
-  # torn-down run leaves nothing behind on the shared host.
-  provisioner "local-exec" {
-    when       = destroy
-    on_failure = continue
-    command    = "rm -f '${self.triggers.report_path}'"
   }
 }

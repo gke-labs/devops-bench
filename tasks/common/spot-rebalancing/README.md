@@ -48,8 +48,11 @@ Runs on **kind** (local, on the runner VM) — no cloud dependency, no GKE quota
 
 Moving a workload to Spot requires **both** a toleration (for the Spot taint) and
 a node selector / affinity (for the Spot label) — a toleration alone would let the
-pod stay on the untainted on-demand node. The fault-tolerant workloads carry
-PodDisruptionBudgets so "without downtime" is a real constraint.
+pod stay on the untainted on-demand node. "Without downtime" is a real constraint:
+the migration is an image/scheduling change that rolls through the ReplicaSet
+(rolling update with surge), so the agent must avoid scaling to zero or deleting
+pods. (Note: PodDisruptionBudgets don't gate a rolling update — they only apply to
+Eviction-API disruptions like a node drain — so this task doesn't rely on them.)
 
 ### How it maps to the source-of-truth scenario (Complex Task #8)
 
@@ -57,8 +60,8 @@ PodDisruptionBudgets so "without downtime" is a real constraint.
 | --- | --- |
 | 1. Workload profiling & priority categorization | Classify the fleet by the `workload-tier` label + the rightsizing report into Spot-eligible vs must-stay-on-demand. |
 | 2. Bin-packing & Spot node-pool provisioning | The Spot pool is pre-provisioned (tainted/labeled); the agent targets it with tolerations + node affinity, and may spread replicas across the distinct Spot instance families. |
-| 3. Orchestrated workload migration | Add Spot tolerations + affinity and roll the fault-tolerant workloads onto Spot capacity in a batched, PDB-respecting way that keeps replicas available. |
-| 4. Real-time preemption handling | *Not scored* — a real Spot preemption within the 30s grace window can't be triggered deterministically on any substrate. The Spot-readiness (tolerations/affinity + replica spread + PDBs) captures the intent. |
+| 3. Orchestrated workload migration | Add Spot tolerations + affinity and roll the fault-tolerant workloads onto Spot capacity via a rolling update (surge) that keeps replicas available. |
+| 4. Real-time preemption handling | *Not scored* — a real Spot preemption within the 30s grace window can't be triggered deterministically on any substrate. The Spot-readiness (tolerations/affinity + replica spread) captures the intent. |
 | 5. Cost-savings reporting | Write `cost-optimization-report.md` with the classification, the rightsizing applied, and a projected ~30% cost reduction. |
 
 The parts of the SOT that the harness cannot score objectively (real Spot billing,
@@ -97,7 +100,7 @@ export JUDGE_PROVIDER="google"
 export JUDGE_MODEL="gemini-3.1-pro-preview"
 export JUDGE_API_KEY="<your-gemini-key>"
 
-python pkg/evaluator/evaluate.py tasks/common/spot-rebalancing/task.yaml
+python -m devops_bench tasks/common/spot-rebalancing/task.yaml
 ```
 
 ## Verify the environment manually (optional smoke test)

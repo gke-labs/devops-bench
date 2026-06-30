@@ -11,16 +11,17 @@
 #      fault-tolerant/batch services). Because the Spot nodes are tainted and no
 #      workload tolerates them yet, everything starts on the on-demand node — the
 #      costly "before" state the agent must optimize,
-#   3. waits for the fleet to become Available so the agent starts healthy,
-#   4. delivers the rightsizing (VPA) report to a per-run file the agent ingests.
+#   3. waits for the fleet to become Available so the agent starts healthy.
+#
+# The node taints/labels need kubectl (the kind provider can't express per-node
+# taints declaratively); the rightsizing report is delivered declaratively by a
+# local_file resource in main.tf, not here.
 #
 # Nothing here tells the agent which workloads to move — it must read each
 # workload's metadata (labels/annotations) and the report and decide itself.
 set -euo pipefail
 
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
-REPORT_PATH="${REPORT_PATH:?REPORT_PATH is required}"
-REPORT_PATH="${REPORT_PATH/#\~/$HOME}"
 MANIFESTS_DIR="${MANIFESTS_DIR:?MANIFESTS_DIR is required}"
 MANIFESTS_DIR="$(cd "${MANIFESTS_DIR}" && pwd)"
 
@@ -64,11 +65,6 @@ echo "==> Waiting for the fleet to become Available..."
 # agent's doing, not a flaky fixture.
 kubectl -n apps wait --for=condition=Available deploy --all --timeout=300s
 
-echo "==> Delivering the rightsizing report to ${REPORT_PATH}..."
-mkdir -p "$(dirname "${REPORT_PATH}")"
-cp "${MANIFESTS_DIR}/rightsizing-report.json" "${REPORT_PATH}"
-
 echo "==> Setup complete."
-echo "    Rightsizing report: ${REPORT_PATH}"
 echo "    Inspect placement:  kubectl -n apps get pods -o wide"
 echo "    Node pools:         kubectl get nodes -L cloud.google.com/gke-spot,cloud.google.com/gke-nodepool"

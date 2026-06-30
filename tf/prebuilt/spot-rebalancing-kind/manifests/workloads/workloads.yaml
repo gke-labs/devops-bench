@@ -40,17 +40,6 @@ spec:
               cpu: "1"
               memory: "1Gi"
 ---
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: payments-api
-  namespace: apps
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: payments-api
----
 # CRITICAL / stateful — session data store, must stay on on-demand.
 apiVersion: apps/v1
 kind: Deployment
@@ -117,17 +106,6 @@ spec:
               cpu: "1"
               memory: "512Mi"
 ---
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: image-resizer
-  namespace: apps
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: image-resizer
----
 # BATCH — fault-tolerant, safe to run on Spot. Heavily over-provisioned.
 apiVersion: apps/v1
 kind: Deployment
@@ -160,17 +138,6 @@ spec:
             limits:
               cpu: "2"
               memory: "2Gi"
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: report-builder
-  namespace: apps
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: report-builder
 ---
 # BATCH — fault-tolerant, safe to run on Spot. Already right-sized (not in the report).
 apiVersion: apps/v1
