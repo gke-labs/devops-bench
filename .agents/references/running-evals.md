@@ -33,17 +33,19 @@ export BASTION_USE_GCPNODE=1 BASTION_VM=<your-vm> \
 ```
 
 > [!IMPORTANT]
-> **`BASTION_VM` has no usable default — set it to *your* VM.** The scripts fall
-> back to the placeholder name `bench-bastion`, which almost certainly is **not**
-> your VM. The wrapper builds the ssh target as
-> `nic0.${BASTION_VM}.${BASTION_ZONE}.c.${BASTION_PROJECT}.internal.gcpnode.com`,
-> so a wrong `BASTION_VM` points at a host that doesn't exist and the connection
-> is **closed immediately** — the *same* `Connection closed by UNKNOWN port 65535`
-> symptom as an expired gcert, so it's easy to misdiagnose. Confirm the real VM
-> first (e.g. `gcloud compute instances list`, or read the `HostName` of your
-> working `ssh` alias) before launching. If you already have a working ssh alias,
-> the simplest route is to skip the constructed name entirely and set
-> `BASTION_SSH_HOST` to that alias's hostname.
+> **Set `BASTION_VM`/`BASTION_ZONE`/`BASTION_PROJECT` to *your* VM.** The wrapper
+> builds the ssh target as
+> `nic0.${BASTION_VM}.${BASTION_ZONE}.c.${BASTION_PROJECT}.internal.gcpnode.com`.
+> The `bench-bastion` default is the Terraform module's default name, so it only
+> matches a bastion you provisioned with those defaults — if your VM has a
+> different name, project, or zone (or it's stopped), the constructed host is
+> unreachable and the connection is **closed immediately** with
+> `Connection closed by UNKNOWN port 65535`, the *same* symptom as an expired
+> gcert, so it's easy to misdiagnose. Confirm the real VM first
+> (`gcloud compute instances list`, or read the `HostName` of your working `ssh`
+> alias) before launching. If you already have a working ssh alias, the simplest
+> route is to skip the constructed name and set `BASTION_SSH_HOST` to that alias's
+> hostname.
 >
 > **Don't clobber another session's checkout.** The bastion's `~/devops-bench` may
 > be on a different branch (another run / a WIP task). Sync this run to a
@@ -137,7 +139,7 @@ To run **both arms in parallel**: sync once, then start each wrapper with
 | `BENCH_VERTEX` | Run agents + judges on Vertex via VM-SA ADC (no API keys). |
 | `BENCH_REMOTE` | Run on the bastion over ssh; unset runs every combo locally. |
 | `SKIP_SYNC` | Skip the working-tree sync to the bastion (after one real sync). |
-| `BASTION_VM` | Your bastion VM name — **no usable default** (the `bench-bastion` fallback is a placeholder). Used to build the gcpnode ssh host. |
+| `BASTION_VM` | Your bastion VM name (defaults to the Terraform default `bench-bastion` — override if your VM differs). Used to build the gcpnode ssh host. |
 | `BASTION_SSH_HOST` | Explicit ssh host, bypassing the `BASTION_VM`-derived name — set this to a working ssh alias's hostname. |
 | `REMOTE_DIR` | Checkout dir on the VM (default `devops-bench`). Set a per-run value to avoid clobbering another session's checkout. |
 | `RESULTS_DIR` | Where pulled results land (default `results/matrix`). |
