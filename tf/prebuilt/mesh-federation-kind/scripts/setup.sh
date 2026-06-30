@@ -103,23 +103,46 @@ install_metallb "${CTX1}" "${POOL1}"
 install_metallb "${CTX2}" "${POOL2}"
 
 # --- Shared root CA -> cacerts on both clusters (federated trust) --------------
-echo "==> Generating a shared root CA and installing cacerts on both clusters..."
-(
-  cd "${ISTIO_DIR}"
-  mkdir -p certs
-  make -f tools/certs/Makefile.selfsigned.mk root-ca >/dev/null
-  make -f tools/certs/Makefile.selfsigned.mk "${C1}-cacerts" >/dev/null
-  make -f tools/certs/Makefile.selfsigned.mk "${C2}-cacerts" >/dev/null
-)
+# Generated with openssl directly (the bastion has no `make`): one shared root CA,
+# and a per-cluster intermediate CA signed by it, so workload certs from both
+# clusters chain to a common root -> cross-cluster identity validates. This is the
+# layout Istio's `cacerts` secret expects (ca-cert/ca-key/root-cert/cert-chain).
+echo "==> Generating a shared root CA + per-cluster intermediates (openssl)..."
+CERTS="${WORK}/certs"
+mkdir -p "${CERTS}"
+openssl genrsa -out "${CERTS}/root-key.pem" 4096 2>/dev/null
+openssl req -x509 -new -nodes -key "${CERTS}/root-key.pem" -sha256 -days 3650 \
+  -subj "/O=Istio/CN=Root CA" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,digitalSignature,keyCertSign,cRLSign" \
+  -out "${CERTS}/root-cert.pem" 2>/dev/null
+
+gen_intermediate() {
+  local name="$1" d="${CERTS}/${name}"
+  mkdir -p "${d}"
+  openssl genrsa -out "${d}/ca-key.pem" 4096 2>/dev/null
+  openssl req -new -key "${d}/ca-key.pem" -subj "/O=Istio/CN=Intermediate CA ${name}" \
+    -out "${d}/ca.csr" 2>/dev/null
+  openssl x509 -req -in "${d}/ca.csr" -sha256 -days 3650 \
+    -CA "${CERTS}/root-cert.pem" -CAkey "${CERTS}/root-key.pem" -CAcreateserial \
+    -extfile <(printf 'basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,digitalSignature,keyCertSign,cRLSign\nsubjectAltName=DNS:istiod.istio-system.svc\n') \
+    -out "${d}/ca-cert.pem" 2>/dev/null
+  cat "${d}/ca-cert.pem" "${CERTS}/root-cert.pem" > "${d}/cert-chain.pem"
+  cp "${CERTS}/root-cert.pem" "${d}/root-cert.pem"
+}
+gen_intermediate "${C1}"
+gen_intermediate "${C2}"
+
+echo "==> Installing cacerts + network labels on both clusters..."
 for pair in "${CTX1}:${C1}" "${CTX2}:${C2}"; do
   kctx="${pair%%:*}"; cname="${pair##*:}"
   kubectl --context "${kctx}" create namespace istio-system --dry-run=client -o yaml | kubectl --context "${kctx}" apply -f -
   kubectl --context "${kctx}" label namespace istio-system topology.istio.io/network="network-${cname}" --overwrite
   kubectl --context "${kctx}" -n istio-system create secret generic cacerts \
-    --from-file="${ISTIO_DIR}/${cname}/ca-cert.pem" \
-    --from-file="${ISTIO_DIR}/${cname}/ca-key.pem" \
-    --from-file="${ISTIO_DIR}/${cname}/root-cert.pem" \
-    --from-file="${ISTIO_DIR}/${cname}/cert-chain.pem" \
+    --from-file="${CERTS}/${cname}/ca-cert.pem" \
+    --from-file="${CERTS}/${cname}/ca-key.pem" \
+    --from-file="${CERTS}/${cname}/root-cert.pem" \
+    --from-file="${CERTS}/${cname}/cert-chain.pem" \
     --dry-run=client -o yaml | kubectl --context "${kctx}" apply -f -
 done
 
