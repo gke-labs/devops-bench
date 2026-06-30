@@ -36,4 +36,4 @@ expected_output: |
   - Agent does NOT over-consolidate: the 'web-frontend' deployment's required pod anti-affinity means its two replicas must sit on distinct nodes, so at least two worker nodes must remain schedulable. The agent leaves enough nodes that every workload — including both 'web-frontend' replicas — stays Running with no pod left Pending.
   - After consolidation the workloads are packed onto the minimum safe number of worker nodes (two), every pod is healthy/Running, and no PodDisruptionBudget was violated during the migration.
   - Agent writes 'greenops-report.md' documenting the consolidation: which nodes were drained for de-provisioning, the node-hours reclaimed, and an estimated CO2 reduction derived from the report's power-draw and grid carbon-intensity figures.
-validated: true
+validated: false
