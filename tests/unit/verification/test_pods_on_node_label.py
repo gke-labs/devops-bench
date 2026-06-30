@@ -109,4 +109,4 @@ def test_failure_when_kubectl_errors():
 def test_registered_in_registry():
     from devops_bench.verification.base import VERIFIERS
 
-    assert "pods_on_node_with_label" in VERIFIERS.keys()
+    assert "pods_on_node_with_label" in VERIFIERS
