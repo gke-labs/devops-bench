@@ -10,10 +10,18 @@ This directory contains the OpenTofu modules and prebuilt configurations used to
   - **`cluster/`**: The provider-neutral cluster router. It conditionally delegates to:
     - `cluster/gke/`: Google Kubernetes Engine (GCP) implementation.
     - `cluster/kind/`: Local Kubernetes in Docker (KinD) implementation.
-- `prebuilt/`: Standard, reusable environment configurations.
-  - `minimum/`: A basic cluster (GKE or KinD).
-  - `gpu-stress-test/`: A cluster configured with GPU node pools.
-  - Specialized stacks (e.g., `secret-rotation`, `cp-recovery-kind`) that are locked to specific providers.
+- `prebuilt/`: Standard and task-specific environment configurations.
+  - **Provider-Neutral (GKE or KinD)**:
+    - `minimum/`: A basic cluster.
+    - `gpu-stress-test/`: A cluster configured with GPU node pools.
+    - `optimize-scale/`: Workload misconfigured for autoscaling.
+    - `opa-remediation/`: Pre-installed Kyverno policy engine and violating workloads.
+    - `migration-and-upgrade/`: Cluster at an older Kubernetes version with deprecated APIs.
+  - **GCP/GKE Zonal/Regional Specialized**:
+    - `hypercomputer-d1/`: Multi-node cluster with GCS FUSE and vLLM.
+    - `multi-region-failover/`: Dual regional clusters with Cloud SQL replication and Global HTTP LB.
+    - `secret-rotation/`: Cluster integrated with GCP Secret Manager and KMS keys.
+    - `lustre-csi/`: Cluster with Lustre parallel file system CSI driver.
 
 ---
 
