@@ -10,7 +10,7 @@ Runs on **kind** (local, on the runner VM) — no cloud dependency.
 
 ## How it works
 
-- **Infrastructure** (`tf/prebuilt/opa-remediation-kind`) provisions a kind cluster and runs
+- **Infrastructure** (`tf/prebuilt/opa-remediation`) provisions a kind cluster and runs
   `scripts/setup.sh`, which installs Kyverno, applies two **audit** `ClusterPolicy`s
   (`disallow-privileged-containers`, `require-resource-limits`), deploys team workloads (across
   `team-alpha`/`team-beta`/`team-gamma`, with `owner`/`env` labels) — some violating, one
@@ -46,10 +46,9 @@ source .venv/bin/activate
 ## Run
 
 ```bash
-export GKE_CLUSTER_NAME="opa-kind"     # used as the kind cluster name
+export CLUSTER_NAME="opa-kind"         # used as the kind cluster name
 export NAMESPACE="default"             # unused by this task; just needs to be set
 export GCP_PROJECT_ID="local-kind"     # placeholder; only used for prompt/Vertex judge
-export OPENCLAW_LOCAL="true"
 
 export BENCH_AGENT_TYPE="cli"
 export AGENT_TARGET="oc"
@@ -60,15 +59,15 @@ export JUDGE_PROVIDER="google"
 export JUDGE_MODEL="gemini-3.1-pro-preview"
 export JUDGE_API_KEY="<your-gemini-key>"
 
-python pkg/evaluator/evaluate.py tasks/common/opa-remediation/task.yaml
+python -m devops_bench tasks/common/opa-remediation/task.yaml
 ```
 
 ## Verify the environment manually (optional Phase-1 smoke test)
 
 ```bash
-cd tf/prebuilt/opa-remediation-kind
-tofu init && tofu apply -auto-approve -var cluster_name=opa-kind
-export KUBECONFIG=~/.kube/config && kubectl config use-context kind-opa-kind
+cd tf/prebuilt/opa-remediation
+tofu init && tofu apply -auto-approve -var=cloud_provider=kind -var=cluster_name=opa-kind -var=kubeconfig_path=~/.kube/config
+export KUBECONFIG=~/.kube/config && kubectl config use-context gke_local-kind_local_opa-kind
 
 kubectl get pods -n kyverno                              # Kyverno controllers Running
 kubectl get cpol                                         # both ClusterPolicies (Audit)
@@ -76,7 +75,7 @@ kubectl get deploy -A | grep -E 'team-'                  # team workloads
 kubectl get policyreport,clusterpolicyreport -A          # FAIL results for the violations
 git clone ~/opa-repo-<cluster_name>.git /tmp/opa && ls /tmp/opa/workloads && rm -rf /tmp/opa
 
-tofu destroy -auto-approve -var cluster_name=opa-kind
+tofu destroy -auto-approve -var=cloud_provider=kind -var=cluster_name=opa-kind -var=kubeconfig_path=~/.kube/config
 ```
 You should see failing policy results for the privileged workloads (`cache`, `payments`) and the
 limitless workloads (`web`, `worker`), but **not** for the compliant `api`.

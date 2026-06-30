@@ -165,10 +165,6 @@ def _build_env(config: AgentConfig) -> dict[str, str]:
         "OTEL_LOGS_EXPORTER": "none",
         "OTEL_SDK_DISABLED": "true",
     }
-    gcloud_config = os.path.expanduser("~/.config/gcloud")
-    if os.path.exists(gcloud_config):
-        overlay["CLOUDSDK_CONFIG"] = gcloud_config
-
     if config.api_key:
         for var in spec.api_key_envs:
             overlay[var] = config.api_key
