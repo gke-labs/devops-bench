@@ -15,6 +15,13 @@
 """Concrete single-condition verifiers."""
 
 from devops_bench.verification.verifiers.pod_healthy import PodHealthyVerifier
+from devops_bench.verification.verifiers.pods_on_node_label import (
+    PodsOnNodeWithLabelVerifier,
+)
 from devops_bench.verification.verifiers.scaling_complete import ScalingCompleteVerifier
 
-__all__ = ["PodHealthyVerifier", "ScalingCompleteVerifier"]
+__all__ = [
+    "PodHealthyVerifier",
+    "PodsOnNodeWithLabelVerifier",
+    "ScalingCompleteVerifier",
+]
