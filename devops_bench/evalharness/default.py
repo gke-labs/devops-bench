@@ -303,7 +303,9 @@ class DefaultHarness(Harness):
 
     # -- placeholder substitution -----------------------------------------
 
-    def replace_placeholders(self, text: str, cluster_name: str, location: str = "") -> str:
+    def replace_placeholders(
+        self, text: str, cluster_name: str, location: str = "", task: Task | None = None
+    ) -> str:
         """Substitute infrastructure placeholders in a prompt or expectation.
 
         ``TARGET_DEPLOYMENT_NAME`` and ``NAMESPACE`` form the integration
@@ -315,22 +317,35 @@ class DefaultHarness(Harness):
             text: Text containing ``{{...}}`` placeholders.
             cluster_name: Active cluster name to substitute.
             location: Optional active cluster location to substitute.
+            task: Optional task to extract custom deployment/namespace variables from.
 
         Returns:
             The text with all known placeholders replaced.
         """
         loc = location or self.app_location
+        target_dep = (
+            get_env("TARGET_DEPLOYMENT_NAME", "")
+            or (task.infrastructure.get("variables", {}).get("target_deployment_name") if task and task.infrastructure else "")
+            or self.target_deployment
+        )
+        ns = (
+            get_env("NAMESPACE", "")
+            or (task.infrastructure.get("variables", {}).get("namespace") if task and task.infrastructure else "")
+            or self.namespace
+        )
         return (
             text.replace("{{PROJECT_ID}}", self.project_id)
             .replace("{{GCP_PROJECT_ID}}", self.project_id)
             .replace("{{CLUSTER_NAME}}", cluster_name)
             .replace("{{GKE_CLUSTER_NAME}}", cluster_name)
             .replace("{{APP_LOCATION}}", loc)
-            .replace("{{TARGET_DEPLOYMENT_NAME}}", self.target_deployment)
-            .replace("{{NAMESPACE}}", self.namespace)
+            .replace("{{TARGET_DEPLOYMENT_NAME}}", target_dep)
+            .replace("{{NAMESPACE}}", ns)
         )
 
-    def _resolve_spec_placeholders(self, spec: Any, cluster_name: str, location: str = "") -> Any:
+    def _resolve_spec_placeholders(
+        self, spec: Any, cluster_name: str, location: str = "", task: Task | None = None
+    ) -> Any:
         """Walk a nested spec and substitute placeholders in every string leaf.
 
         Args:
@@ -340,6 +355,7 @@ class DefaultHarness(Harness):
                 :meth:`replace_placeholders`.
             location: Active cluster location passed through to
                 :meth:`replace_placeholders`.
+            task: Optional task passed through to :meth:`replace_placeholders`.
 
         Returns:
             A new structure with placeholders resolved. ``None`` round-trips
@@ -348,19 +364,21 @@ class DefaultHarness(Harness):
         if spec is None:
             return None
         if isinstance(spec, str):
-            return self.replace_placeholders(spec, cluster_name, location)
+            return self.replace_placeholders(spec, cluster_name, location, task)
         if isinstance(spec, list):
-            return [self._resolve_spec_placeholders(item, cluster_name, location) for item in spec]
+            return [self._resolve_spec_placeholders(item, cluster_name, location, task) for item in spec]
         if isinstance(spec, dict):
             return {
-                key: self._resolve_spec_placeholders(value, cluster_name, location)
+                key: self._resolve_spec_placeholders(value, cluster_name, location, task)
                 for key, value in spec.items()
             }
         return spec
 
     # -- spec parsing (typed contracts at every seam) ---------------------
 
-    def _parse_chaos_specs(self, raw: Any, cluster_name: str, location: str = "") -> list[ChaosSpec]:
+    def _parse_chaos_specs(
+        self, raw: Any, cluster_name: str, location: str = "", task: Task | None = None
+    ) -> list[ChaosSpec]:
         """Parse the raw task ``chaos_spec`` blob into typed :class:`ChaosSpec` list.
 
         Accepts either a JSON-in-YAML string or a native-YAML list. Each entry
@@ -368,7 +386,7 @@ class DefaultHarness(Harness):
         """
         if not raw:
             return []
-        resolved = self._resolve_spec_placeholders(raw, cluster_name, location)
+        resolved = self._resolve_spec_placeholders(raw, cluster_name, location, task)
         # A placeholder-substituted JSON string round-trips through
         # ``json.loads`` to a list/dict the discriminated union can validate.
         if isinstance(resolved, str):
@@ -381,7 +399,7 @@ class DefaultHarness(Harness):
         return [ChaosSpec.model_validate(entry) for entry in entries if entry]
 
     def _build_verification_mapping(
-        self, raw: Any, cluster_name: str, location: str = ""
+        self, raw: Any, cluster_name: str, location: str = "", task: Task | None = None
     ) -> tuple[dict[str, Any], list[dict[str, str]]]:
         """Build a name-keyed verification mapping the chaos seam consumes.
 
@@ -419,7 +437,7 @@ class DefaultHarness(Harness):
             return {}, []
 
         errors: list[dict[str, str]] = []
-        resolved = self._resolve_spec_placeholders(raw, cluster_name, location)
+        resolved = self._resolve_spec_placeholders(raw, cluster_name, location, task)
         if isinstance(resolved, str):
             try:
                 resolved = json.loads(resolved)
@@ -649,12 +667,12 @@ class DefaultHarness(Harness):
                 task, cluster=cluster_info, workspace_path=workspace_path
             )
 
-            prompt = self.replace_placeholders(task.prompt, active_cluster_name, cluster_info.location)
+            prompt = self.replace_placeholders(task.prompt, active_cluster_name, cluster_info.location, task)
 
-            chaos_specs = self._parse_chaos_specs(task.chaos_spec, active_cluster_name, cluster_info.location)
+            chaos_specs = self._parse_chaos_specs(task.chaos_spec, active_cluster_name, cluster_info.location, task)
             verification_mapping, verification_parse_errors = (
                 self._build_verification_mapping(
-                    task.verification_spec, active_cluster_name, cluster_info.location
+                    task.verification_spec, active_cluster_name, cluster_info.location, task
                 )
             )
 
@@ -678,7 +696,7 @@ class DefaultHarness(Harness):
             collect_generated_files(before_files, run_dir, source_dir=workspace_path)
 
             expected_output = self.replace_placeholders(
-                task.expected_output, active_cluster_name, cluster_info.location
+                task.expected_output, active_cluster_name, cluster_info.location, task
             )
 
             chaos_report, perf_report = self._drain_scenario(
