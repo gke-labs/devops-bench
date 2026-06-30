@@ -33,25 +33,14 @@ export BASTION_USE_GCPNODE=1 BASTION_VM=<your-vm> \
 ```
 
 > [!IMPORTANT]
-> **Set `BASTION_VM`/`BASTION_ZONE`/`BASTION_PROJECT` to *your* VM.** The wrapper
-> builds the ssh target as
-> `nic0.${BASTION_VM}.${BASTION_ZONE}.c.${BASTION_PROJECT}.internal.gcpnode.com`.
-> The `bench-bastion` default is the Terraform module's default name, so it only
-> matches a bastion you provisioned with those defaults — if your VM has a
-> different name, project, or zone (or it's stopped), the constructed host is
-> unreachable and the connection is **closed immediately** with
-> `Connection closed by UNKNOWN port 65535`, the *same* symptom as an expired
-> gcert, so it's easy to misdiagnose. Confirm the real VM first
-> (`gcloud compute instances list`, or read the `HostName` of your working `ssh`
-> alias) before launching. If you already have a working ssh alias, the simplest
-> route is to skip the constructed name and set `BASTION_SSH_HOST` to that alias's
-> hostname.
->
-> **Don't clobber another session's checkout.** The bastion's `~/devops-bench` may
-> be on a different branch (another run / a WIP task). Sync this run to a
-> **separate dir** with `REMOTE_DIR=devops-bench-<label>` (honored by both the sync
-> script and the matrix wrapper, which `cd ~/${REMOTE_DIR}` on the VM) rather than
-> resetting a checkout you didn't create.
+> **Get the bastion's identity from Terraform — don't assume the default.** The
+> bastion is a TF module; read its real name/zone/project from the state instead
+> of guessing: `tofu -chdir=tf/prebuilt/bastion output iap_ssh_command` prints the
+> `gcloud compute ssh <name> --zone <zone> --project <project>` form. Set
+> `BASTION_VM`/`BASTION_ZONE`/`BASTION_PROJECT` from that. A wrong/stopped host
+> closes with `Connection closed by UNKNOWN port 65535` — the same symptom as an
+> expired gcert, so verify the host before blaming creds. Use
+> `REMOTE_DIR=devops-bench-<label>` to avoid clobbering another session's checkout.
 
 ---
 
