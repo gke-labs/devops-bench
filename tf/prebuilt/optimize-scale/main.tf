@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/google"
       version = ">= 5.0.0"
     }
+    kind = {
+      source  = "tehcyx/kind"
+      version = ">= 0.5.0"
+    }
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = ">= 2.0.0"
@@ -12,29 +16,39 @@ terraform {
 }
 
 provider "google" {
-  project = var.project_id
-  zone    = var.location
+  project = var.project_id != "" ? var.project_id : null
+  region  = var.location != "" && var.location != "local" ? var.location : null
 }
 
-# GKE cluster. cluster_name is run-token-prefixed by the harness under parallel
+provider "kind" {}
+
+# GKE/KinD cluster. cluster_name is run-token-prefixed by the harness under parallel
 # runs, so every concurrent run gets its own cluster — all in-cluster objects
 # below are therefore collision-free without any name suffixing.
-module "gke" {
-  source       = "../../modules/gke"
-  project_id   = var.project_id
-  cluster_name = var.cluster_name
-  location     = var.location
-  node_count   = var.node_count
-  machine_type = var.machine_type
+module "cluster" {
+  source          = "../../modules/cluster"
+  cloud_provider  = var.cloud_provider
+  project_id      = var.project_id
+  cluster_name    = var.cluster_name
+  location        = var.location
+  node_count      = var.node_count
+  machine_type    = var.machine_type
+  node_image      = var.node_image
+  kubeconfig_path = var.kubeconfig_path
 }
 
-data "google_client_config" "default" {}
+data "google_client_config" "default" {
+  count = var.cloud_provider == "gcp" ? 1 : 0
+}
 
 provider "kubernetes" {
-  host                   = "https://${module.gke.endpoint}"
-  token                  = data.google_client_config.default.access_token
-  cluster_ca_certificate = base64decode(module.gke.cluster_ca_certificate)
+  host                   = var.cloud_provider == "gcp" ? "https://${module.cluster.endpoint}" : module.cluster.endpoint
+  token                  = var.cloud_provider == "gcp" ? data.google_client_config.default[0].access_token : null
+  client_certificate     = var.cloud_provider == "kind" ? module.cluster.client_certificate : null
+  client_key             = var.cloud_provider == "kind" ? module.cluster.client_key : null
+  cluster_ca_certificate = var.cloud_provider == "gcp" ? base64decode(module.cluster.cluster_ca_certificate) : (var.cloud_provider == "kind" ? module.cluster.cluster_ca_certificate : null)
 }
+
 
 # Pre-seeded target workload the agent must optimize. It is deliberately
 # misconfigured for autoscaling: NO resource requests/limits and NO HPA. The
@@ -146,18 +160,21 @@ resource "kubernetes_service_v1" "target" {
     # LB with an external IP and an ALLOW firewall rule on the default VPC; the
     # harness resolves status.loadBalancer.ingress[0].ip and points the load at
     # http://<ip>:8080 directly.
-    type = "LoadBalancer"
+    #
+    # On KinD, we use ClusterIP and rely on the harness port-forward fallback,
+    # avoiding a pending external IP wait.
+    type = var.cloud_provider == "gcp" ? "LoadBalancer" : "ClusterIP"
   }
 
   # Wait for the LB IP to be assigned before terraform returns, so the harness
-  # can resolve the external IP immediately after apply.
-  wait_for_load_balancer = true
+  # can resolve the external IP immediately after apply. Only applicable to GKE.
+  wait_for_load_balancer = var.cloud_provider == "gcp" ? true : false
 }
 
 output "cluster_name" {
-  value = module.gke.cluster_name
+  value = module.cluster.cluster_name
 }
 
 output "cluster_location" {
-  value = module.gke.cluster_location
+  value = module.cluster.location
 }

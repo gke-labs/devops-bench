@@ -49,12 +49,13 @@ resource "random_id" "suffix" {
 # Two regional (zonal) GKE clusters: east = primary, west = standby.
 # ---------------------------------------------------------------------------
 module "east" {
-  source       = "../../modules/gke"
-  project_id   = var.project_id
-  cluster_name = local.east_cluster
-  location     = var.zone_primary
-  node_count   = var.node_count_primary
-  machine_type = var.machine_type
+  source                = "../../modules/cluster"
+  cloud_provider        = "gcp"
+  project_id            = var.project_id
+  cluster_name          = local.east_cluster
+  location              = var.zone_primary
+  node_count            = var.node_count_primary
+  machine_type          = var.machine_type
   # BYO-credentials model (see docs/bastion.md): the agent runs as the operator's
   # broad bastion VM SA, which already holds container.admin out-of-band. This
   # stack grants NOTHING — a per-run stack must not manage a project IAM binding
@@ -64,7 +65,8 @@ module "east" {
 }
 
 module "west" {
-  source                = "../../modules/gke"
+  source                = "../../modules/cluster"
+  cloud_provider        = "gcp"
   project_id            = var.project_id
   cluster_name          = local.west_cluster
   location              = var.zone_standby
@@ -82,6 +84,10 @@ resource "google_compute_address" "east_ip" {
   region = var.region_primary
 }
 
+# ---------------------------------------------------------------------------
+# Reserved external IPs. The regional IPs are assigned to each cluster's frontend
+# Service (loadBalancerIP) so the global LB's internet NEGs can target known IPs.
+# ---------------------------------------------------------------------------
 resource "google_compute_address" "west_ip" {
   name   = "fe-west-${var.cluster_name}-${random_id.suffix.hex}"
   region = var.region_standby

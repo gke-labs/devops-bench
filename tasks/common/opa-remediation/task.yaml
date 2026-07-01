@@ -2,7 +2,7 @@ task_id: 20
 name: "opa-remediation"
 infrastructure:
   deployer: "tofu"
-  stack: "prebuilt/opa-remediation-kind"
+  stack: "prebuilt/opa-remediation"
   teardown: true
 prompt: |
   You are the platform engineer on call for the Kubernetes cluster '{{CLUSTER_NAME}}'. Its

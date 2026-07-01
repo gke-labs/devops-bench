@@ -1,17 +1,23 @@
-variable "project_id" {
-  description = "The GCP project ID"
+variable "cloud_provider" {
+  description = "The cloud provider to use (gcp or kind)"
   type        = string
 }
 
+variable "project_id" {
+  description = "The GCP project ID (empty for kind)"
+  type        = string
+  default     = ""
+}
+
 variable "cluster_name" {
-  description = "The name of the GKE cluster (run-token-prefixed under parallel runs)"
+  description = "The name of the cluster (run-token-prefixed under parallel runs)"
   type        = string
 }
 
 variable "location" {
-  description = "GCP zone or region for the cluster"
+  description = "GCP zone/region or 'local'"
   type        = string
-  default     = "us-central1-a"
+  default     = "local"
 }
 
 variable "node_count" {
@@ -22,6 +28,19 @@ variable "node_count" {
 variable "machine_type" {
   type    = string
   default = "e2-standard-2"
+}
+
+
+variable "node_image" {
+  description = "The KinD node image to use"
+  type        = string
+  default     = null
+}
+
+variable "kubeconfig_path" {
+  description = "The path to the local kubeconfig file"
+  type        = string
+  default     = ""
 }
 
 variable "namespace" {

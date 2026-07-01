@@ -47,5 +47,17 @@ variable "agent_service_account" {
 variable "enable_iap_ssh" {
   description = "Enable IAP SSH firewall rule for the cluster"
   type        = bool
-  default     = false
 }
+
+variable "gpu_type" {
+  description = "Abstract GPU family: 'l4', 'a100', 't4', or '' for no GPU"
+  type        = string
+  default     = ""
+}
+
+variable "gpu_count" {
+  description = "Quantity of GPUs to attach per node"
+  type        = number
+  default     = 1
+}
+

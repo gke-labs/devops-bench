@@ -15,11 +15,19 @@
 set -euo pipefail
 
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+CLOUD_PROVIDER="${CLOUD_PROVIDER:-kind}"
+
+if [[ "${CLOUD_PROVIDER}" == "gcp" ]]; then
+  echo "==> Fetching GKE credentials for cluster ${CLUSTER_NAME:?} in project ${PROJECT_ID:?} (${LOCATION:?})"
+  gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${LOCATION}" --project "${PROJECT_ID}"
+fi
+
 REPO_PATH="${REPO_PATH:?REPO_PATH is required}"
 REPO_PATH="${REPO_PATH/#\~/$HOME}"
 MANIFESTS_DIR="${MANIFESTS_DIR:?MANIFESTS_DIR is required}"
 MANIFESTS_DIR="$(cd "${MANIFESTS_DIR}" && pwd)"
 KYVERNO_VERSION="${KYVERNO_VERSION:-v1.12.7}"
+
 
 echo "==> Installing Kyverno ${KYVERNO_VERSION}..."
 # Server-side apply: the Kyverno CRDs are large and exceed the client-side
@@ -78,14 +86,15 @@ WORK="$(mktemp -d)"
   mkdir -p workloads
   cp "${MANIFESTS_DIR}"/workloads/*.yaml workloads/
   git add .
-  git commit -q -m "Add team workload manifests"
+  git -c commit.gpgsign=false commit -q -m "Add team workload manifests"
   git branch -M main
   git remote add origin "${REPO_PATH}"
-  git push -q origin main
+  git -c safe.bareRepository=all push -q origin main
 )
 rm -rf "${WORK}"
 # Point the bare repo's HEAD at main so a plain `git clone` checks it out.
-git -C "${REPO_PATH}" symbolic-ref HEAD refs/heads/main
+git -c safe.bareRepository=all -C "${REPO_PATH}" symbolic-ref HEAD refs/heads/main
+
 
 echo "==> Setup complete."
 echo "    Kyverno is auditing; violations will surface in PolicyReports:"

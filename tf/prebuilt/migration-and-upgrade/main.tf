@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/google"
       version = ">= 5.0.0"
     }
+    kind = {
+      source  = "tehcyx/kind"
+      version = ">= 0.5.0"
+    }
     null = {
       source  = "hashicorp/null"
       version = ">= 3.0.0"
@@ -12,9 +16,11 @@ terraform {
 }
 
 provider "google" {
-  project = var.project_id
-  zone    = var.location
+  project = var.project_id != "" ? var.project_id : null
+  region  = var.location != "" && var.location != "local" ? var.location : null
 }
+
+provider "kind" {}
 
 locals {
   # Addresses Pradeep's PR #64 review: seed-repo.sh rm -rf's + recreates this bare
@@ -25,15 +31,21 @@ locals {
   repo_path = var.repo_path != "" ? var.repo_path : "~/migration-repo-${var.cluster_name}.git"
 }
 
-# GKE "production" cluster at the START version. The agent migrates the deprecated
-# manifests, validates them, applies them, then performs the managed master +
-# node-pool upgrade to the target version.
+# GKE/KinD "production" cluster at the START version. The agent migrates the deprecated
+# manifests, validates them, applies them, then performs the upgrade.
 module "cluster" {
-  source             = "./cluster"
-  project_id         = var.project_id
-  cluster_name       = var.cluster_name
-  location           = var.location
-  kubernetes_version = var.start_version
+  source                = "../../modules/cluster"
+  cloud_provider        = var.cloud_provider
+  project_id            = var.project_id
+  cluster_name          = var.cluster_name
+  location              = var.location
+  node_count            = var.cloud_provider == "gcp" ? 1 : null
+  machine_type          = var.cloud_provider == "gcp" ? "e2-standard-4" : null
+  kubernetes_version    = var.start_version
+  node_image            = var.node_image
+  kubeconfig_path       = var.kubeconfig_path
+  agent_service_account = var.project_id != "" ? "openclaw-vm-sa@${var.project_id}.iam.gserviceaccount.com" : ""
+  enable_iap_ssh        = true
 }
 
 # Seed the manifests git repo the agent clones (shared script + manifests — same
@@ -60,5 +72,5 @@ output "cluster_name" {
 }
 
 output "cluster_location" {
-  value = module.cluster.cluster_location
+  value = module.cluster.location
 }

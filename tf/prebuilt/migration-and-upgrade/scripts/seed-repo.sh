@@ -29,15 +29,16 @@ WORK="$(mktemp -d)"
   git config user.name "Platform"
   cp "${MANIFESTS_DIR}"/*.yaml .
   git add .
-  git commit -q -m "Add application manifests"
+  git -c commit.gpgsign=false commit -q -m "Add application manifests"
   git branch -M main
   git remote add origin "${REPO_PATH}"
-  git push -q origin main
+  git -c safe.bareRepository=all push -q origin main
 )
 rm -rf "${WORK}"
 
 # Point the bare repo's HEAD at main so a plain `git clone` checks it out
 # (git init --bare defaults HEAD to the nonexistent 'master').
-git -C "${REPO_PATH}" symbolic-ref HEAD refs/heads/main
+git -c safe.bareRepository=all -C "${REPO_PATH}" symbolic-ref HEAD refs/heads/main
+
 
 echo "==> Repo seeded. Clone with: git clone ${REPO_PATH}"

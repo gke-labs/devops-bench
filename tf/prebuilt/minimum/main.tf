@@ -1,8 +1,13 @@
 terraform {
+  required_version = ">= 1.5.0"
   required_providers {
     google = {
       source  = "hashicorp/google"
       version = ">= 5.0.0"
+    }
+    kind = {
+      source  = "tehcyx/kind"
+      version = ">= 0.5.0"
     }
     null = {
       source  = "hashicorp/null"
@@ -12,9 +17,11 @@ terraform {
 }
 
 provider "google" {
-  project = var.project_id
-  zone    = var.location
+  project = var.project_id != "" ? var.project_id : null
+  region  = var.location != "" && var.location != "local" ? var.location : null
 }
+
+provider "kind" {}
 
 # Sweep the Artifact Registry repo the deploy-hello-app agent creates
 # (hello-app-<cluster>, project-global and NOT in this stack's tofu state) so it
@@ -27,7 +34,10 @@ provider "google" {
 # listing the project's repos and delete it at its own location. The name match
 # is an exact suffix on the run-unique cluster, so a sibling run's repo is never
 # touched.
+# Only runs on GCP (when project_id is provided).
 resource "null_resource" "ar_cleanup" {
+  count = var.project_id != "" ? 1 : 0
+
   triggers = {
     project = var.project_id
     repo    = "hello-app-${var.cluster_name}"
@@ -52,20 +62,21 @@ resource "null_resource" "ar_cleanup" {
   }
 }
 
-module "gke" {
-  source       = "../../modules/gke"
-  project_id   = var.project_id
-  cluster_name = var.cluster_name
-  location     = var.location
-  node_count   = var.node_count
-  machine_type = var.machine_type
+module "cluster" {
+  source          = "../../modules/cluster"
+  cloud_provider  = var.cloud_provider
+  cluster_name    = var.cluster_name
+  location        = var.location
+  node_count      = var.node_count
+  machine_type    = var.machine_type
+  project_id      = var.project_id
+  kubeconfig_path = var.kubeconfig_path
 }
 
-
 output "cluster_name" {
-  value = module.gke.cluster_name
+  value = module.cluster.cluster_name
 }
 
 output "cluster_location" {
-  value = module.gke.cluster_location
+  value = module.cluster.location
 }

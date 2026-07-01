@@ -7,7 +7,7 @@ output "cluster_name" {
 }
 
 output "cluster_location" {
-  value = module.east.cluster_location
+  value = module.east.location
 }
 
 output "west_cluster_name" {
@@ -15,7 +15,7 @@ output "west_cluster_name" {
 }
 
 output "west_cluster_location" {
-  value = module.west.cluster_location
+  value = module.west.location
 }
 
 # Global anycast IP that fronts the storefront. Users hit this; the agent discovers it
