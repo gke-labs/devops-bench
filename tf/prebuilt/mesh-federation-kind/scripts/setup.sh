@@ -118,7 +118,8 @@ openssl req -x509 -new -nodes -key "${CERTS}/root-key.pem" -sha256 -days 3650 \
   -out "${CERTS}/root-cert.pem" 2>/dev/null
 
 gen_intermediate() {
-  local name="$1" d="${CERTS}/${name}"
+  local name="$1"
+  local d="${CERTS}/${name}"
   mkdir -p "${d}"
   openssl genrsa -out "${d}/ca-key.pem" 4096 2>/dev/null
   openssl req -new -key "${d}/ca-key.pem" -subj "/O=Istio/CN=Intermediate CA ${name}" \
