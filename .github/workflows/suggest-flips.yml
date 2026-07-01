@@ -54,6 +54,8 @@ jobs:
           # Check if a PR already exists from this branch to prevent swallowing real token/policy failures
           PR_EXISTS=$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number')
           if [[ -z "$PR_EXISTS" ]]; then
+            # Keep the body self-contained: do NOT reference the forward/upstream PR
+            # (owner/repo#NN or #NN) — GitHub would cross-link gke-labs <-> kubernetes-sigs.
             gh pr create --base main --head "$BRANCH" \
               --title "Migration: flip modules now present upstream" \
               --body $'Auto-suggested flips. These entries were uncommented in `migrated.bara.sky` because their paths now exist in kubernetes-sigs. Review and merge to complete the flip: ownership moves upstream, the back-sync turns on, and the path becomes read-only here.'

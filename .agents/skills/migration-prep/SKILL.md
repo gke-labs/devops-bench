@@ -158,13 +158,32 @@ carry their license headers. **Green is the gate.** If it fails on a missing
 import/symbol, go back to step 3 — a dependency didn't travel. Fix, re-run. Never
 open the PR on red.
 
-### 6. Push + open the PR (prep only)
+### 6. Write the commit + PR text as fresh code, review, then push (prep only)
 
-Only after the gate is green:
+Only after the gate is green.
+
+**Frame it as a brand-new addition, not a migration (upstream's point of view).**
+From `kubernetes-sigs`' side this is a new project, not a port — the commit
+message and the PR title/body must read as if this code is being added to the
+repo for the first time:
+
+- Use "**add(s) …**" ("add the foundation package", never "migrate …").
+- **Do not** mention the migration, `gke-labs`, waves, the frontier, back-sync,
+  or dependency reconciliation (intra-repo *or* third-party) anywhere in the
+  upstream commit/PR text. Describe only what the code is and does.
+- `prep-export.sh`'s default message is migration-flavored — override it with
+  `-m "<fresh-code message>"` (or amend before pushing) so it reads as fresh code.
+
+**Review the commit message and PR title/body with the user before pushing.**
+Show them the exact text and get their sign-off (they may edit) — do not
+`git push` or `gh pr create` until they approve.
+
+Then, once approved:
 
 ```bash
 git push origin <branch>
-gh pr create --repo kubernetes-sigs/devops-bench --base main --fill
+gh pr create --repo kubernetes-sigs/devops-bench --base main \
+  --title "<fresh-code title>" --body "<fresh-code body>"   # not --fill
 ```
 
 Report: the PR chosen and why, the exact paths (impl + tests + any carried-along
@@ -188,6 +207,9 @@ the pr-plan principles:
 - [ ] **No cross-border imports** — every internal dependency is upstream or travels along.
 - [ ] **Third-party deps reconciled in-PR** — new external imports are added to
   `pyproject.toml` + `uv.lock` in this PR (manifests are `NEVER_SYNC`; deps land with their code).
+- [ ] **Upstream text reads as fresh code** — commit/PR say "add(s) …"; no
+  migration / `gke-labs` / wave / back-sync / dependency-reconciliation narrative.
+- [ ] **Commit + PR text reviewed with the user** before `git push` / `gh pr create`.
 - [ ] **DCO sign-off** on every commit (`git commit -s`; prep-export.sh does it).
 - [ ] **Boilerplate headers** on new files (where a header checker is installed).
 - [ ] **Superseded files removed** where the plan says so (e.g. chaos → `agents/chaos/`).
@@ -199,7 +221,11 @@ the pr-plan principles:
 
 - **Flipping the frontier after a merge** → don't do it here. The `suggest-flips`
   workflow uncomments merged paths in `migrated.bara.sky` and opens the flip PR
-  (README §2.2). Only fall back to a manual flip if asked.
+  (README §2.2). Only fall back to a manual flip if asked — and if you do, keep
+  the flip PR **self-contained: do not reference the forward/upstream PR** (no
+  `owner/repo#NN` or `#NN`) in its commit message or body, or GitHub will
+  cross-link the two repos. Say "merge after the corresponding upstream change
+  lands" instead.
 - **Editing an already-migrated (flipped) path** → that path is read-only in
   gke-labs; make the change upstream and let the back-sync bot mirror it. The
   `check-migrated-readonly.sh` guard will reject it otherwise.

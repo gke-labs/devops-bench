@@ -4,7 +4,9 @@
 
 # The frontier is the single source of truth in migrated.bara.sky, also parsed by the flip guard
 # and the tracker. (load() must stay at the top of the file.)
-load("//migrated.bara.sky", "MIGRATED")
+# NOTE: Copybara's load() appends ".bara.sky" to the label, so the label is "//migrated"
+# (NOT "//migrated.bara.sky", which would resolve to the non-existent migrated.bara.sky.bara.sky).
+load("//migrated", "MIGRATED")
 
 CANONICAL = "https://github.com/kubernetes-sigs/devops-bench.git"   # origin (public)
 GKE_LABS  = "https://github.com/gke-labs/devops-bench.git"          # destination (ours)
