@@ -21,6 +21,8 @@ import os
 import subprocess
 from types import SimpleNamespace
 
+import pytest
+
 from devops_bench.agents import AGENTS, AgentConfig
 from devops_bench.agents.capabilities import (
     AgentRules,
@@ -38,7 +40,7 @@ from devops_bench.agents.cli.gemini_cli.agent import (
     _build_env,
     _build_settings,
 )
-from devops_bench.core.errors import SubprocessError
+from devops_bench.core.errors import ConfigError, SubprocessError
 
 
 def _stream(*events: dict) -> str:
@@ -162,6 +164,26 @@ def test_build_env_threads_api_key_and_model_into_gemini_vars():
     assert env["GEMINI_MODEL"] == "gemini-2.5-pro"
     assert env["OTEL_SDK_DISABLED"] == "true"
     assert env["X"] == "y"
+
+
+def test_build_env_vertex_key_routes_to_cloud_api_key():
+    # google-vertex routes a provided key to GOOGLE_CLOUD_API_KEY (the vertex
+    # transport var), not the google-genai vars.
+    env = _build_env(AgentConfig(model="gemini-2.5-pro", api_key="abc", provider="google-vertex"))
+    assert env["GOOGLE_CLOUD_API_KEY"] == "abc"
+    assert "GEMINI_API_KEY" not in env and "GOOGLE_API_KEY" not in env
+
+
+def test_build_env_keyless_writes_no_key_var():
+    # No api_key (Vertex/ADC): no key env var is written regardless of provider.
+    env = _build_env(AgentConfig(model="gemini-2.5-pro", provider="google-vertex"))
+    assert not {"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_API_KEY"} & env.keys()
+
+
+def test_build_env_unknown_provider_raises_even_when_keyless():
+    # Validation is unconditional — a typoed provider fails loud on a keyless run.
+    with pytest.raises(ConfigError):
+        _build_env(AgentConfig(model="gemini-2.5-pro", provider="google-vertyx"))
 
 
 def test_gemini_agent_registered_under_canonical_key():
@@ -307,7 +329,12 @@ def test_parse_stream_json_real_cli_schema():
         {
             "type": "result",
             "status": "success",
-            "stats": {"total_tokens": 31489, "input_tokens": 31225, "output_tokens": 35, "cached": 12173},
+            "stats": {
+                "total_tokens": 31489,
+                "input_tokens": 31225,
+                "output_tokens": 35,
+                "cached": 12173,
+            },
         },
     )
     output, trajectory, tokens, errors = parse_stream_json(blob)
@@ -339,6 +366,7 @@ def test_parse_stream_json_marks_failed_tool_result_status_field():
 
 def test_run_does_not_invoke_subprocess_when_skipped(monkeypatch):
     """Sanity: parse_stream_json must not shell out (catches an import-time hazard)."""
+
     def boom(*_a, **_kw):
         raise AssertionError("parse_stream_json should not run subprocess")
 
@@ -348,6 +376,7 @@ def test_run_does_not_invoke_subprocess_when_skipped(monkeypatch):
 
 # Tests for the now-deleted legacy surface — these documents what is gone for
 # good and will fail-fast if the dead modules are ever reintroduced.
+
 
 def test_legacy_run_cli_agent_is_gone():
     assert not hasattr(gemini_mod, "run_cli_agent")
@@ -445,9 +474,7 @@ def test_execute_writes_gemini_md_with_rules_text_before_subprocess(monkeypatch)
         gemini_md = Path(cwd) / "GEMINI.md" if cwd else None
         captured["gemini_md_exists"] = bool(gemini_md and gemini_md.exists())
         captured["gemini_md_text"] = (
-            gemini_md.read_text(encoding="utf-8")
-            if captured["gemini_md_exists"]
-            else None
+            gemini_md.read_text(encoding="utf-8") if captured["gemini_md_exists"] else None
         )
         return SimpleNamespace(stdout="", stderr="", returncode=0)
 

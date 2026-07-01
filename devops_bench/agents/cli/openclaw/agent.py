@@ -75,6 +75,8 @@ from devops_bench.agents.shared.cli_capabilities import (
     materialize_skills,
 )
 from devops_bench.core import SubprocessError, get_logger
+from devops_bench.core.errors import ConfigError
+from devops_bench.core.model_providers import resolve_provider
 from devops_bench.core.subprocess import run
 
 if TYPE_CHECKING:  # pragma: no cover - typing-only import
@@ -119,6 +121,7 @@ _OPENCLAW_CONFIG_FILE = "openclaw.json"
 
 # Bare model ids (the part after ``provider/``) absent from openclaw's built-in
 # catalog; the harness registers these per-run (see :func:`_build_model_override`).
+# TODO(deferred): supported-model-name maintenance is tracked separately (#147).
 _CATALOG_OVERRIDES: frozenset[str] = frozenset({"gemini-3.5-flash"})
 
 # Transport each per-run provider entry must pin: such an entry *replaces* oc's
@@ -140,11 +143,15 @@ def _oc_model_id(config: AgentConfig) -> str:
     """Resolve the canonical ``provider/model`` id ``oc agent --model`` expects.
 
     Returns ``""`` when no model is configured (oc's stored default is left
-    untouched). A model id already containing ``/`` passes through; otherwise
-    ``config.provider`` is prefixed (defaulting to ``google``, with ``gemini``
-    normalized to ``google``).
+    untouched). The provider is normalized through the shared contract
+    (:func:`~devops_bench.core.model_providers.resolve_provider`) so the openclaw
+    id matches the rest of the pipeline (e.g. ``gemini`` → ``google``). A full id
+    (``provider/model``) has its provider segment normalized too; an unknown wire
+    passes through unchanged for oc to validate.
 
     >>> _oc_model_id(AgentConfig(model="gemini-2.5-pro", provider="gemini"))
+    'google/gemini-2.5-pro'
+    >>> _oc_model_id(AgentConfig(model="gemini/gemini-2.5-pro"))
     'google/gemini-2.5-pro'
     >>> _oc_model_id(AgentConfig(model="anthropic/claude-opus-4"))
     'anthropic/claude-opus-4'
@@ -156,12 +163,14 @@ def _oc_model_id(config: AgentConfig) -> str:
     model = (config.model or "").strip()
     if not model:
         return ""
-    if "/" in model:  # already a full oc id
-        return model
-    provider = (config.provider or "google").strip().lower()
-    if provider == "gemini":
-        provider = "google"
-    return f"{provider}/{model}"
+    if "/" in model:  # already a full oc id; normalize the provider segment
+        wire, _, bare = model.partition("/")
+        try:
+            wire = resolve_provider(wire, default=wire).oc_provider
+        except ConfigError:
+            return model  # unknown wire: leave as-is, let oc validate
+        return f"{wire}/{bare}"
+    return f"{resolve_provider(config.provider).oc_provider}/{model}"
 
 
 def _build_model_override(config: AgentConfig) -> dict:
@@ -197,7 +206,17 @@ def _build_model_override(config: AgentConfig) -> dict:
     provider, _, bare = model_id.partition("/")
     if bare not in _CATALOG_OVERRIDES:
         return {}
-    provider_entry: dict = dict(_PROVIDER_TRANSPORT.get(provider, {}))
+    # A per-run provider entry *replaces* oc's built-in one, so it must pin a
+    # transport; without one oc falls back to the OpenAI transport and 401s. Fail
+    # loud rather than ship a broken (transport-less) entry for a provider we have
+    # not pinned.
+    if provider not in _PROVIDER_TRANSPORT:
+        raise ConfigError(
+            f"openclaw catalog override {model_id!r} has no pinned transport for "
+            f"provider {provider!r}; add it to _PROVIDER_TRANSPORT (known: "
+            f"{', '.join(sorted(_PROVIDER_TRANSPORT))})"
+        )
+    provider_entry: dict = dict(_PROVIDER_TRANSPORT[provider])
     provider_entry["models"] = [{"id": bare, "name": bare}]
     return {
         "models": {"providers": {provider: provider_entry}},
@@ -248,14 +267,15 @@ def _build_env(config: AgentConfig) -> dict[str, str]:
     variable(s) openclaw expects; the model itself is never hardcoded (it flows
     from ``config.model`` via ``oc agent --model``).
 
-    When ``config.api_key`` is unset the overlay carries no key at all — this is
-    the **Vertex / ADC** path: ``google-vertex`` resolves credentials from the
-    metadata-server Application Default Credentials at request time (the matrix
-    exports the ``GOOGLE_CLOUD_API_KEY=gcp-vertex-credentials`` ADC marker that
-    tells oc's vertex transport to use ADC), so no key is threaded here. A
-    provided ``google-vertex`` key lands on ``GOOGLE_CLOUD_API_KEY`` rather than
-    ``GEMINI_API_KEY`` so it reaches the vertex transport, not the google-genai
-    one.
+    The key is routed onto the provider's API-key env var(s) from the shared
+    contract (:func:`~devops_bench.core.model_providers.resolve_provider`). When
+    ``config.api_key`` is unset the overlay carries no key — the **Vertex / ADC**
+    path: ``google-vertex`` resolves credentials from the metadata-server
+    Application Default Credentials at request time (the matrix exports the
+    ``GOOGLE_CLOUD_API_KEY=gcp-vertex-credentials`` ADC marker), and the contract
+    marks such backends keyless (empty ``api_key_envs``) so no key is ever forced
+    onto them. A provided ``google-vertex`` key lands on ``GOOGLE_CLOUD_API_KEY``
+    (the vertex transport), not ``GEMINI_API_KEY`` (google-genai).
 
     Args:
         config: Resolved :class:`AgentConfig` for this run.
@@ -263,21 +283,17 @@ def _build_env(config: AgentConfig) -> dict[str, str]:
     Returns:
         A mapping suitable for the subprocess environment overlay. The caller
         adds ``OPENCLAW_STATE_DIR`` / ``OPENCLAW_CONFIG_PATH`` on top.
+
+    Raises:
+        ConfigError: If ``config.provider`` is not a known provider.
     """
+    # Resolve unconditionally so an unknown provider fails loud even on a keyless
+    # (Vertex/ADC) run, not only when a key happens to be set.
+    spec = resolve_provider(config.provider)
     overlay: dict[str, str] = {}
     if config.api_key:
-        provider = (config.provider or "google").strip().lower()
-        if provider in ("google", "gemini"):
-            overlay["GEMINI_API_KEY"] = config.api_key
-            overlay["GOOGLE_API_KEY"] = config.api_key
-        elif provider == "google-vertex":
-            overlay["GOOGLE_CLOUD_API_KEY"] = config.api_key
-        elif provider == "anthropic":
-            overlay["ANTHROPIC_API_KEY"] = config.api_key
-        elif provider == "openai":
-            overlay["OPENAI_API_KEY"] = config.api_key
-        else:
-            overlay["GEMINI_API_KEY"] = config.api_key
+        for var in spec.api_key_envs:
+            overlay[var] = config.api_key
     if config.extra_env:
         overlay.update(config.extra_env)
     return overlay

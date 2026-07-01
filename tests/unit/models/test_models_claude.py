@@ -120,6 +120,41 @@ def test_init_backend_override_invalid_raises(mocker):
         ClaudeClientAdapter()
 
 
+def test_init_backend_arg_forces_vertex_over_api_key(mocker):
+    api_cls = mocker.patch.object(claude, "AsyncAnthropic")
+    vertex_cls = mocker.patch.object(claude, "AsyncAnthropicVertex")
+    # anthropic-vertex provider passes backend="vertex"; a stray API key must not
+    # flip it to the api backend (decoupling Vertex auth from the key).
+    mocker.patch.dict(
+        os.environ, {"AGENT_API_KEY": "sk-test", "AGENT_MODEL": "claude-x"}, clear=True
+    )
+
+    ClaudeClientAdapter(backend="vertex")
+
+    vertex_cls.assert_called_once()
+    api_cls.assert_not_called()
+
+
+def test_init_backend_arg_forces_bedrock(mocker):
+    bedrock_cls = mocker.patch.object(claude, "AsyncAnthropicBedrock")
+    mocker.patch.dict(
+        os.environ, {"AWS_REGION": "us-west-2", "AGENT_MODEL": "anthropic.claude-x"}, clear=True
+    )
+
+    ClaudeClientAdapter(backend="bedrock")
+
+    bedrock_cls.assert_called_once_with(aws_region="us-west-2")
+
+
+def test_init_backend_none_still_infers(mocker):
+    api_cls = mocker.patch.object(claude, "AsyncAnthropic")
+    mocker.patch.dict(os.environ, {"AGENT_API_KEY": "sk-test"}, clear=True)
+
+    ClaudeClientAdapter(backend=None)
+
+    api_cls.assert_called_once_with(api_key="sk-test")
+
+
 def test_init_without_sdk_raises(mocker):
     mocker.patch.object(claude, "AsyncAnthropic", None)
 

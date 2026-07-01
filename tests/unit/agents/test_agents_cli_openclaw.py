@@ -22,6 +22,8 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from devops_bench.agents import AGENTS, AgentConfig
 from devops_bench.agents.capabilities import (
     AgentRules,
@@ -42,7 +44,7 @@ from devops_bench.agents.cli.openclaw.agent import (
     _oc_model_id,
 )
 from devops_bench.agents.cli.openclaw.parsing import _pick_session_key, _strip_ansi
-from devops_bench.core.errors import SubprocessError
+from devops_bench.core.errors import ConfigError, SubprocessError
 
 
 def _events(*entries: dict) -> str:
@@ -209,6 +211,16 @@ def test_oc_model_id_preserves_full_id():
     assert _oc_model_id(AgentConfig(model="anthropic/claude-opus-4-7")) == (
         "anthropic/claude-opus-4-7"
     )
+
+
+def test_oc_model_id_normalizes_full_id_provider_segment():
+    # A full id whose wire is an alias is normalized through the contract.
+    assert _oc_model_id(AgentConfig(model="gemini/gemini-2.5-pro")) == ("google/gemini-2.5-pro")
+
+
+def test_oc_model_id_passes_through_unknown_full_id_wire():
+    # An unrecognized wire is left for oc to validate, not rejected here.
+    assert _oc_model_id(AgentConfig(model="mystery/some-model")) == "mystery/some-model"
 
 
 def test_oc_model_id_returns_empty_when_no_model():
@@ -634,6 +646,27 @@ def test_build_env_routes_vertex_key_to_cloud_api_key():
     transport's var), not ``GEMINI_API_KEY`` (the google-genai one)."""
     vertex = _build_env(AgentConfig(api_key="marker", provider="google-vertex"))
     assert vertex == {"GOOGLE_CLOUD_API_KEY": "marker"}
+
+
+def test_build_env_unknown_provider_raises():
+    """An unknown provider fails loud instead of silently writing a Gemini key."""
+    with pytest.raises(ConfigError):
+        _build_env(AgentConfig(api_key="k", provider="mystery"))
+
+
+def test_build_env_unknown_provider_raises_even_when_keyless():
+    """Validation is unconditional — a typoed provider fails loud on a keyless
+    (Vertex/ADC) run too, not only when a key is set."""
+    with pytest.raises(ConfigError):
+        _build_env(AgentConfig(provider="google-vertyx"))
+
+
+def test_model_override_raises_for_unpinned_transport():
+    """A catalog-override model whose provider has no pinned transport fails loud
+    rather than shipping a transport-less entry (which would 401 via the OpenAI
+    fallback). A full-id with an unknown wire reaches this path."""
+    with pytest.raises(ConfigError):
+        _build_model_override(AgentConfig(model="mystery/gemini-3.5-flash"))
 
 
 def _empty_sessions_run(argv, **kwargs):

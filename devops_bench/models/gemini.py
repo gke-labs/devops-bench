@@ -72,6 +72,7 @@ def _backoff_delay(attempt: int) -> float:
     ceiling = min(_MAX_DELAY_SEC, _BASE_DELAY_SEC * (2**attempt))
     return random.uniform(0.0, ceiling)
 
+
 _SUPPORTED_SCHEMA_FIELDS = frozenset(
     {
         "type",
@@ -164,18 +165,21 @@ def filter_schema_for_gemini(schema: Any) -> Any:
 class GeminiClientAdapter(LLMClient):
     """Adapter for the Gemini SDK (google-genai).
 
-    Selects the client backend from the environment: an explicit
-    ``AGENT_API_KEY`` takes precedence, then Vertex via ``GCP_PROJECT_ID``,
-    otherwise the SDK's default credential resolution.
+    The backend is chosen from the ``backend`` hint and the environment:
+    ``backend="vertex"`` (the ``google-vertex`` provider) forces Vertex AI;
+    otherwise an explicit ``AGENT_API_KEY`` takes precedence, then Vertex via
+    ``GCP_PROJECT_ID``, otherwise the SDK's default credential resolution.
 
     Args:
         model_name: Model override; falls back to ``AGENT_MODEL`` when omitted.
+        backend: Backend hint from the provider contract; ``"vertex"`` forces
+            Vertex AI, ``None`` infers from the environment.
 
     Raises:
         MissingDependencyError: If the ``google-genai`` SDK is not installed.
     """
 
-    def __init__(self, model_name: str | None = None) -> None:
+    def __init__(self, model_name: str | None = None, *, backend: str | None = None) -> None:
         if genai is None:
             raise MissingDependencyError("the Gemini model adapter", "google-genai")
 
@@ -186,7 +190,12 @@ class GeminiClientAdapter(LLMClient):
         location = get_env("GCP_VERTEX_LOCATION", "global")
         api_key = get_env("AGENT_API_KEY")
 
-        if api_key:
+        # ``backend == "vertex"`` (the ``google-vertex`` provider) forces Vertex
+        # AI regardless of an API key, so the provider — not key presence —
+        # decides the backend. Otherwise infer as before.
+        if backend == "vertex":
+            self.client = genai.Client(vertexai=True, project=project_id, location=location)
+        elif api_key:
             self.client = genai.Client(api_key=api_key)
         elif project_id:
             self.client = genai.Client(vertexai=True, project=project_id, location=location)

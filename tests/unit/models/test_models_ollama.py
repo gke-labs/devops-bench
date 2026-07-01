@@ -74,6 +74,16 @@ def test_init_args_override_env(mocker):
     assert adapter.model_name == "mistral"
 
 
+def test_init_uses_agent_api_key_when_set(mocker):
+    client_cls = mocker.patch.object(ollama, "AsyncOpenAI")
+    mocker.patch.dict(os.environ, {"AGENT_API_KEY": "sk-remote"}, clear=True)
+
+    OllamaClientAdapter()
+
+    # Ollama supports optional key-based auth (remote/hosted endpoints).
+    client_cls.assert_called_once_with(base_url="http://localhost:11434/v1", api_key="sk-remote")
+
+
 def test_init_without_sdk_raises(mocker):
     mocker.patch.object(ollama, "AsyncOpenAI", None)
 

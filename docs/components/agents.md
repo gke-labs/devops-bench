@@ -40,12 +40,14 @@ Three harnesses ship today. Each self-registers under a canonical key.
 A harness does **not** hardcode a model. It reads `AGENT_PROVIDER` and
 `AGENT_MODEL` from its config and maps them onto whatever it drives.
 
-Only the `api` harness talks to the models layer directly — it calls
-`get_model(provider, model)` and runs the tool-use loop in-process. The CLI
-harnesses (`gemini`, `openclaw`) pass the model and provider through to their
-binaries instead: the Gemini CLI gets `GEMINI_MODEL` in its environment, and
-openclaw gets a `--model provider/id` flag. Either way, the model is a runtime
-input, never baked into the harness.
+Every harness resolves `AGENT_PROVIDER` through one shared contract
+(`devops_bench/core/model_providers.py`), so the same `AGENT_*` config behaves
+identically across them. The `api` harness uses it to pick the adapter family and
+backend for `get_model(provider, model)` and runs the tool-use loop in-process.
+The CLI harnesses (`gemini`, `openclaw`) use it to route `AGENT_API_KEY` onto the
+binary's provider-specific env var(s) and pass the model through: the Gemini CLI
+gets `GEMINI_MODEL`, and openclaw gets a `--model provider/id` flag. Either way,
+the model is a runtime input, never baked into the harness.
 
 For everything about providers, model ids, and how `get_model` resolves them, see
 [Model providers](./model_providers.md).
@@ -67,7 +69,7 @@ each harness maps them onto its target.
 | --- | --- | --- |
 | `AGENT_MODEL` | unset | Model id; flows to the harness's target. |
 | `AGENT_PROVIDER` | unset | Provider key (e.g. `gemini`, `anthropic`, `google-vertex`). |
-| `AGENT_API_KEY` | unset | Mapped onto the provider-specific key var by the harness. |
+| `AGENT_API_KEY` | unset | Routed onto the provider's key env var(s) via the shared contract; omitted for keyless backends (Vertex/Bedrock ADC). |
 | `AGENT_TARGET` | unset | Path to the CLI binary (`gemini` / `oc`). Ignored by `api`. |
 | `AGENT_TIMEOUT_SEC` | `600` | Wall-clock budget for each external call. |
 | `AGENT_MAX_TURNS` | harness default (50 for `api`) | Caps the `api` tool-use loop. |

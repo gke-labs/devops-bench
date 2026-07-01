@@ -45,6 +45,12 @@ GKE_MCP_BIN="${GKE_MCP_BIN:-${HOME}/gke-mcp}"
 SECRETS_ENV="${SECRETS_ENV:-${HOME}/secrets.env}"
 SKILLS_SRC="${SKILLS_SRC:-${HOME}/devops-bench/skills}"
 OC_SKILLS_DIR="${OC_SKILLS_DIR:-${HOME}/oc-skills}"
+# VERTEX_MODELS and GENAI_MODELS differ on purpose: oc ships NO built-in
+# google-vertex catalog, so every Vertex model must be registered; for google
+# (google-genai) oc already ships most ids, so only the ones it lacks need
+# listing (the legacy-arm analogue of the harness's _CATALOG_OVERRIDES). The
+# refactored arm self-registers per-run and ignores these lists entirely.
+# TODO(deferred): supported-model-name maintenance is tracked separately (#147).
 VERTEX_MODELS="${VERTEX_MODELS:-gemini-3.1-pro-preview gemini-3-flash-preview gemini-3.5-flash}"
 GENAI_MODELS="${GENAI_MODELS:-gemini-3.5-flash}"
 OPENCLAW_AGENT="${OPENCLAW_AGENT:-main}"
