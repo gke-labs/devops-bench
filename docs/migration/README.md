@@ -119,6 +119,9 @@ If you need to flip the frontier immediately without waiting for the scheduled w
    *Expected Outcome*: The uncommented paths will move from "not started" to the "Migrated" list.
 4. Merge this change into the `gke-labs` `main` branch via a standard pull request.
 
+> [!IMPORTANT]
+> Keep the flip PR **self-contained**: do **not** reference the forward/upstream PR (no `owner/repo#NN` or bare `#NN`) in its commit message or body. GitHub turns such references into a cross-repo backlink between `gke-labs` and `kubernetes-sigs`. Say "merge after the corresponding upstream change lands" instead. (The automated `suggest-flips` PR already avoids this.)
+
 > [!NOTE]
 > Uncommenting a line activates the **Read-Only Guard** in `gke-labs` CI. From this moment, any PR in `gke-labs` that attempts to mutate those paths will be rejected by `check-migrated-readonly.sh`. Edits must now be made upstream.
 
