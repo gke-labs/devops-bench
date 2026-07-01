@@ -17,11 +17,8 @@ infrastructure:
     target_deployment_name: "scale-target"
     node_count: 3
     machine_type: "e2-standard-2"
-# Note: Prompt explicitly includes {{CLUSTER_NAME}}, {{PROJECT_ID}}, and {{APP_LOCATION}}
-# so that the API agent's GKE MCP tools (which require project_id, location, and cluster_name
-# in their schemas) can be invoked without prompting the user on turn 1.
 prompt: |
-  Inspect the live deployment "{{TARGET_DEPLOYMENT_NAME}}" in the namespace "{{NAMESPACE}}" on the cluster "{{CLUSTER_NAME}}" in project "{{PROJECT_ID}}" (location "{{APP_LOCATION}}") and optimize it based on the active cluster state and metrics.
+  Inspect the live deployment "{{TARGET_DEPLOYMENT_NAME}}" in the namespace "{{NAMESPACE}}" and optimize it based on the active cluster state and metrics.
 expected_output: |
   critical requirements:
   - Agent adds resource requests and limits to the deployment.
