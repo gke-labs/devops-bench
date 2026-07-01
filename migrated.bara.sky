@@ -18,8 +18,8 @@
 
 MIGRATED = [
     # --- Wave 2: foundation (core/), imported everywhere ---
-    # "devops_bench/core/**",
-    # "tests/unit/core/**",
+    "devops_bench/core/**",
+    "tests/unit/core/**",
 
     # --- Wave 3: leaves + bases (parallel) ---
     # tasks contracts (schema, loader)
