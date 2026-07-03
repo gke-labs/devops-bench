@@ -46,3 +46,14 @@ expected_output: |
         target:
           type: AverageValue
           averageValue: 100
+documentation:
+  - doc_name: "Expose custom metrics for autoscaling"
+    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/expose-custom-metrics-autoscaling"
+    constraints:
+      - text: "autoscaling.gke.io|"
+        critical: true
+  - doc_name: "Expose custom metrics for load balancers"
+    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/expose-custom-metrics-load-balancer"
+    constraints:
+      - text: "exportName"
+        critical: true
