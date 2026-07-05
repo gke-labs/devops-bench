@@ -2,7 +2,25 @@ import os
 from contextlib import AsyncExitStack
 from deepeval.tracing import observe
 from mcp.client.session import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.stdio import (
+    StdioServerParameters,
+    get_default_environment,
+    stdio_client,
+)
+
+# Environment variables the MCP server needs to reach the target cluster and
+# cloud APIs. Only these are forwarded (on top of the SDK's safe defaults such as
+# PATH/HOME) — the full environment is deliberately NOT passed, to avoid leaking
+# unrelated secrets (agent/judge API keys, etc.) into the server subprocess.
+MCP_ENV_ALLOWLIST = (
+    "KUBECONFIG",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "CLOUDSDK_CONFIG",
+    "CLOUDSDK_CORE_PROJECT",
+    "GOOGLE_CLOUD_PROJECT",
+    "USE_GKE_GCLOUD_AUTH_PLUGIN",
+)
+
 
 class MCPClient:
 
@@ -12,12 +30,18 @@ class MCPClient:
     self.session = None
 
   async def __aenter__(self):
-    # Forward the full environment so the MCP server inherits KUBECONFIG and
-    # cloud credentials (GOOGLE_APPLICATION_CREDENTIALS, etc.). The MCP SDK
-    # otherwise launches the server with a stripped default environment, which
-    # leaves it unable to resolve the target cluster's kubeconfig context.
+    # Start from the SDK's safe default environment (PATH, HOME, ...) and add only
+    # the allowlisted variables the MCP server needs — chiefly KUBECONFIG and cloud
+    # credentials — so it can resolve the target cluster's kubeconfig context.
+    # The SDK otherwise launches the server with a stripped environment that lacks
+    # KUBECONFIG; forwarding the full os.environ would over-share secrets.
+    env = get_default_environment()
+    for key in MCP_ENV_ALLOWLIST:
+      value = os.environ.get(key)
+      if value is not None:
+        env[key] = value
     server_params = StdioServerParameters(
-        command=self.server_path, env=os.environ.copy()
+        command=self.server_path, env=env
     )
     stdio_transport = await self.exit_stack.enter_async_context(
         stdio_client(server_params)
