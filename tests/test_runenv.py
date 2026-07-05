@@ -40,16 +40,21 @@ def test_passthrough_when_not_parallel(monkeypatch):
 
 
 def test_apply_sets_isolated_env_and_creates_dirs(monkeypatch, tmp_path):
-    run_env = RunEnv.create(parallel=True, run_id="run-1", state_root=str(tmp_path))
-    run_env.apply()
-    expected = tmp_path / "run-1"
-    assert os.environ["KUBECONFIG"] == str(expected / "kubeconfig")
-    assert os.environ["CLOUDSDK_CONFIG"] == str(expected / "gcloud")
-    assert os.environ["TF_DATA_DIR"] == str(expected / "tf-data")
-    assert os.environ["RUN_ID"] == "run-1"
-    assert os.environ["BENCH_RUN_DIR"] == str(expected)
-    assert (expected / "gcloud").is_dir()
-    assert (expected / "tf-data").is_dir()
+    old_env = dict(os.environ)
+    try:
+        run_env = RunEnv.create(parallel=True, run_id="run-1", state_root=str(tmp_path))
+        run_env.apply()
+        expected = tmp_path / "run-1"
+        assert os.environ["KUBECONFIG"] == str(expected / "kubeconfig")
+        assert os.environ["CLOUDSDK_CONFIG"] == str(expected / "gcloud")
+        assert os.environ["TF_DATA_DIR"] == str(expected / "tf-data")
+        assert os.environ["RUN_ID"] == "run-1"
+        assert os.environ["BENCH_RUN_DIR"] == str(expected)
+        assert (expected / "gcloud").is_dir()
+        assert (expected / "tf-data").is_dir()
+    finally:
+        os.environ.clear()
+        os.environ.update(old_env)
 
 
 def test_cluster_name_prefixed_deterministic_and_unique(tmp_path):

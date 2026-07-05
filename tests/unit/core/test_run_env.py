@@ -45,20 +45,25 @@ def test_run_id_falls_back_to_env(monkeypatch):
 
 def test_apply_sets_isolated_env_and_creates_dirs(monkeypatch, tmp_path):
     monkeypatch.delenv("KUBECONFIG", raising=False)
-    run_env = RunEnv.create(parallel=True, run_id="run-1", state_root=tmp_path)
-    run_env.apply()
+    old_env = dict(__import__("os").environ)
+    try:
+        run_env = RunEnv.create(parallel=True, run_id="run-1", state_root=tmp_path)
+        run_env.apply()
 
-    import os
+        import os
 
-    expected_dir = tmp_path / "run-1"
-    assert run_env.isolated is True
-    assert run_env.run_dir == expected_dir
-    assert os.environ["KUBECONFIG"] == str(expected_dir / "kubeconfig")
-    assert os.environ["CLOUDSDK_CONFIG"] == str(expected_dir / "gcloud")
-    assert os.environ["TF_DATA_DIR"] == str(expected_dir / "tf-data")
-    # gcloud config + tofu data dirs are created so the tools find them.
-    assert (expected_dir / "gcloud").is_dir()
-    assert (expected_dir / "tf-data").is_dir()
+        expected_dir = tmp_path / "run-1"
+        assert run_env.isolated is True
+        assert run_env.run_dir == expected_dir
+        assert os.environ["KUBECONFIG"] == str(expected_dir / "kubeconfig")
+        assert os.environ["CLOUDSDK_CONFIG"] == str(expected_dir / "gcloud")
+        assert os.environ["TF_DATA_DIR"] == str(expected_dir / "tf-data")
+        # gcloud config + tofu data dirs are created so the tools find them.
+        assert (expected_dir / "gcloud").is_dir()
+        assert (expected_dir / "tf-data").is_dir()
+    finally:
+        __import__("os").environ.clear()
+        __import__("os").environ.update(old_env)
 
 
 def test_state_root_from_env(monkeypatch, tmp_path):
