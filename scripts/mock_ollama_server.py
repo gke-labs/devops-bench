@@ -5,10 +5,11 @@ Minimal mock of Ollama's OpenAI-compatible chat API for integration testing.
 Detects whether a request is an agent call or a DeepEval GEval call by
 inspecting the prompt, then returns an appropriate canned response.
 """
+
 import json
-import time
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 MOCK_MODEL = "gemma4:2b"
 
@@ -25,21 +26,25 @@ AGENT_RESPONSE = (
 
 # DeepEval GEval asks the judge to produce evaluation *steps* (list) then a *score*.
 # Both must be valid JSON matching the schemas DeepEval expects.
-STEPS_JSON = json.dumps({
-    "steps": [
-        "Check that the output produces a valid Gateway API HTTPRoute manifest.",
-        "Verify the HTTPRoute listens on port 80 and targets public-gw.",
-        "Confirm a RequestRedirect filter sets scheme=https and statusCode=301.",
-    ]
-})
+STEPS_JSON = json.dumps(
+    {
+        "steps": [
+            "Check that the output produces a valid Gateway API HTTPRoute manifest.",
+            "Verify the HTTPRoute listens on port 80 and targets public-gw.",
+            "Confirm a RequestRedirect filter sets scheme=https and statusCode=301.",
+        ]
+    }
+)
 
-SCORE_JSON = json.dumps({
-    "reason": (
-        "The output is a complete HTTPRoute manifest with a RequestRedirect "
-        "filter targeting port 80 and returning 301 to https."
-    ),
-    "score": 1,
-})
+SCORE_JSON = json.dumps(
+    {
+        "reason": (
+            "The output is a complete HTTPRoute manifest with a RequestRedirect "
+            "filter targeting port 80 and returning 301 to https."
+        ),
+        "score": 1,
+    }
+)
 
 _lock = threading.Lock()
 _call_count = 0
@@ -75,11 +80,13 @@ class MockHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path in ("/v1/models", "/api/tags"):
-            self._json({
-                "object": "list",
-                "data": [{"id": MOCK_MODEL, "object": "model"}],
-                "models": [{"name": MOCK_MODEL}],
-            })
+            self._json(
+                {
+                    "object": "list",
+                    "data": [{"id": MOCK_MODEL, "object": "model"}],
+                    "models": [{"name": MOCK_MODEL}],
+                }
+            )
         else:
             self._json({"error": "not found"}, 404)
 
@@ -101,18 +108,22 @@ class MockHandler(BaseHTTPRequestHandler):
             text = AGENT_RESPONSE
 
         print(f"[mock] call #{n} ({kind})")
-        self._json({
-            "id": f"chatcmpl-{n}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": body.get("model", MOCK_MODEL),
-            "choices": [{
-                "index": 0,
-                "message": {"role": "assistant", "content": text, "tool_calls": None},
-                "finish_reason": "stop",
-            }],
-            "usage": {"prompt_tokens": 40, "completion_tokens": 80, "total_tokens": 120},
-        })
+        self._json(
+            {
+                "id": f"chatcmpl-{n}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": body.get("model", MOCK_MODEL),
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": text, "tool_calls": None},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 40, "completion_tokens": 80, "total_tokens": 120},
+            }
+        )
 
 
 def start(port: int = 11435):
@@ -124,6 +135,7 @@ def start(port: int = 11435):
 
 if __name__ == "__main__":
     import sys
+
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 11435
     srv = start(port)
     print("Press Ctrl+C to stop.")

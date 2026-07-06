@@ -1,6 +1,7 @@
 import os
 import subprocess
 
+
 def run_gcli_agent(prompt, gemini_path="gemini"):
     """Runs Gemini CLI with GKE MCP extension."""
     try:
@@ -15,6 +16,7 @@ def run_gcli_agent(prompt, gemini_path="gemini"):
     except subprocess.CalledProcessError as e:
         return f"Error: {e.stderr}"
 
+
 def run_openclaw_agent(prompt, binary_path="openclaw"):
     """Runs OpenClaw agent with a prompt."""
     try:
@@ -28,6 +30,7 @@ def run_openclaw_agent(prompt, binary_path="openclaw"):
         return result.stdout
     except subprocess.CalledProcessError as e:
         return f"Error: {e.stderr}"
+
 
 def main():
     goal = "what can you do"
@@ -44,6 +47,7 @@ def main():
     output_openclaw = run_openclaw_agent(goal, openclaw_path)
     print("--- OpenClaw Output ---")
     print(output_openclaw)
+
 
 if __name__ == "__main__":
     main()

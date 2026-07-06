@@ -15,9 +15,9 @@
 set -euo pipefail
 
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
-CLOUD_PROVIDER="${CLOUD_PROVIDER:-kind}"
+INFRA_PROVIDER="${INFRA_PROVIDER:-kind}"
 
-if [[ "${CLOUD_PROVIDER}" == "gcp" ]]; then
+if [[ "${INFRA_PROVIDER}" == "gcp" ]]; then
   echo "==> Fetching GKE credentials for cluster ${CLUSTER_NAME:?} in project ${PROJECT_ID:?} (${LOCATION:?})"
   gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${LOCATION}" --project "${PROJECT_ID}"
 fi

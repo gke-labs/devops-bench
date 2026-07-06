@@ -97,8 +97,10 @@ class RunEnv:
         if not parallel:
             return cls(resolved_id, False, os.getcwd(), None, None, None)
 
-        root = state_root or os.environ.get("BENCH_RUN_STATE_ROOT") or os.path.join(
-            tempfile.gettempdir(), "devops-bench-runs"
+        root = (
+            state_root
+            or os.environ.get("BENCH_RUN_STATE_ROOT")
+            or os.path.join(tempfile.gettempdir(), "devops-bench-runs")
         )
         run_dir = os.path.join(root, resolved_id)
         return cls(

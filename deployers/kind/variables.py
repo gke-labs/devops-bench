@@ -1,14 +1,15 @@
 import os
 import pathlib
-from typing import Any, Dict
+from typing import Any
+
 
 def resolve_variables(
     stack: str,
-    custom_variables: Dict[str, Any],
+    custom_variables: dict[str, Any],
     global_project_id: str,
     global_cluster_name: str,
-    global_location: str
-) -> Dict[str, Any]:
+    global_location: str,
+) -> dict[str, Any]:
     """Resolves default variables for local KinD-based stacks."""
     variables = custom_variables.copy()
     cluster_name = global_cluster_name or "devops-bench-kind"

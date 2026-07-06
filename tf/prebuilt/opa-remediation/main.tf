@@ -57,7 +57,7 @@ resource "null_resource" "setup" {
     interpreter = ["/bin/bash", "-c"]
     command     = "${path.module}/scripts/setup.sh"
     environment = {
-      CLOUD_PROVIDER = var.cloud_provider
+      INFRA_PROVIDER = var.cloud_provider
       PROJECT_ID     = var.project_id
       CLUSTER_NAME   = module.cluster.cluster_name
       LOCATION       = var.location

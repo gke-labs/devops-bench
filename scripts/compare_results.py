@@ -393,9 +393,7 @@ def _classify_metric_values(
     return diffs
 
 
-def compare_records(
-    legacy: dict[str, Any], refactor: dict[str, Any], name: str
-) -> TaskComparison:
+def compare_records(legacy: dict[str, Any], refactor: dict[str, Any], name: str) -> TaskComparison:
     """Compare one aligned (legacy, refactor) record pair.
 
     Args:
@@ -469,9 +467,7 @@ def align_records(
     return aligned
 
 
-def compare(
-    legacy: list[dict[str, Any]], refactor: list[dict[str, Any]]
-) -> list[TaskComparison]:
+def compare(legacy: list[dict[str, Any]], refactor: list[dict[str, Any]]) -> list[TaskComparison]:
     """Align and compare two full result lists.
 
     Args:

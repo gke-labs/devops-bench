@@ -69,8 +69,6 @@ def test_cluster_name_prefixed_deterministic_and_unique(tmp_path):
 
 
 def test_cluster_name_respects_length_limit(tmp_path):
-    name = RunEnv.create(parallel=True, run_id="X", state_root=str(tmp_path)).cluster_name(
-        "a" * 60
-    )
+    name = RunEnv.create(parallel=True, run_id="X", state_root=str(tmp_path)).cluster_name("a" * 60)
     assert len(name) <= 40
     assert not name.endswith("-")

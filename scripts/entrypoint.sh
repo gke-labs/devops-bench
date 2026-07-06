@@ -1,12 +1,12 @@
 #!/bin/bash
 set -e
 
-if [ -z "$CLOUD_PROVIDER" ] || [ -z "$BENCH_TASK_FILE" ]; then
-    echo "Error: CLOUD_PROVIDER and BENCH_TASK_FILE environment variables must be set."
+if [ -z "$INFRA_PROVIDER" ] || [ -z "$BENCH_TASK_FILE" ]; then
+    echo "Error: INFRA_PROVIDER and BENCH_TASK_FILE environment variables must be set."
     exit 1
 fi
 
-AUTH_SCRIPT="./scripts/setup_auth_${CLOUD_PROVIDER}.sh"
+AUTH_SCRIPT="./scripts/setup_auth_${INFRA_PROVIDER}.sh"
 if [ -f "$AUTH_SCRIPT" ]; then
     source "$AUTH_SCRIPT"
 fi

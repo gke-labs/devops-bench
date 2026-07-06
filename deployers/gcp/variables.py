@@ -1,13 +1,14 @@
 import os
-from typing import Any, Dict
+from typing import Any
+
 
 def resolve_variables(
     stack: str,
-    custom_variables: Dict[str, Any],
+    custom_variables: dict[str, Any],
     global_project_id: str,
     global_cluster_name: str,
-    global_location: str
-) -> Dict[str, Any]:
+    global_location: str,
+) -> dict[str, Any]:
     """Resolves default variables for GCP-based TF stacks."""
     variables = custom_variables.copy()
     variables.setdefault("project_id", global_project_id)

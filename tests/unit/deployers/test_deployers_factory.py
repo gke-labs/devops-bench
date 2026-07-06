@@ -73,6 +73,7 @@ def test_get_deployer_tofu_default_stack(mocker, base_config):
     assert isinstance(deployer, TFDeployer)
     assert deployer.variables == {
         "cloud_provider": "kind",
+        "project_id": base_config["project_id"],
         "cluster_name": base_config["cluster_name"],
         "location": "local",
         "kubeconfig_path": _expected_kubeconfig(),
@@ -120,6 +121,7 @@ def test_get_deployer_tofu_kind_stack(mocker, base_config):
     assert isinstance(deployer, TFDeployer)
     assert deployer.variables == {
         "cloud_provider": "kind",
+        "project_id": base_config["project_id"],
         "cluster_name": base_config["cluster_name"],
         "location": "local",
         "kubeconfig_path": _expected_kubeconfig(),
@@ -169,9 +171,9 @@ def test_get_deployer_explicit_provider_overrides_deduction(mocker, base_config)
     assert "kubeconfig_path" not in deployer.variables
 
 
-def test_get_deployer_cloud_provider_env(mocker, base_config):
+def test_get_deployer_infra_provider_env(mocker, base_config):
     mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
-    mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp"})
+    mocker.patch.dict(os.environ, {"INFRA_PROVIDER": "gcp"})
     deployer = get_deployer(
         {"deployer": "tofu", "stack": "prebuilt/kind"},
         base_config["project_id"],

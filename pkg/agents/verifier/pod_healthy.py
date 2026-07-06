@@ -1,13 +1,15 @@
+import json
 import subprocess
 import time
-import json
-from typing import Literal, Optional
+from typing import Literal
+
 from pkg.agents.verifier.base import BaseVerifier, VerificationResult
+
 
 class PodHealthyVerifier(BaseVerifier):
     type: Literal["pod_healthy"] = "pod_healthy"
     selector: str
-    namespace: Optional[str] = None
+    namespace: str | None = None
 
     def verify(self, timeout_sec: int) -> VerificationResult:
         start_time = time.time()
@@ -25,9 +27,7 @@ class PodHealthyVerifier(BaseVerifier):
             cmd.extend(["-n", self.namespace])
 
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, check=True
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return VerificationResult(
                 success=True,
                 elapsed_time=time.time() - start_time,
@@ -46,7 +46,7 @@ class PodHealthyVerifier(BaseVerifier):
                     reason="Condition met via polling fallback",
                     details=details,
                 )
-            
+
             return VerificationResult(
                 success=False,
                 elapsed_time=elapsed,
@@ -59,15 +59,11 @@ class PodHealthyVerifier(BaseVerifier):
             cmd = ["kubectl", "get", "pods", "-l", self.selector, "-o", "json"]
             if self.namespace:
                 cmd.extend(["-n", self.namespace])
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, check=True
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return json.loads(result.stdout)
         except Exception as e:
             return {"error": str(e)}
 
     def _check_pods_status(self, details: dict) -> bool:
         items = details.get("items", [])
-        return len(items) > 0 and all(
-            p.get("status", {}).get("phase") == "Running" for p in items
-        )
+        return len(items) > 0 and all(p.get("status", {}).get("phase") == "Running" for p in items)

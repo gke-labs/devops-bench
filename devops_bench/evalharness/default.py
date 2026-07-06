@@ -182,7 +182,9 @@ class DefaultEvalHarness(Harness):
         self.default_namespace = default_namespace
         # Resolve the run-level placeholder inputs once into instance
         # attributes that ``replace_placeholders`` / ``start_scenario`` read.
-        self.app_location = get_env("APP_LOCATION", "") or ("local" if get_env("CLOUD_PROVIDER", "") == "kind" else "")
+        self.app_location = get_env("APP_LOCATION", "") or (
+            "local" if get_env("INFRA_PROVIDER", "") == "kind" else ""
+        )
         self.target_deployment = (
             get_env("TARGET_DEPLOYMENT_NAME", self.default_target_deployment)
             or self.default_target_deployment
@@ -324,12 +326,20 @@ class DefaultEvalHarness(Harness):
         loc = location or self.app_location
         target_dep = (
             get_env("TARGET_DEPLOYMENT_NAME", "")
-            or (task.infrastructure.get("variables", {}).get("target_deployment_name") if task and task.infrastructure else "")
+            or (
+                task.infrastructure.get("variables", {}).get("target_deployment_name")
+                if task and task.infrastructure
+                else ""
+            )
             or self.target_deployment
         )
         ns = (
             get_env("NAMESPACE", "")
-            or (task.infrastructure.get("variables", {}).get("namespace") if task and task.infrastructure else "")
+            or (
+                task.infrastructure.get("variables", {}).get("namespace")
+                if task and task.infrastructure
+                else ""
+            )
             or self.namespace
         )
         return (
@@ -365,7 +375,9 @@ class DefaultEvalHarness(Harness):
         if isinstance(spec, str):
             return self.replace_placeholders(spec, cluster_name, location, task)
         if isinstance(spec, list):
-            return [self._resolve_spec_placeholders(item, cluster_name, location, task) for item in spec]
+            return [
+                self._resolve_spec_placeholders(item, cluster_name, location, task) for item in spec
+            ]
         if isinstance(spec, dict):
             return {
                 key: self._resolve_spec_placeholders(value, cluster_name, location, task)
@@ -657,14 +669,15 @@ class DefaultEvalHarness(Harness):
             cluster_info = deployer.get_cluster_info()
             active_cluster_name = cluster_info.name or self.cluster_name
             context = self.make_context(task, cluster=cluster_info, workspace_path=workspace_path)
+            prompt = self.replace_placeholders(
+                task.prompt, active_cluster_name, cluster_info.location, task
+            )
 
-            prompt = self.replace_placeholders(task.prompt, active_cluster_name, cluster_info.location, task)
-
-            chaos_specs = self._parse_chaos_specs(task.chaos_spec, active_cluster_name, cluster_info.location, task)
-            verification_mapping, verification_parse_errors = (
-                self._build_verification_mapping(
-                    task.verification_spec, active_cluster_name, cluster_info.location, task
-                )
+            chaos_specs = self._parse_chaos_specs(
+                task.chaos_spec, active_cluster_name, cluster_info.location, task
+            )
+            verification_mapping, verification_parse_errors = self._build_verification_mapping(
+                task.verification_spec, active_cluster_name, cluster_info.location, task
             )
 
             # Hand the background scenario its own context with an isolated

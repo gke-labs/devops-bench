@@ -1,14 +1,16 @@
+import json
 import subprocess
 import time
-import json
-from typing import Literal, Optional
+from typing import Literal
+
 from pkg.agents.verifier.base import BaseVerifier, VerificationResult
+
 
 class ScalingCompleteVerifier(BaseVerifier):
     type: Literal["scaling_complete"] = "scaling_complete"
     deployment: str
     min_replicas: int = 1
-    namespace: Optional[str] = None
+    namespace: str | None = None
 
     def verify(self, timeout_sec: int) -> VerificationResult:
         start_time = time.time()
@@ -49,9 +51,7 @@ class ScalingCompleteVerifier(BaseVerifier):
             if self.namespace:
                 cmd.extend(["-n", self.namespace])
 
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, check=True
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             dep_data = json.loads(result.stdout)
             ready_replicas = dep_data.get("status", {}).get("readyReplicas", 0)
             success = ready_replicas >= self.min_replicas
@@ -62,8 +62,6 @@ class ScalingCompleteVerifier(BaseVerifier):
             )
             return success, {"reason": reason, "deployment": dep_data}
         except subprocess.CalledProcessError as e:
-            return False, {
-                "reason": f"Failed to get deployment: {e.stderr.strip()}"
-            }
+            return False, {"reason": f"Failed to get deployment: {e.stderr.strip()}"}
         except json.JSONDecodeError:
             return False, {"reason": "Failed to parse deployment JSON"}

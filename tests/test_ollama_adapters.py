@@ -1,10 +1,11 @@
 """Tests for OllamaClientAdapter and OllamaDeepEvalModel."""
+
 import json
 import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,18 +15,18 @@ _api_dir = str(Path(__file__).resolve().parents[1] / "pkg/agents/runner/api")
 if _api_dir not in sys.path:
     sys.path.insert(0, _api_dir)
 
-from llm_adapters import OllamaClientAdapter
-from pkg.evaluator.evaluate import OllamaDeepEvalModel
+from llm_adapters import OllamaClientAdapter  # noqa: E402
 
+from pkg.evaluator.evaluate import OllamaDeepEvalModel  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _adapter(model="gemma4:e2b"):
     """Create an OllamaClientAdapter with a mock async client."""
-    with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://fake:11434/v1",
-                                  "AGENT_MODEL": model}):
+    with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://fake:11434/v1", "AGENT_MODEL": model}):
         a = OllamaClientAdapter(model_name=model)
     a.client = MagicMock()
     return a
@@ -33,8 +34,7 @@ def _adapter(model="gemma4:e2b"):
 
 def _deep_eval_model(model="gemma4:e2b"):
     """Create an OllamaDeepEvalModel with a mock sync client."""
-    with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://fake:11434/v1",
-                                  "JUDGE_MODEL": model}):
+    with patch.dict(os.environ, {"OLLAMA_BASE_URL": "http://fake:11434/v1", "JUDGE_MODEL": model}):
         m = OllamaDeepEvalModel(model_name=model)
     m.client = MagicMock()
     return m
@@ -68,6 +68,7 @@ def _completion(content):
 # OllamaClientAdapter — format_tools
 # ---------------------------------------------------------------------------
 
+
 class TestFormatTools:
     def test_single_tool(self):
         result = _adapter().format_tools([_make_tool()])
@@ -88,7 +89,7 @@ class TestFormatTools:
         assert [e["function"]["name"] for e in result] == ["t1", "t2"]
 
     def test_tool_without_input_schema_attribute(self):
-        tool = MagicMock(spec=[])        # no inputSchema attribute
+        tool = MagicMock(spec=[])  # no inputSchema attribute
         tool.name = "no_schema"
         tool.description = "desc"
         result = _adapter().format_tools([tool])
@@ -101,6 +102,7 @@ class TestFormatTools:
 # ---------------------------------------------------------------------------
 # OllamaClientAdapter — extract_function_calls
 # ---------------------------------------------------------------------------
+
 
 class TestExtractFunctionCalls:
     def test_no_tool_calls(self):
@@ -138,6 +140,7 @@ class TestExtractFunctionCalls:
 # OllamaClientAdapter — get_text_content
 # ---------------------------------------------------------------------------
 
+
 class TestGetTextContent:
     def test_returns_content(self):
         assert _adapter().get_text_content(_make_response(content="ok")) == "ok"
@@ -152,6 +155,7 @@ class TestGetTextContent:
 # ---------------------------------------------------------------------------
 # OllamaClientAdapter — _convert_to_openai_messages
 # ---------------------------------------------------------------------------
+
 
 class TestConvertToOpenAIMessages:
     def test_system_instruction_prepended(self):
@@ -181,11 +185,13 @@ class TestConvertToOpenAIMessages:
         assert msgs == [{"role": "assistant", "content": "done"}]
 
     def test_assistant_message_with_tool_calls(self):
-        contents = [{
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [{"name": "apply", "args": {"x": 1}, "id": "call_x"}],
-        }]
+        contents = [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"name": "apply", "args": {"x": 1}, "id": "call_x"}],
+            }
+        ]
         msgs = _adapter()._convert_to_openai_messages(contents, system_instruction=None)
         tc = msgs[0]["tool_calls"][0]
         assert tc["type"] == "function"
@@ -195,11 +201,13 @@ class TestConvertToOpenAIMessages:
         assert tc["function"]["arguments"] == json.dumps({"x": 1})
 
     def test_tool_call_string_args_passed_through_unchanged(self):
-        contents = [{
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [{"name": "t", "args": '{"k": "v"}', "id": "c"}],
-        }]
+        contents = [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"name": "t", "args": '{"k": "v"}', "id": "c"}],
+            }
+        ]
         msgs = _adapter()._convert_to_openai_messages(contents, system_instruction=None)
         assert msgs[0]["tool_calls"][0]["function"]["arguments"] == '{"k": "v"}'
 
@@ -211,21 +219,22 @@ class TestConvertToOpenAIMessages:
     def test_full_conversation_role_order(self):
         contents = [
             {"role": "user", "content": "do X"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"name": "t", "args": {}, "id": "c1"}
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"name": "t", "args": {}, "id": "c1"}],
+            },
             {"role": "tool", "tool_call_id": "c1", "content": "ok"},
             {"role": "assistant", "content": "done"},
         ]
         msgs = _adapter()._convert_to_openai_messages(contents, system_instruction="sys")
-        assert [m["role"] for m in msgs] == [
-            "system", "user", "assistant", "tool", "assistant"
-        ]
+        assert [m["role"] for m in msgs] == ["system", "user", "assistant", "tool", "assistant"]
 
 
 # ---------------------------------------------------------------------------
 # OllamaDeepEvalModel
 # ---------------------------------------------------------------------------
+
 
 class TestOllamaDeepEvalModel:
     def test_generate_returns_text(self):
