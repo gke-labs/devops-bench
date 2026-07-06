@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import shutil
 import tempfile
 from typing import TYPE_CHECKING
 
@@ -37,22 +38,34 @@ __all__ = ["AgyCliAgent"]
 
 _log = core.get_logger("agents.cli.antigravity")
 
+_GCLOUD_LOOKUP_TIMEOUT_SEC = 10
+
+
+def _resolve_model_name(model: str) -> str:
+    """Resolve a provider-qualified model id to the bare name ``agy`` expects.
+
+    e.g. ``"google/gemini-3.5-flash"`` -> ``"gemini-3.5-flash"``.
+    """
+    return model.split("/")[-1]
+
 
 def _build_settings(
     mcp_servers: tuple[capabilities.McpBinding, ...],
     model: str | None,
     project: str | None = None,
     location: str | None = None,
+    *,
+    skills_enabled: bool = False,
 ) -> dict:
     """Assemble the Antigravity ``settings.json`` payload for a run."""
-    settings: dict = {"experimental": {"skills": True}}
+    settings: dict = {}
     servers = cli_capabilities.build_mcp_servers(mcp_servers)
     if servers:
         settings["mcpServers"] = servers
+    if skills_enabled:
+        settings["experimental"] = {"skills": True}
     if model:
-        # Resolve model name (e.g. "google/gemini-3.5-flash" -> "gemini-3.5-flash")
-        model_name = model.split("/")[-1]
-        settings["modelConfigs"] = {"defaultModel": model_name}
+        settings["modelConfigs"] = {"defaultModel": _resolve_model_name(model)}
 
     # Add GCP block if project/location are provided (needed for GCA/GKE tools)
     if project or location:
@@ -68,8 +81,7 @@ def _build_settings(
 def _build_env(config: agents_config.AgentConfig) -> dict[str, str]:
     """Build the env overlay for the Antigravity CLI subprocess.
 
-    Passes through necessary auth variables. HOME must NOT be overridden
-    to leverage cached OAuth/ADC credentials.
+    HOME must NOT be overridden to leverage cached OAuth/ADC credentials.
     """
     overlay: dict[str, str] = {
         # Trust workspace so it doesn't block on untrusted folder warnings
@@ -81,24 +93,11 @@ def _build_env(config: agents_config.AgentConfig) -> dict[str, str]:
         "OTEL_SDK_DISABLED": "true",
     }
 
-    # Pass through auth/project env vars if present
-    auth_vars = [
-        "GEMINI_API_KEY",
-        "GOOGLE_API_KEY",
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        "GOOGLE_CLOUD_PROJECT",
-        "GOOGLE_CLOUD_LOCATION",
-        "GOOGLE_GENAI_USE_VERTEXAI",
-    ]
-    for var in auth_vars:
-        if var in os.environ:
-            overlay[var] = os.environ[var]
-
     if config.api_key:
         overlay["GEMINI_API_KEY"] = config.api_key
         overlay["GOOGLE_API_KEY"] = config.api_key
     if config.model:
-        overlay["GEMINI_MODEL"] = config.model
+        overlay["GEMINI_MODEL"] = _resolve_model_name(config.model)
 
     if config.extra_env:
         overlay.update(config.extra_env)
@@ -109,8 +108,12 @@ def _build_env(config: agents_config.AgentConfig) -> dict[str, str]:
 def _get_gcloud_project() -> str | None:
     """Retrieve the default project from gcloud config if available."""
     try:
-        result = devops_subprocess.run(["gcloud", "config", "get-value", "project"], check=False)
-    except OSError as exc:
+        result = devops_subprocess.run(
+            ["gcloud", "config", "get-value", "project"],
+            check=False,
+            timeout=_GCLOUD_LOOKUP_TIMEOUT_SEC,
+        )
+    except (OSError, core.SubprocessError) as exc:
         _log.debug("gcloud project lookup failed: %s", exc)
         return None
     if result.returncode != 0:
@@ -122,28 +125,16 @@ def _get_gcloud_location() -> str | None:
     """Retrieve the default region from gcloud config if available."""
     try:
         result = devops_subprocess.run(
-            ["gcloud", "config", "get-value", "compute/region"], check=False
+            ["gcloud", "config", "get-value", "compute/region"],
+            check=False,
+            timeout=_GCLOUD_LOOKUP_TIMEOUT_SEC,
         )
-    except OSError as exc:
+    except (OSError, core.SubprocessError) as exc:
         _log.debug("gcloud location lookup failed: %s", exc)
         return None
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
-
-
-class _WorkspaceContext:
-    """Context manager to handle temporary workspaces."""
-
-    def __init__(self):
-        self.tmpdir = tempfile.TemporaryDirectory(prefix="agy-run-")
-        self.path = pathlib.Path(self.tmpdir.name)
-
-    def __enter__(self) -> pathlib.Path:
-        return self.path
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.tmpdir.cleanup()
 
 
 @base.AGENTS.register("antigravity")
@@ -179,8 +170,16 @@ class AgyCliAgent(base.AgentHarness):
 
         env_overlay = _build_env(self.config)
 
-        with _WorkspaceContext() as workdir:
+        with tempfile.TemporaryDirectory(prefix="agy-run-") as tmpdir:
+            workdir = pathlib.Path(tmpdir)
             gemini_dir = workdir / ".gemini"
+            # <gemini_dir>/antigravity-cli/ is the single directory agy reads
+            # its config from and writes its state to (see the OAuth token,
+            # conversations, and transcript paths below, and the global
+            # default documented in
+            # .agents/references/permission-configs/README.md).
+            agy_config_dir = gemini_dir / "antigravity-cli"
+            agy_config_dir.mkdir(parents=True, exist_ok=True)
 
             # Resolve project and location
             project = (
@@ -202,8 +201,8 @@ class AgyCliAgent(base.AgentHarness):
                 env_overlay["GOOGLE_CLOUD_LOCATION"] = location
                 env_overlay["GCP_LOCATION"] = location
 
-            # Build argv with explicit gemini_dir to ensure it runs in the workspace
-            # and uses the local settings.json.
+            # Explicit gemini_dir ensures agy runs against the workspace and
+            # the local settings.json, not the real HOME.
             argv = [
                 binary,
                 "--dangerously-skip-permissions",
@@ -212,11 +211,9 @@ class AgyCliAgent(base.AgentHarness):
             if project:
                 argv.append(f"--project={project}")
             if self.config.model:
-                model_name = self.config.model.split("/")[-1]
-                argv.append(f"--model={model_name}")
+                argv.append(f"--model={_resolve_model_name(self.config.model)}")
             argv.append(f"--prompt={prompt}")
 
-            # 1. Write rules/system prompt
             # Write to both GEMINI.md (legacy) and .agents/AGENTS.md (modern)
             if caps.rules.text:
                 (workdir / "GEMINI.md").write_text(caps.rules.text, encoding="utf-8")
@@ -224,40 +221,41 @@ class AgyCliAgent(base.AgentHarness):
                 agents_dir.mkdir(parents=True, exist_ok=True)
                 (agents_dir / "AGENTS.md").write_text(caps.rules.text, encoding="utf-8")
 
-            # 2. Materialize skills in the workspace-scoped agy config dir.
-            # <gemini_dir>/antigravity-cli/ is the single directory agy reads its
-            # config from (see the OAuth token, conversations, and transcript
-            # paths below, and the global default documented in
-            # .agents/references/permission-configs/README.md).
-            agy_config_dir = gemini_dir / "antigravity-cli"
+            skill_names: list[str] = []
             if caps.skills.paths:
-                cli_capabilities.materialize_skills(agy_config_dir / "skills", caps.skills.paths)
+                skill_names = cli_capabilities.materialize_skills(
+                    agy_config_dir / "skills", caps.skills.paths
+                )
 
-            # 3. Write settings.json to the same workspace-scoped agy config dir.
-            settings = _build_settings(caps.mcp_servers, self.config.model, project, location)
+            settings = _build_settings(
+                caps.mcp_servers,
+                self.config.model,
+                project,
+                location,
+                skills_enabled=bool(skill_names),
+            )
             if settings:
-                agy_config_dir.mkdir(parents=True, exist_ok=True)
                 (agy_config_dir / "settings.json").write_text(
                     json.dumps(settings, indent=2), encoding="utf-8"
                 )
-            # Symlink the oauth token from the real home directory to the workspace gemini_dir
-            # so we can authenticate without polluting the home directory with logs/state.
+
+            # Copy (not symlink) the OAuth token into the workspace: agy may
+            # refresh it in place during a run, and a symlink shared across
+            # concurrent runs would race on the one real file.
             real_home = pathlib.Path.home()
             real_token = real_home / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
             if real_token.exists():
-                target_token_dir = gemini_dir / "antigravity-cli"
-                target_token_dir.mkdir(parents=True, exist_ok=True)
-                target_token = target_token_dir / "antigravity-oauth-token"
-                if not target_token.exists():
-                    try:
-                        target_token.symlink_to(real_token)
-                        _log.info("Symlinked OAuth token from %s to %s", real_token, target_token)
-                    except OSError as exc:
-                        _log.warning("Failed to symlink OAuth token: %s", exc)
+                target_token = agy_config_dir / "antigravity-oauth-token"
+                try:
+                    shutil.copy2(real_token, target_token)
+                    _log.info("Copied OAuth token from %s to %s", real_token, target_token)
+                except OSError as exc:
+                    _log.warning("Failed to copy OAuth token: %s", exc)
             else:
                 _log.warning("Real OAuth token not found at %s", real_token)
 
-            # 4. Run the CLI
+            completed: devops_subprocess.CompletedProcess | None = None
+            timeout_exc: core.SubprocessError | None = None
             try:
                 completed = devops_subprocess.run(
                     argv,
@@ -267,15 +265,19 @@ class AgyCliAgent(base.AgentHarness):
                     timeout=self.config.timeout_sec,
                 )
             except core.SubprocessError as exc:
-                return agents_result.AgentResult.errored(f"antigravity-cli subprocess error: {exc}")
+                # check=False means this can only be a timeout. agy may have
+                # already written a partial transcript before being killed,
+                # so fall through to recover it instead of returning early
+                # and losing the workspace to the `with` block's cleanup.
+                timeout_exc = exc
             except OSError as exc:
                 return agents_result.AgentResult.errored(
                     f"antigravity-cli binary unavailable: {exc}"
                 )
 
-            # 5. Locate the generated session log file in the workspace's gemini_dir
-            # Since we passed --gemini_dir, all logs and conversations are stored there.
-            conv_dir = gemini_dir / "antigravity-cli" / "conversations"
+            # All logs and conversations land under agy_config_dir since we
+            # passed --gemini_dir.
+            conv_dir = agy_config_dir / "conversations"
 
             session_text = ""
             if conv_dir.exists():
@@ -285,8 +287,7 @@ class AgyCliAgent(base.AgentHarness):
                     db_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
                     latest_uuid = db_files[0].stem
                     transcript_path = (
-                        gemini_dir
-                        / "antigravity-cli"
+                        agy_config_dir
                         / "brain"
                         / latest_uuid
                         / ".system_generated"
@@ -305,24 +306,25 @@ class AgyCliAgent(base.AgentHarness):
             if not session_text:
                 _log.warning("Failed to retrieve session log, falling back to empty")
 
-        # 6. Parse the session log to extract trajectory and metrics
         output, trajectory, tokens, parse_errors = parsing.parse_session_jsonl(session_text)
 
         errors: list[str] = list(parse_errors)
-        if completed.returncode != 0:
+        metadata: dict = {}
+        if timeout_exc is not None:
+            errors.append(f"antigravity-cli subprocess error: {timeout_exc}")
+            if not output:
+                output = (timeout_exc.stdout or "").strip() or f"Error: {timeout_exc}"
+        elif completed.returncode != 0:
             stderr = (completed.stderr or "").strip()
             errors.append(f"agy exited {completed.returncode}: {stderr or '<no stderr>'}")
+            metadata["returncode"] = completed.returncode
             if not output:
                 output = f"Error: agy exited {completed.returncode}"
 
         # If we couldn't find a session file but the run succeeded, we might have no output.
         # Fall back to stdout if output is empty.
-        if not output and completed.stdout:
+        if not output and completed is not None and completed.stdout:
             output = completed.stdout.strip()
-
-        metadata: dict = {}
-        if completed.returncode != 0:
-            metadata["returncode"] = completed.returncode
 
         return agents_result.AgentResult(
             output=output,

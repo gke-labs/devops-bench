@@ -80,11 +80,11 @@ def _parse_tool_result(result_list: list) -> tuple[str, str]:
 def parse_transcript_jsonl(jsonl_text: str) -> tuple[str, list[dict], dict, list[str]]:
     """Parse Antigravity CLI transcript.jsonl into the canonical shape."""
     errors: list[str] = []
-    trajectory: list[dict] = []
+    trajectory: list[agents_result.ToolCall] = []
     output_parts: list[str] = []
     aggregated_tokens = {"input": 0, "output": 0, "total": 0, "cached": 0}
 
-    pending_tool_calls: list[dict] = []
+    pending_tool_calls: list[agents_result.ToolCall] = []
 
     for lineno, raw in enumerate(jsonl_text.splitlines(), start=1):
         line = raw.strip()
@@ -119,35 +119,30 @@ def parse_transcript_jsonl(jsonl_text: str) -> tuple[str, list[dict], dict, list
                     for tc in record["tool_calls"]:
                         if isinstance(tc, dict):
                             pending_tool_calls.append(
-                                {
-                                    "name": tc.get("name", ""),
-                                    "args": tc.get("args") or {},
-                                    "result": None,
-                                    "status": "called",
-                                }
+                                agents_result.ToolCall(
+                                    name=tc.get("name", ""),
+                                    args=tc.get("args") or {},
+                                )
                             )
             else:
-                # This is a tool execution result!
-                # Match it with the first pending tool call
+                # This is a tool execution result! Match it with the first pending call.
                 if pending_tool_calls:
-                    tc = pending_tool_calls.pop(0)
-                    tc["result"] = record.get("content") or record.get("error") or ""
-                    tc["status"] = "completed" if record.get("status") == "DONE" else "error"
-                    trajectory.append(tc)
-                else:
-                    # Ignore tool results that don't match any pending call
-                    pass
+                    call = pending_tool_calls.pop(0)
+                    call.result = record.get("content") or record.get("error") or ""
+                    call.status = "completed" if record.get("status") == "DONE" else "error"
+                    trajectory.append(call)
+                # else: ignore tool results that don't match any pending call
         elif stype == "ERROR_MESSAGE" and record.get("content"):
             errors.append(f"System error: {record['content']}")
 
     # If there are still pending tool calls at the end, they were probably interrupted
-    for tc in pending_tool_calls:
-        tc["status"] = "interrupted"
-        trajectory.append(tc)
+    for call in pending_tool_calls:
+        call.status = "interrupted"
+        trajectory.append(call)
 
     aggregated_tokens["total"] = aggregated_tokens["input"] + aggregated_tokens["output"]
     output = "".join(output_parts)
-    return output, trajectory, aggregated_tokens, errors
+    return output, [call.to_dict() for call in trajectory], aggregated_tokens, errors
 
 
 def parse_session_jsonl(jsonl_text: str) -> tuple[str, list[dict], dict, list[str]]:
@@ -159,14 +154,23 @@ def parse_session_jsonl(jsonl_text: str) -> tuple[str, list[dict], dict, list[st
     if not jsonl_text:
         return "", [], {"input": 0, "output": 0, "total": 0, "cached": 0}, ["Empty session log"]
 
-    # Detect format by looking at the first non-empty line
-    first_line = ""
+    # Detect format from the first non-empty line's parsed keys, not a raw
+    # substring match (a user message that merely contains the text
+    # "step_index" would otherwise be misrouted).
+    first_record: dict | None = None
     for line in jsonl_text.splitlines():
-        if line.strip():
-            first_line = line.strip()
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
             break
+        if isinstance(parsed, dict):
+            first_record = parsed
+        break
 
-    if "step_index" in first_line:
+    if first_record is not None and "step_index" in first_record:
         return parse_transcript_jsonl(jsonl_text)
 
     # Fallback to old parser
@@ -178,7 +182,6 @@ def _parse_old_session_jsonl(jsonl_text: str) -> tuple[str, list[dict], dict, li
     errors: list[str] = []
     message_ids: list[str] = []
     messages_by_id: dict[str, dict] = {}
-    metadata: dict = {}
 
     # 1. Reconstruct final history by applying rewinds
     for lineno, raw in enumerate(jsonl_text.splitlines(), start=1):
@@ -206,19 +209,17 @@ def _parse_old_session_jsonl(jsonl_text: str) -> tuple[str, list[dict], dict, li
                 message_ids.clear()
                 messages_by_id.clear()
         elif "$set" in record and isinstance(record["$set"], dict):
-            metadata.update(record["$set"])
+            continue  # control record, not a chat message
         elif "id" in record and "type" in record:
             mid = str(record["id"])
             if mid not in messages_by_id:
                 message_ids.append(mid)
             messages_by_id[mid] = record
         elif "sessionId" in record:
-            for k, v in record.items():
-                if k != "messages":
-                    metadata[k] = v
+            continue  # session header, not a chat message
 
     # 2. Extract trajectory, output, and tokens from the reconstructed messages
-    trajectory: list[core.ToolCall] = []
+    trajectory: list[agents_result.ToolCall] = []
     output_parts: list[str] = []
     aggregated_tokens = {"input": 0, "output": 0, "total": 0, "cached": 0}
 

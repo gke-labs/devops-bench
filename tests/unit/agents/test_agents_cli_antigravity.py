@@ -26,6 +26,7 @@ from devops_bench.agents import config as agents_config
 from devops_bench.agents.cli.antigravity import agent as agy_mod
 from devops_bench.agents.cli.antigravity import parsing
 from devops_bench.core import subprocess as devops_subprocess
+from devops_bench.core.errors import SubprocessError
 
 
 def _jsonl(*records: dict) -> str:
@@ -212,9 +213,61 @@ def test_parse_transcript_jsonl():
     ]
 
 
+def test_parse_transcript_jsonl_marks_non_done_result_as_error():
+    transcript = _jsonl(
+        {"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "go"},
+        {
+            "step_index": 1,
+            "source": "MODEL",
+            "type": "PLANNER_RESPONSE",
+            "tool_calls": [{"name": "run_command", "args": {"CommandLine": "false"}}],
+        },
+        {
+            "step_index": 2,
+            "source": "MODEL",
+            "type": "RUN_COMMAND",
+            "status": "FAILED",
+            "content": "command not found",
+        },
+    )
+    _, trajectory, _, _ = parsing.parse_session_jsonl(transcript)
+    assert trajectory == [
+        {
+            "name": "run_command",
+            "args": {"CommandLine": "false"},
+            "result": "command not found",
+            "status": "error",
+        }
+    ]
+
+
+def test_parse_transcript_jsonl_marks_trailing_pending_calls_as_interrupted():
+    transcript = _jsonl(
+        {"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "go"},
+        {
+            "step_index": 1,
+            "source": "MODEL",
+            "type": "PLANNER_RESPONSE",
+            "tool_calls": [{"name": "long_running_tool", "args": {}}],
+        },
+        # No matching result record follows: the run ended mid-tool-call.
+    )
+    _, trajectory, _, _ = parsing.parse_session_jsonl(transcript)
+    assert trajectory == [
+        {
+            "name": "long_running_tool",
+            "args": {},
+            "result": None,
+            "status": "interrupted",
+        }
+    ]
+
+
 def test_build_settings_renders_mcp_and_model():
     mcp = capabilities.McpBinding(name="gke", command=("gke-mcp", "run"))
-    settings = agy_mod._build_settings((mcp,), "google/gemini-3.5-flash", "my-project", "us-east1")
+    settings = agy_mod._build_settings(
+        (mcp,), "google/gemini-3.5-flash", "my-project", "us-east1", skills_enabled=True
+    )
 
     assert settings["experimental"]["skills"] is True
     assert settings["modelConfigs"]["defaultModel"] == "gemini-3.5-flash"
@@ -228,20 +281,36 @@ def test_build_settings_renders_mcp_and_model():
     }
 
 
+def test_build_settings_omits_skills_block_when_disabled():
+    settings = agy_mod._build_settings((), "google/gemini-3.5-flash")
+
+    assert "experimental" not in settings
+    # No mcp servers, project, or location either: only modelConfigs remains.
+    assert settings == {"modelConfigs": {"defaultModel": "gemini-3.5-flash"}}
+
+
 def test_build_env_sets_auth_and_presets():
     config = agents_config.AgentConfig(
         model="gemini-3.5-flash",
         api_key="secret-key",
     )
-    with mock.patch.dict("os.environ", {"GOOGLE_CLOUD_PROJECT": "my-project"}):
-        env = agy_mod._build_env(config)
+    env = agy_mod._build_env(config)
 
     assert "HOME" not in env  # HOME must not be overridden
     assert env["GEMINI_CLI_TRUST_WORKSPACE"] == "true"
     assert env["GEMINI_API_KEY"] == "secret-key"
     assert env["GOOGLE_API_KEY"] == "secret-key"
-    assert env["GOOGLE_CLOUD_PROJECT"] == "my-project"
+    assert env["GEMINI_MODEL"] == "gemini-3.5-flash"
     assert env["OTEL_SDK_DISABLED"] == "true"
+
+
+def test_build_env_resolves_provider_qualified_model_name():
+    # GEMINI_MODEL must match the bare id used by --model= and modelConfigs,
+    # not the raw "provider/model" form.
+    config = agents_config.AgentConfig(model="google/gemini-3.5-flash")
+    env = agy_mod._build_env(config)
+
+    assert env["GEMINI_MODEL"] == "gemini-3.5-flash"
 
 
 @mock.patch.object(pathlib.Path, "home")
@@ -296,3 +365,95 @@ def test_agy_cli_agent_execute_flow(mock_run, mock_home, tmp_path):
     assert "--dangerously-skip-permissions" in args
     assert "--prompt=run task" in args
     assert any(a.startswith("--gemini_dir=") for a in args)
+
+
+def _write_sample_transcript(cwd: pathlib.Path) -> None:
+    root_dir = cwd / ".gemini" / "antigravity-cli"
+    conv_dir = root_dir / "conversations"
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    uuid = "test-uuid-123"
+    (conv_dir / f"{uuid}.db").write_text("", encoding="utf-8")
+    transcript_dir = root_dir / "brain" / uuid / ".system_generated" / "logs"
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+    (transcript_dir / "transcript.jsonl").write_text(SAMPLE_SESSION, encoding="utf-8")
+
+
+@mock.patch.object(pathlib.Path, "home")
+@mock.patch.object(devops_subprocess, "run")
+def test_agy_cli_agent_execute_flow_nonzero_exit_records_error_and_metadata(
+    mock_run, mock_home, tmp_path
+):
+    mock_home.return_value = tmp_path
+    mock_run.return_value = SimpleNamespace(args=["agy"], returncode=1, stdout="", stderr="boom")
+
+    def side_effect(*args, **kwargs):
+        _write_sample_transcript(kwargs.get("cwd") or tmp_path)
+        return mock_run.return_value
+
+    mock_run.side_effect = side_effect
+
+    config = agents_config.AgentConfig(
+        target="/bin/agy",
+        model="gemini-3.5-flash",
+        capabilities=capabilities.AllCapabilities(),
+    )
+    result = agy_mod.AgyCliAgent(config)._execute("run task")
+
+    assert result.errors == ["agy exited 1: boom"]
+    assert result.metadata == {"returncode": 1}
+    # The transcript was still recovered even though the run failed.
+    assert "Cluster-a is running v1.30" in result.output
+
+
+@mock.patch.object(pathlib.Path, "home")
+@mock.patch.object(devops_subprocess, "run")
+def test_agy_cli_agent_execute_flow_missing_transcript_falls_back_to_stdout(
+    mock_run, mock_home, tmp_path
+):
+    mock_home.return_value = tmp_path
+    # No side_effect: agy writes no conversations/transcript this run.
+    mock_run.return_value = SimpleNamespace(
+        args=["agy"], returncode=0, stdout="raw agy stdout", stderr=""
+    )
+
+    config = agents_config.AgentConfig(
+        target="/bin/agy",
+        model="gemini-3.5-flash",
+        capabilities=capabilities.AllCapabilities(),
+    )
+    result = agy_mod.AgyCliAgent(config)._execute("run task")
+
+    assert result.output == "raw agy stdout"
+    assert result.trajectory == []
+    assert "Empty session log" in result.errors
+
+
+@mock.patch.object(pathlib.Path, "home")
+@mock.patch.object(devops_subprocess, "run")
+def test_agy_cli_agent_execute_flow_timeout_recovers_partial_transcript(
+    mock_run, mock_home, tmp_path
+):
+    # Regression test: core.subprocess.run raises SubprocessError on a timeout
+    # even with check=False. The transcript agy wrote before being killed
+    # must still be recovered instead of being lost with the tempdir.
+    mock_home.return_value = tmp_path
+
+    def side_effect(*args, **kwargs):
+        cwd = kwargs.get("cwd")
+        if cwd is None:
+            return SimpleNamespace(args=["gcloud"], returncode=1, stdout="", stderr="")
+        _write_sample_transcript(cwd)
+        raise SubprocessError(["agy"], returncode=-1, stdout="", stderr="")
+
+    mock_run.side_effect = side_effect
+
+    config = agents_config.AgentConfig(
+        target="/bin/agy",
+        model="gemini-3.5-flash",
+        capabilities=capabilities.AllCapabilities(),
+        timeout_sec=1,
+    )
+    result = agy_mod.AgyCliAgent(config)._execute("run task")
+
+    assert len(result.trajectory) == 2
+    assert any("subprocess error" in e for e in result.errors)
