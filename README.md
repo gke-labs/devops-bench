@@ -79,8 +79,7 @@ See the latest scores on the [leaderboard](https://gke-labs.github.io/devops-ben
 
 ## Documentation
 
-Full documentation lives in [`docs/`](docs/README.md). Start with
-[Getting started](docs/getting-started.md), then browse the component docs and
+We welcome contributions around adding new tasks, models or agent harness. You can review documentation in [`docs/`](docs/README.md) for detailed instructions and skills. Start with [Getting started](docs/getting-started.md), then browse the component docs and
 how-to guides from the [documentation index](docs/README.md).
 
 ## License
