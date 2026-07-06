@@ -137,9 +137,8 @@ def parse_transcript_jsonl(jsonl_text: str) -> tuple[str, list[dict], dict, list
                 else:
                     # Ignore tool results that don't match any pending call
                     pass
-        elif stype == "ERROR_MESSAGE":
-            if record.get("content"):
-                errors.append(f"System error: {record['content']}")
+        elif stype == "ERROR_MESSAGE" and record.get("content"):
+            errors.append(f"System error: {record['content']}")
 
     # If there are still pending tool calls at the end, they were probably interrupted
     for tc in pending_tool_calls:
