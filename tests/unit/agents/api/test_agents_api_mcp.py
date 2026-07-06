@@ -55,6 +55,54 @@ def test_mcp_client_enter_rejects_empty_server_path():
         asyncio.run(client.__aenter__())
 
 
+def test_mcp_client_enter_layers_binding_env_over_sdk_default(monkeypatch):
+    """The spawned server's env is the SDK's safe default plus ``McpBinding.env``.
+
+    Regression for a fix that first read ``os.environ`` directly (forwarding
+    every secret in the harness process to an arbitrary MCP server binary,
+    and violating the "config flows through AgentConfig" convention). The
+    correct behavior layers the caller-supplied env on top of the SDK's own
+    curated default — never the full process environment.
+    """
+    import mcp.client.session as session_mod
+    import mcp.client.stdio as stdio_mod
+
+    captured: dict = {}
+
+    class _FakeStdioCtx:
+        async def __aenter__(self):
+            return (SimpleNamespace(), SimpleNamespace())
+
+        async def __aexit__(self, *_a):
+            return False
+
+    class _FakeSession:
+        def __init__(self, *_a, **_kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        async def initialize(self):
+            pass
+
+    def fake_stdio_client(server_params):
+        captured["env"] = server_params.env
+        return _FakeStdioCtx()
+
+    monkeypatch.setattr(stdio_mod, "get_default_environment", lambda: {"PATH": "/safe/bin"})
+    monkeypatch.setattr(stdio_mod, "stdio_client", fake_stdio_client)
+    monkeypatch.setattr(session_mod, "ClientSession", _FakeSession)
+
+    client = MCPClient("does-not-matter", env=(("KUBECONFIG", "/run/kubeconfig"),))
+    asyncio.run(client.__aenter__())
+
+    assert captured["env"] == {"PATH": "/safe/bin", "KUBECONFIG": "/run/kubeconfig"}
+
+
 def test_call_tool_degrades_gracefully_when_deepeval_missing(monkeypatch):
     """If ``deepeval`` is not installed, ``call_tool`` still works (untraced).
 

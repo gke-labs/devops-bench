@@ -36,6 +36,11 @@ class MCPClient:
 
     Attributes:
         server_path: Command used to launch the MCP server over stdio.
+        env: Extra ``(key, value)`` pairs added to the server's environment,
+            on top of the ``mcp`` SDK's own safe default — never the full
+            process environment (config flows through ``AgentConfig``, never
+            a direct ``os.environ`` read, and a spawned MCP server must not
+            see credentials it wasn't explicitly given).
         session: The active ``ClientSession`` once entered, else ``None``.
 
     Raises:
@@ -43,15 +48,20 @@ class MCPClient:
         ValueError: If ``server_path`` is empty or whitespace-only (on enter).
     """
 
-    def __init__(self, server_path: str) -> None:
+    def __init__(self, server_path: str, env: tuple[tuple[str, str], ...] = ()) -> None:
         self.server_path = server_path
+        self.env = env
         self.exit_stack = AsyncExitStack()
         self.session: Any = None
 
     async def __aenter__(self) -> MCPClient:
         try:
             from mcp.client.session import ClientSession
-            from mcp.client.stdio import StdioServerParameters, stdio_client
+            from mcp.client.stdio import (
+                StdioServerParameters,
+                get_default_environment,
+                stdio_client,
+            )
         except ImportError as exc:  # pragma: no cover - exercised via MissingDependencyError
             raise MissingDependencyError("the API agent's MCP client", "mcp") from exc
 
@@ -65,10 +75,13 @@ class MCPClient:
                 "MCP server_path is empty; set AGENT_TARGET/MCP_SERVER_PATH to the "
                 "MCP server command."
             )
-        server_params = StdioServerParameters(command=parts[0], args=parts[1:])
-        stdio_transport = await self.exit_stack.enter_async_context(
-            stdio_client(server_params)
-        )
+        # Layer the caller-supplied env (McpBinding.env, e.g. KUBECONFIG) on top
+        # of the SDK's own safe default (PATH/HOME/etc.) rather than the full
+        # process environment, which would leak credentials to an arbitrary
+        # task/operator-configured binary.
+        server_env = {**get_default_environment(), **dict(self.env)}
+        server_params = StdioServerParameters(command=parts[0], args=parts[1:], env=server_env)
+        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
         self.read_stream, self.write_stream = stdio_transport
         self.session = await self.exit_stack.enter_async_context(
             ClientSession(self.read_stream, self.write_stream)

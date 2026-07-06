@@ -500,7 +500,7 @@ def test_execute_folds_assistant_tool_pairs_into_canonical_trajectory(monkeypatc
     mcp_advertised = [SimpleNamespace(name="do_thing", description="d", inputSchema=None)]
     mcp = _FakeMCPClient(tools=mcp_advertised)
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
-    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path: mcp)
+    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path, env=(): mcp)
 
     result = ApiAgent(AgentConfig(capabilities=_mcp_caps("server"))).run("ping")
 
@@ -548,7 +548,7 @@ def test_execute_dispatch_error_lands_in_errors_and_continues(monkeypatch):
     )
     mcp = _ExplodingMCP(tools=[SimpleNamespace(name="boom", description="d", inputSchema=None)])
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
-    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path: mcp)
+    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path, env=(): mcp)
 
     result = ApiAgent(AgentConfig(capabilities=_mcp_caps("server"))).run("ping")
 
@@ -658,7 +658,7 @@ def test_execute_returns_errored_on_mcpclient_value_error(monkeypatch):
     """
 
     class _BoomMCP:
-        def __init__(self, _path: str) -> None: ...
+        def __init__(self, _path: str, env: tuple = ()) -> None: ...
 
         async def __aenter__(self) -> _BoomMCP:
             raise ValueError(
@@ -866,7 +866,7 @@ def test_execute_runs_with_mcp_only_no_skills(monkeypatch):
     mcp_tools = [SimpleNamespace(name="do_thing", description="d", inputSchema=None)]
     mcp = _FakeMCPClient(tools=mcp_tools)
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
-    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path: mcp)
+    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path, env=(): mcp)
 
     result = ApiAgent(AgentConfig(capabilities=_mcp_caps("server"))).run("p")
     assert result.errors == []
@@ -886,7 +886,7 @@ def test_execute_runs_with_both_mcp_and_skills(monkeypatch, tmp_path):
     fake = _FakeLLMClient([_Turn(text="working", calls=fc), _Turn(text="done")])
     mcp = _FakeMCPClient(tools=[SimpleNamespace(name="do_thing", description="d", inputSchema=None)])
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
-    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path: mcp)
+    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path, env=(): mcp)
 
     caps = AllCapabilities(
         mcp_servers=(McpBinding(name="t", command=("server",)),),
@@ -968,7 +968,7 @@ def test_execute_preserves_spaced_command_token_through_shlex_roundtrip(monkeypa
     captured: dict = {}
 
     class _RecordingMCP(_FakeMCPClient):
-        def __init__(self, path: str) -> None:
+        def __init__(self, path: str, env: tuple = ()) -> None:
             super().__init__(tools=[])
             captured["path"] = path
 

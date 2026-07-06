@@ -118,6 +118,32 @@ def test_from_env_skips_mcp_binding_when_neither_command_nor_tools_set():
     assert cfg.capabilities.mcp_servers == ()
 
 
+def test_from_env_mcp_binding_forwards_only_the_kubeconfig_allowlist():
+    """The MCP binding's ``env`` carries KUBECONFIG/CLOUDSDK_CONFIG when set,
+    but never an unrelated (and potentially secret) var like AGENT_API_KEY —
+    the spawned MCP server must not see credentials it wasn't explicitly
+    given."""
+    cfg = AgentConfig.from_env(
+        {
+            "AGENT_MCP_SERVER": "/usr/local/bin/mcp-gke",
+            "AGENT_API_KEY": "super-secret",
+            "KUBECONFIG": "/run/kubeconfig",
+            "CLOUDSDK_CONFIG": "/run/gcloud",
+        }
+    )
+    (binding,) = cfg.capabilities.mcp_servers
+    assert dict(binding.env) == {
+        "KUBECONFIG": "/run/kubeconfig",
+        "CLOUDSDK_CONFIG": "/run/gcloud",
+    }
+
+
+def test_from_env_mcp_binding_env_omits_unset_allowlist_vars():
+    cfg = AgentConfig.from_env({"AGENT_MCP_SERVER": "/usr/local/bin/mcp-gke"})
+    (binding,) = cfg.capabilities.mcp_servers
+    assert binding.env == ()
+
+
 def test_from_env_blank_rules_text_yields_default_rules():
     cfg = AgentConfig.from_env({"AGENT_RULES_TEXT": ""})
     assert cfg.capabilities.rules == AgentRules()

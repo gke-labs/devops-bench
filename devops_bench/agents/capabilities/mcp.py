@@ -41,11 +41,18 @@ class McpBinding:
             passes these via ``--allowed-tools``; the API agent advertises
             whatever the live MCP server lists (this field acts as
             documentation / pre-approval there).
+        env: Extra ``(key, value)`` pairs to add to the MCP server's process
+            environment, layered on top of the ``mcp`` SDK's own safe default
+            (``PATH``/``HOME``/etc.) — never the full parent environment, so a
+            spawned MCP server never sees API keys / credentials it wasn't
+            explicitly given. A tuple (not a dict) so the frozen dataclass
+            stays hashable.
     """
 
     name: str = ""
     command: tuple[str, ...] = ()
     tools: tuple[str, ...] = ()
+    env: tuple[tuple[str, str], ...] = ()
 
 
 @runtime_checkable
