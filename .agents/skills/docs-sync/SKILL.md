@@ -33,7 +33,7 @@ agent harness, the CLI, metrics, a task, the leaderboard, a directory move.
 Tree-walk `docs/` and read the doc map in
 [`../../../docs/README.md`](../../../docs/README.md). Also read the nearest
 `AGENTS.md` to the changed code — the root `AGENTS.md`, plus
-`devops_bench/AGENTS.md`, `site_new/AGENTS.md`, or `tasks/AGENTS.md` — since those
+`devops_bench/AGENTS.md`, `site/AGENTS.md`, or `tasks/AGENTS.md` — since those
 route contributors and often need the same edit as the docs.
 
 ### 3. Map changed area → affected docs
@@ -46,7 +46,7 @@ route contributors and often need the same edit as the docs.
 | CLI flags / env (`devops_bench/cli.py`, `run.py`, `devops_bench/evalharness/`) | [`run-evals.md`](../../../docs/how-to/run-evals.md) + root [`README.md`](../../../README.md) |
 | Metrics (`devops_bench/metrics/`) | [`metrics.md`](../../../docs/components/metrics.md) |
 | Task schema / placeholders (`devops_bench/tasks/`) | [`add-a-task.md`](../../../docs/how-to/add-a-task.md) + [`glossary.md`](../../../docs/components/glossary.md) |
-| Leaderboard / ingest (`site_new/`) | [`leaderboard.md`](../../../docs/how-to/leaderboard.md) |
+| Leaderboard / ingest (`site/`) | [`leaderboard.md`](../../../docs/how-to/leaderboard.md) |
 | Directory move / rename | the codebase tree in [`glossary.md`](../../../docs/components/glossary.md) + the relevant `AGENTS.md` |
 
 A change can touch more than one row (e.g. a new CLI flag that exposes a new

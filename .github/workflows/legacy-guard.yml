@@ -1,4 +1,4 @@
-# Blocks PRs that add to or modify deprecated legacy codepaths (pkg/, deployers/, skills/, site/)
+# Blocks PRs that add to or modify deprecated legacy codepaths (pkg/, deployers/, skills/)
 # unless the PR carries the 'legacy-override' label. Deletions are always allowed. The canonical
 # pipeline is devops_bench/. See hack/check-legacy-readonly.sh.
 # No path filter: the guard always runs and no-ops fast when clean, so it can be a required check

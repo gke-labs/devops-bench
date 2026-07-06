@@ -176,4 +176,4 @@ Docs, `.agents/` skills, and shared references sit *on top of* the code, so each
 | **9** | repo overview + routers + docs-sync skill | `docs/README.md`, `docs/components/architecture.md`, `docs/components/glossary.md`, `docs/contributing.md`, `docs/appendix/known_issues.md`, `AGENTS.md`, `CLAUDE.md`, `devops_bench/AGENTS.md`, `.agents/skills/docs-sync/` | everything (ships last) | **Pradeep** |
 
 > [!NOTE]
-> **Never migrated (retires with `gke-labs`):** the `migration-prep` skill and `docs/migration/**` (they exist only to run this migration), plus the leaderboard assets — `site/**`, `site_new/**` (incl. `site_new/AGENTS.md`) and `docs/how-to/leaderboard.md`. These are kept out of the frontier and marked `NEVER_SYNC`.
+> **Never migrated (retires with `gke-labs`):** the `migration-prep` skill and `docs/migration/**` (they exist only to run this migration), plus the leaderboard assets — `site/**` (incl. `site/AGENTS.md`) and `docs/how-to/leaderboard.md`. These are kept out of the frontier and marked `NEVER_SYNC`.

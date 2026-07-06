@@ -11,7 +11,7 @@
 # repos and is intentionally NOT listed here.
 #
 # gke-labs-only tooling — the migration-prep skill, docs/migration/**, and the leaderboard assets
-# (site*/**, docs/how-to/leaderboard.md) — never migrates: it stays NEVER_SYNC and is not listed.
+# (site/**, docs/how-to/leaderboard.md) — never migrates: it stays NEVER_SYNC and is not listed.
 # Each migrating skill's .claude/skills/<name> symlink travels with its .agents/skills/<name>/ content.
 #
 # See docs/migration/README.md and pr-plan.md. Empty until the first module lands.

@@ -1,6 +1,6 @@
 # Operating the leaderboard
 
-The devops-bench leaderboard (`site_new/`) is a React + Vite single-page app that
+The devops-bench leaderboard (`site/`) is a React + Vite single-page app that
 ranks **model × harness** pairings across DevOps tasks. It is backed by **Cloud
 Firestore** and served via **Firebase Hosting**. The live site is at
 <https://gke-labs.github.io/devops-bench/>.
@@ -69,7 +69,7 @@ Each row carries its setup and run identity (`setupId`, `model`, `harness`,
 token counts — the identity fields are denormalized onto **every** row, so each
 row is self-describing and the ingest never needs the manifest. The harness emits
 rows in this shape for you; for the exact field list and validation rules, see
-[`site_new/ingest/PROTOCOL.md`](../../site_new/ingest/PROTOCOL.md).
+[`site/ingest/PROTOCOL.md`](../../site/ingest/PROTOCOL.md).
 
 ### The `setupId` convention
 
@@ -100,7 +100,7 @@ a 0%. Do not invent a `0.0` for a crash.
 
 ## How ingest works
 
-The ingest CLI lives in `site_new/ingest/`. Running `ingest.mjs` validates the
+The ingest CLI lives in `site/ingest/`. Running `ingest.mjs` validates the
 rows, upserts them into the raw `results` collection (**idempotently** — a doc id
 derived from the row's natural key means re-ingesting a run overwrites rather than
 duplicates), re-derives the `setups` read-model from the **full** `results` set so
@@ -111,14 +111,14 @@ lives in one place and is reused by derive, you can re-score history from existi
 rows without re-uploading (see [Re-derive only](#re-derive-only-no-re-upload)).
 
 For the stage-by-stage breakdown, see
-[`site_new/ingest/README.md`](../../site_new/ingest/README.md).
+[`site/ingest/README.md`](../../site/ingest/README.md).
 
 ## Ingest new results — step by step
 
 ### One-time setup
 
 ```bash
-cd site_new/ingest
+cd site/ingest
 npm install
 ```
 
@@ -180,10 +180,10 @@ manually**; the ingest only connects when `FIRESTORE_EMULATOR_HOST` is set, it
 never launches one.
 
 ```bash
-# Terminal 1 — start the emulator (from site_new/), leave it running
+# Terminal 1 — start the emulator (from site/), leave it running
 firebase emulators:start --only firestore --project devops-bench-shared
 
-# Terminal 2 — ingest into it (from site_new/ingest/)
+# Terminal 2 — ingest into it (from site/ingest/)
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
   node ingest.mjs fixtures/
 ```
@@ -193,7 +193,7 @@ can see the result immediately in the dev server.
 
 ## Run and deploy the site
 
-All commands run from `site_new/`. The target database is chosen by Vite mode, so
+All commands run from `site/`. The target database is chosen by Vite mode, so
 switching environments is a one-word change rather than a code edit.
 
 | Command | Firestore | Database |
@@ -211,7 +211,7 @@ the emulator and immediately see it in the dev server.
 To publish the site, build against prod and deploy the rules and hosting:
 
 ```bash
-cd site_new
+cd site
 npm run build
 npx -y firebase-tools deploy --only firestore:rules,hosting --project devops-bench-shared
 ```
