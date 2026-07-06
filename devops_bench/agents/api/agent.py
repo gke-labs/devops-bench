@@ -291,6 +291,7 @@ async def _run_async(
     client: LLMClient,
     prompt: str,
     mcp_server_path: str | None,
+    mcp_server_env: tuple[tuple[str, str], ...],
     skills_paths: tuple[str, ...],
     rules_text: str | None,
     max_turns: int,
@@ -307,6 +308,9 @@ async def _run_async(
         prompt: Task prompt seeding the loop.
         mcp_server_path: Command launching the MCP server, or ``None`` to skip
             MCP entirely.
+        mcp_server_env: Extra ``(key, value)`` pairs for the spawned MCP
+            server's environment (``McpBinding.env``); ignored when
+            ``mcp_server_path`` is ``None``.
         skills_paths: Filesystem locations to discover local skills under.
         rules_text: Operator-brief text (the ``AgentRules.text`` payload)
             handed to the provider as the ``system_instruction``; ``None`` /
@@ -336,7 +340,7 @@ async def _run_async(
         )
         return loop_result, errors, skill_names
 
-    async with MCPClient(mcp_server_path) as mcp_client:
+    async with MCPClient(mcp_server_path, env=mcp_server_env) as mcp_client:
         tools = await _gather_tools(mcp_client, skill_tools)
         formatted = client.format_tools(tools)
         dispatch = _build_dispatch(mcp_client, skill_resources, errors)
@@ -408,7 +412,10 @@ class ApiAgent(AgentHarness):
         # an empty-command binding is treated as "no MCP". ``shlex.join``
         # round-trips ``MCPClient``'s ``shlex.split`` so a spaced argv token
         # (``("uv run", "mcp-server")``) is rebuilt as a single quoted word.
-        mcp_server_path = shlex.join(mcp_binding.command) if mcp_binding and mcp_binding.command else None
+        mcp_server_path = (
+            shlex.join(mcp_binding.command) if mcp_binding and mcp_binding.command else None
+        )
+        mcp_server_env = mcp_binding.env if mcp_binding else ()
         skills_paths = self.config.capabilities.skills.paths
         rules_text = self.config.capabilities.rules.text
 
@@ -418,6 +425,7 @@ class ApiAgent(AgentHarness):
                     llm_client,
                     prompt,
                     mcp_server_path,
+                    mcp_server_env,
                     skills_paths,
                     rules_text,
                     max_turns,

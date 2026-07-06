@@ -38,6 +38,31 @@ def _parse_csv(raw: str | None) -> tuple[str, ...]:
     return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
+# Env vars an MCP server's k8s/cloud tools need to target the run's cluster.
+# Deliberately a short, explicit allowlist rather than the full environment:
+# an MCP server is an arbitrary task/operator-configured binary, and it must
+# never see credentials (AGENT_API_KEY, GOOGLE_APPLICATION_CREDENTIALS, ...) it
+# wasn't explicitly given. Both vars are set by RunEnv for per-run isolation.
+_MCP_INHERITED_ENV_VARS = ("KUBECONFIG", "CLOUDSDK_CONFIG")
+
+
+def _mcp_env(env: Mapping[str, str] | None) -> tuple[tuple[str, str], ...]:
+    """Collect the allowlisted env vars an MCP server process should inherit.
+
+    Args:
+        env: Optional mapping read from (defaults to ``os.environ``).
+
+    Returns:
+        ``(key, value)`` pairs for each allowlisted var that is actually set;
+        empty when none are.
+    """
+    return tuple(
+        (key, value)
+        for key in _MCP_INHERITED_ENV_VARS
+        if (value := get_env(key, env=env)) is not None
+    )
+
+
 def _build_capabilities_from_env(env: Mapping[str, str] | None) -> AllCapabilities:
     """Build an :class:`AllCapabilities` aggregate from ``AGENT_*`` env vars.
 
@@ -63,7 +88,7 @@ def _build_capabilities_from_env(env: Mapping[str, str] | None) -> AllCapabiliti
         # ``name="default"`` is generic: env-driven from_env has no catalog to
         # pull a real name from, and the agent never inspects it.
         mcp_servers = (
-            McpBinding(name="default", command=mcp_command, tools=allowed_tools),
+            McpBinding(name="default", command=mcp_command, tools=allowed_tools, env=_mcp_env(env)),
         )
 
     skills_paths = _parse_csv(get_env("AGENT_SKILLS_PATHS", env=env))
