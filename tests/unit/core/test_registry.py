@@ -130,12 +130,14 @@ def test_failing_entry_point_is_skipped(mocker):
 
 def test_entry_points_loaded_once_under_concurrency(mocker):
     load_count = {"n": 0}
+    load_count_lock = threading.Lock()
 
     class _SlowEntryPoint:
         name = "plugin"
 
         def load(self):
-            load_count["n"] += 1
+            with load_count_lock:
+                load_count["n"] += 1
             time.sleep(0.02)
             return "value"
 

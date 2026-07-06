@@ -16,10 +16,11 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from devops_bench.core.config import get_env
 
 __all__ = ["ClusterInfo", "RunContext"]
 
@@ -37,7 +38,7 @@ def _resolve_kubeconfig(path: str | None = None) -> str:
     """
     if path:
         return path
-    return os.environ.get("KUBECONFIG") or str(Path(_DEFAULT_KUBECONFIG).expanduser())
+    return get_env("KUBECONFIG") or str(Path(_DEFAULT_KUBECONFIG).expanduser())
 
 
 @dataclass(frozen=True)

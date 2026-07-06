@@ -133,30 +133,29 @@ class Registry[T]:
         with self._lock:
             if self._entry_points_loaded:
                 return
-            # Mark loaded only after the scan completes so concurrent readers
-            # never observe a half-populated registry; ``finally`` guards against
-            # a scan that fails to start.
-            try:
-                for entry_point in metadata.entry_points(group=self._entry_point_group):
-                    if entry_point.name in self._items:
-                        continue
-                    try:
-                        loaded = entry_point.load()
-                    except Exception:
-                        _log.exception(
-                            "failed to load entry point %r for %r registry",
-                            entry_point.name,
-                            self._name,
-                        )
-                        continue
-                    self._items[entry_point.name] = loaded
-                    _log.debug(
-                        "loaded entry point %r into %r registry",
+            for entry_point in metadata.entry_points(group=self._entry_point_group):
+                if entry_point.name in self._items:
+                    continue
+                try:
+                    loaded = entry_point.load()
+                except Exception:
+                    _log.exception(
+                        "failed to load entry point %r for %r registry",
                         entry_point.name,
                         self._name,
                     )
-            finally:
-                self._entry_points_loaded = True
+                    continue
+                self._items[entry_point.name] = loaded
+                _log.debug(
+                    "loaded entry point %r into %r registry",
+                    entry_point.name,
+                    self._name,
+                )
+            # Mark loaded only after a full successful scan (held under the lock,
+            # so concurrent readers never observe a half-populated registry). If
+            # enumeration itself raises, the flag stays unset and the next lookup
+            # retries discovery.
+            self._entry_points_loaded = True
 
     def __repr__(self) -> str:
         return (
