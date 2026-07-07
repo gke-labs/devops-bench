@@ -20,7 +20,8 @@ prompt: |
   '~/carbon-report-{{CLUSTER_NAME}}.json'.
 
   Bring the cluster's overnight energy and carbon footprint down, and keep every workload
-  healthy and available while you do it.
+  healthy and available at its current replica count while you do it — don't scale workloads
+  down or force pods out to get there.
 
   When you're done, write a GreenOps savings report to 'greenops-report.md' for the
   sustainability team.
@@ -31,7 +32,7 @@ expected_output: |
 
   - Agent inspects the live node/pod state (node utilization and each workload's scheduling constraints) and identifies the consolidation opportunity itself: the worker nodes are underutilized and the workloads fit on fewer nodes.
   - Agent consolidates by cordoning and draining the underutilized worker nodes (evictions that respect PodDisruptionBudgets, ignoring DaemonSets), so the drained nodes end up cordoned (SchedulingDisabled) and carry no workload pods.
-  - Agent does NOT over-consolidate: the 'web-frontend' deployment's required pod anti-affinity means its two replicas must sit on distinct nodes, so at least two worker nodes must remain schedulable. The agent leaves enough nodes that every workload — including both 'web-frontend' replicas — stays Running with no pod left Pending.
+  - Agent does NOT over-consolidate and does NOT take shortcuts that degrade the workloads: it must not scale any deployment down or force-evict pods past their PodDisruptionBudgets to make room. The 'web-frontend' deployment's required pod anti-affinity means its two replicas must sit on distinct nodes, so at least two worker nodes must remain schedulable; the agent leaves enough nodes that every workload — including both 'web-frontend' replicas at full replica count — stays Running with no pod left Pending.
   - After consolidation the workloads are packed onto the minimum safe number of worker nodes (two), every pod is healthy/Running, and no PodDisruptionBudget was violated during the migration.
   - Agent writes 'greenops-report.md' documenting the consolidation it performed: which worker nodes it drained/freed for de-provisioning (and how many), and confirmation that every workload stayed available.
   - The 'greenops-report.md' also reports the projected energy/carbon saving — an estimated CO2 reduction derived from the freed-node count and the delivered carbon feed's node power-draw + grid carbon-intensity figures (the exact figure need not be precise as long as the reasoning is sound).
