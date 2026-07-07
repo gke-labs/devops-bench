@@ -7,9 +7,11 @@ de-provisioning, all **without dropping availability** — then reporting the sa
 
 The cluster runs an underutilized fleet spread thinly across several worker nodes
 (the energy-wasteful "before" state). The agent must recognize the consolidation
-opportunity from a carbon-aware capacity report plus live utilization, drain the
-spare nodes safely (honoring PodDisruptionBudgets and pod anti-affinity), and avoid
-over-consolidating to the point of breaking a workload.
+opportunity from live node utilization it inspects itself, drain the spare nodes
+safely (honoring PodDisruptionBudgets and pod anti-affinity), and avoid
+over-consolidating to the point of breaking a workload. A minimal carbon feed
+(grid intensity + per-node power) supplies only the external figures the agent
+can't derive from the cluster, for the savings estimate in its report.
 
 Runs on **kind** (local, on the runner VM) — no cloud dependency, no GKE quota.
 
@@ -22,15 +24,17 @@ Runs on **kind** (local, on the runner VM) — no cloud dependency, no GKE quota
     spreads the pods roughly one-per-node, so every worker carries a little load —
     the underutilized state the agent must consolidate,
   - waits for the fleet to become Available so the agent starts healthy.
-- A declarative `local_file` resource delivers the carbon-aware capacity report to
-  a per-run file `~/carbon-report-<cluster_name>.json` (removed automatically on
-  `tofu destroy`).
-- The report host path derives from `cluster_name` (which the harness
+- A declarative `local_file` resource delivers a minimal carbon feed (off-peak
+  window, grid carbon intensity, per-node power draw — no utilization summary, no
+  recommendation) to a per-run file `~/carbon-report-<cluster_name>.json` (removed
+  automatically on `tofu destroy`).
+- The feed's host path derives from `cluster_name` (which the harness
   run-token-prefixes), so concurrent runs on the shared bastion never collide. The
   prompt references it via `{{CLUSTER_NAME}}`.
-- **Nothing tells the agent which nodes to drain or how far to consolidate** — it
-  reads the report, inspects node utilization and each workload's scheduling
-  constraints, and decides itself.
+- **Nothing tells the agent what to do** — the prompt states only the goal (cut
+  overnight energy/carbon, keep workloads available); the agent inspects node
+  utilization and each workload's scheduling constraints and decides the approach
+  (consolidate → drain the spare nodes) and how far it can safely go itself.
 
 ### The fleet (namespace `workloads`)
 

@@ -1,14 +1,8 @@
 {
-  "generated_by": "carbon-aware capacity planner (grid intensity feed + node telemetry)",
+  "generated_by": "carbon-aware grid intensity feed",
   "region": "us-central1",
   "off_peak_window": "00:00-06:00 America/Chicago",
   "currently_in_off_peak": true,
   "grid_carbon_intensity_gco2eq_per_kwh": 430,
-  "node_power_draw_watts_avg": 250,
-  "fleet_utilization": {
-    "avg_cpu_percent": 11,
-    "avg_memory_percent": 17,
-    "summary": "Worker nodes are heavily underutilized during the off-peak window; the running workloads fit comfortably on a fraction of the current worker nodes."
-  },
-  "recommendation": "During the off-peak window, consolidate the running workloads onto the fewest worker nodes that still keeps every workload healthy and available, and free the spare nodes so the cluster autoscaler can de-provision them. Each worker node removed saves roughly node_power_draw_watts_avg x node-hours of energy, cutting grid carbon emissions at the region's current intensity."
+  "node_power_draw_watts_avg": 250
 }

@@ -15,14 +15,12 @@ infrastructure:
   teardown: true
 prompt: |
   You are the platform sustainability (GreenOps) engineer for the Kubernetes cluster
-  '{{CLUSTER_NAME}}'. It is the overnight off-peak window, and the cluster is running more
-  worker nodes than the light workload actually needs — wasting energy and carbon. A
-  carbon-aware capacity report has been delivered to '~/carbon-report-{{CLUSTER_NAME}}.json'.
+  '{{CLUSTER_NAME}}'. It is the overnight off-peak window and the workload is light. A carbon
+  feed with the current grid carbon intensity and per-node power draw has been delivered to
+  '~/carbon-report-{{CLUSTER_NAME}}.json'.
 
-  Consolidate the running workloads onto fewer worker nodes to cut node-hours and carbon,
-  and take the freed nodes out of service so they can be de-provisioned. Do this without
-  dropping availability — keep every workload healthy and running throughout, and don't
-  consolidate so far that the cluster can no longer place all of its pods.
+  Bring the cluster's overnight energy and carbon footprint down, and keep every workload
+  healthy and available while you do it.
 
   When you're done, write a GreenOps savings report to 'greenops-report.md' for the
   sustainability team.
@@ -31,9 +29,10 @@ expected_output: |
 
   GRADING NOTE: Grade on outcome and sound reasoning. Any sound drain/eviction approach is acceptable (e.g. 'kubectl cordon' + 'kubectl drain --ignore-daemonsets', or cordon + manual PDB-aware eviction). The exact CO2 figure need not be precise as long as the reasoning is sound. "De-provisioning" here means the freed nodes end cordoned (SchedulingDisabled) and emptied of workload pods — what a cluster autoscaler would then reclaim.
 
-  - Agent analyzes the carbon report at '~/carbon-report-{{CLUSTER_NAME}}.json' together with the live node/pod state and identifies the consolidation opportunity: the worker nodes are underutilized during the off-peak window and the workloads fit on fewer nodes.
+  - Agent inspects the live node/pod state (node utilization and each workload's scheduling constraints) and identifies the consolidation opportunity itself: the worker nodes are underutilized and the workloads fit on fewer nodes.
   - Agent consolidates by cordoning and draining the underutilized worker nodes (evictions that respect PodDisruptionBudgets, ignoring DaemonSets), so the drained nodes end up cordoned (SchedulingDisabled) and carry no workload pods.
   - Agent does NOT over-consolidate: the 'web-frontend' deployment's required pod anti-affinity means its two replicas must sit on distinct nodes, so at least two worker nodes must remain schedulable. The agent leaves enough nodes that every workload — including both 'web-frontend' replicas — stays Running with no pod left Pending.
   - After consolidation the workloads are packed onto the minimum safe number of worker nodes (two), every pod is healthy/Running, and no PodDisruptionBudget was violated during the migration.
-  - Agent writes 'greenops-report.md' documenting the consolidation: which nodes were drained for de-provisioning, the node-hours reclaimed, and an estimated CO2 reduction derived from the report's power-draw and grid carbon-intensity figures.
-validated: true
+  - Agent writes 'greenops-report.md' documenting the consolidation it performed: which worker nodes it drained/freed for de-provisioning (and how many), and confirmation that every workload stayed available.
+  - The 'greenops-report.md' also reports the projected energy/carbon saving — an estimated CO2 reduction derived from the freed-node count and the delivered carbon feed's node power-draw + grid carbon-intensity figures (the exact figure need not be precise as long as the reasoning is sound).
+validated: false
