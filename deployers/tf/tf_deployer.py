@@ -1,10 +1,9 @@
+from pathlib import Path
+import subprocess
 import json
 import os
 import shutil
-import subprocess
-from pathlib import Path
-from typing import Any
-
+from typing import Dict, Any
 from deployers.base import Deployer
 
 
@@ -38,20 +37,6 @@ def _isolated_work_dir(stack_dir: str, tf_root: Path) -> str:
         return stack_dir
 
 
-def _get_declared_variables(tf_dir: str) -> set[str]:
-    """Scan the stack directory for declared variable names."""
-    declared = set()
-    for path in Path(tf_dir).glob("*.tf"):
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("variable ") and '"' in line:
-                    parts = line.split('"')
-                    if len(parts) >= 2:
-                        declared.add(parts[1])
-    return declared
-
-
 class TFDeployer(Deployer):
     """
     TF implementation of the Deployer interface.
@@ -59,8 +44,7 @@ class TFDeployer(Deployer):
     Supports the standard TF_DATA_DIR environment variable for controlling
     where OpenTofu stores its state, enabling idempotent runs.
     """
-
-    def __init__(self, tf_dir: str, variables: dict[str, Any] = None):
+    def __init__(self, tf_dir: str, variables: Dict[str, Any] = None):
         # Locate project root (3 levels up from this file)
         repo_root = Path(__file__).resolve().parents[2]
 
@@ -75,7 +59,10 @@ class TFDeployer(Deployer):
             if repo_tf_path.exists():
                 self.tf_dir = str(repo_tf_path)
             else:
-                raise ValueError(f"TF stack not found in repo: {tf_dir} (checked {repo_tf_path})")
+                raise ValueError(
+                    f"TF stack not found in repo: {tf_dir} "
+                    f"(checked {repo_tf_path})"
+                )
 
         # Per-run private working directory (a copy of the tf/ tree under the
         # run's scratch dir) when isolated; otherwise the shared stack dir.
@@ -100,14 +87,18 @@ class TFDeployer(Deployer):
             return []
         return ["-state", str(Path(tf_data_dir).resolve().parent / "terraform.tfstate")]
 
-    def _run_cmd(self, cmd: list, cwd: str, capture: bool = False) -> subprocess.CompletedProcess:
+    def _run_cmd(
+        self, cmd: list, cwd: str, capture: bool = False
+    ) -> subprocess.CompletedProcess:
         print(f"Executing: {' '.join(cmd)} in {cwd}")
         env = os.environ.copy()
         if "TF_DATA_DIR" in env:
-            print(f"Using TF_DATA_DIR: {env['TF_DATA_DIR']}")
+             print(f"Using TF_DATA_DIR: {env['TF_DATA_DIR']}")
 
         if capture:
-            return subprocess.run(cmd, cwd=cwd, check=True, capture_output=True, text=True, env=env)
+            return subprocess.run(
+                cmd, cwd=cwd, check=True, capture_output=True, text=True, env=env
+            )
         else:
             return subprocess.run(cmd, cwd=cwd, check=True, env=env)
 
@@ -118,31 +109,31 @@ class TFDeployer(Deployer):
 
         self._run_cmd(["tofu", "init", "-input=false"], cwd=self.work_dir)
 
-        declared = _get_declared_variables(self.tf_dir)
         cmd = ["tofu", "apply", "-auto-approve", "-input=false", *self._state_flags()]
         for k, v in self.variables.items():
-            if k in declared:
-                cmd.extend(["-var", f"{k}={v}"])
+            cmd.extend(["-var", f"{k}={v}"])
 
         self._run_cmd(cmd, cwd=self.work_dir)
+
 
     def down(self) -> None:
         tf_path = Path(self.work_dir)
         if not tf_path.exists():
-            print(f"Warning: TF directory {self.work_dir} not found. Skipping teardown.")
+            print(
+                f"Warning: TF directory {self.work_dir} not found. "
+                "Skipping teardown."
+            )
             return
 
         self._run_cmd(["tofu", "init", "-input=false"], cwd=self.work_dir)
 
-        declared = _get_declared_variables(self.tf_dir)
         cmd = ["tofu", "destroy", "-auto-approve", "-input=false", *self._state_flags()]
         for k, v in self.variables.items():
-            if k in declared:
-                cmd.extend(["-var", f"{k}={v}"])
+            cmd.extend(["-var", f"{k}={v}"])
 
         self._run_cmd(cmd, cwd=self.work_dir)
 
-    def get_cluster_info(self) -> dict[str, Any]:
+    def get_cluster_info(self) -> Dict[str, Any]:
         self._run_cmd(["tofu", "init", "-input=false"], cwd=self.work_dir)
 
         result = self._run_cmd(
@@ -158,44 +149,37 @@ class TFDeployer(Deployer):
 
         location = outputs.get("cluster_location", {}).get("value")
         if not location:
-            raise ValueError("Failed to retrieve 'cluster_location' from TF outputs.")
+            raise ValueError(
+                "Failed to retrieve 'cluster_location' from TF outputs."
+            )
 
-        kubeconfig_path = os.environ.get("KUBECONFIG", str(Path.home() / ".kube" / "config"))
+        kubeconfig_path = os.environ.get(
+            "KUBECONFIG", str(Path.home() / ".kube" / "config")
+        )
 
         if location == "local":
-            project = (
-                self.variables.get("project_id") or os.environ.get("GCP_PROJECT_ID") or "local-kind"
-            )
+            project = self.variables.get("project_id") or os.environ.get("GCP_PROJECT_ID") or "local-kind"
             return {
                 "name": cluster_name,
                 "location": location,
                 "project": project,
-                "kubeconfig_path": kubeconfig_path,
+                "kubeconfig_path": kubeconfig_path
             }
 
         project = self.variables.get("project_id") or os.environ.get("GCP_PROJECT_ID")
         if not project:
-            raise ValueError("Project ID not found in variables or environment (GCP_PROJECT_ID).")
+             raise ValueError("Project ID not found in variables or environment (GCP_PROJECT_ID).")
 
         print(f"Configuring kubectl for cluster: {cluster_name} in {location}...")
-        subprocess.run(
-            [
-                "gcloud",
-                "container",
-                "clusters",
-                "get-credentials",
-                cluster_name,
-                "--location",
-                location,
-                "--project",
-                project,
-            ],
-            check=True,
-        )
+        subprocess.run([
+            "gcloud", "container", "clusters", "get-credentials", cluster_name,
+            "--location", location, "--project", project
+        ], check=True)
 
         return {
             "name": cluster_name,
             "location": location,
             "project": project,
-            "kubeconfig_path": kubeconfig_path,
+            "kubeconfig_path": kubeconfig_path
         }
+

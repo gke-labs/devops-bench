@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any
-
+from typing import Dict, Any
 
 class Deployer(ABC):
     """
@@ -22,7 +21,7 @@ class Deployer(ABC):
         pass
 
     @abstractmethod
-    def get_cluster_info(self) -> dict[str, Any]:
+    def get_cluster_info(self) -> Dict[str, Any]:
         """
         Returns a dictionary with cluster details.
         Expected keys: 'name', 'location', 'project', 'kubeconfig_path'

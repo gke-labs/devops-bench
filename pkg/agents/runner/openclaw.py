@@ -1,4 +1,3 @@
-import getpass
 import json
 import os
 import re
@@ -6,8 +5,9 @@ import shlex
 import subprocess
 import tempfile
 import time
-
+import getpass
 from deepeval.tracing import observe
+
 
 # OpenClaw emits ANSI-colored debug logs to stdout. The escape codes corrupt the
 # `sessionFile=...` path extraction (the regex would capture the trailing reset
@@ -113,26 +113,24 @@ def _parse_openclaw_session(session_content):
                     continue
                 if "functionCall" in part:
                     call = part["functionCall"]
-                    trajectory.append(
-                        {"name": call.get("name"), "args": call.get("args"), "status": "called"}
-                    )
+                    trajectory.append({
+                        "name": call.get("name"),
+                        "args": call.get("args"),
+                        "status": "called"
+                    })
                 elif part.get("type") == "toolCall":
-                    trajectory.append(
-                        {
-                            "name": part.get("name"),
-                            "args": part.get("arguments"),
-                            "status": "called",
-                        }
-                    )
+                    trajectory.append({
+                        "name": part.get("name"),
+                        "args": part.get("arguments"),
+                        "status": "called"
+                    })
                 elif "functionResponse" in part:
                     resp = part["functionResponse"]
-                    trajectory.append(
-                        {
-                            "name": resp.get("name"),
-                            "output": resp.get("response"),
-                            "status": "response",
-                        }
-                    )
+                    trajectory.append({
+                        "name": resp.get("name"),
+                        "output": resp.get("response"),
+                        "status": "response"
+                    })
 
     return tokens, trajectory
 
@@ -145,9 +143,7 @@ def run_openclaw_agent(prompt, context=None, agent_name=None):
     agent_name = _resolve_agent_name(agent_name)
 
     ssh_user = os.environ.get("OPENCLAW_SSH_USER", f"{current_user}_google_com")
-    vm_host = os.environ.get(
-        "OPENCLAW_VM_HOST", f"nic0.claw-ubuntu.us-central1-a.c.{project_id}.internal.gcpnode.com"
-    )
+    vm_host = os.environ.get("OPENCLAW_VM_HOST", f"nic0.claw-ubuntu.us-central1-a.c.{project_id}.internal.gcpnode.com")
     ssh_key = os.environ.get("OPENCLAW_SSH_KEY", os.path.expanduser("~/.ssh/google_compute_engine"))
 
     # Parallel isolation: when RUN_ID is set, isolate the remote oc state
@@ -168,7 +164,7 @@ def run_openclaw_agent(prompt, context=None, agent_name=None):
     # We also use single quotes for the prompt, assuming it doesn't contain single quotes.
     # For safety, we should escape single quotes if possible, but let's keep it simple first.
     model_flag = _oc_model_flag()
-    remote_command = f'{setup}export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh" && ~/bin/oc --log-level debug agent --local --agent {agent_name} {model_flag}-m \'{prompt}\''
+    remote_command = f"{setup}export NVM_DIR=\"$HOME/.nvm\" && [ -s \"$NVM_DIR/nvm.sh\" ] && source \"$NVM_DIR/nvm.sh\" && ~/bin/oc --log-level debug agent --local --agent {agent_name} {model_flag}-m '{prompt}'"
 
     ssh_cmd = [
         "ssh",
@@ -180,7 +176,9 @@ def run_openclaw_agent(prompt, context=None, agent_name=None):
 
     start_time = time.time()
     try:
-        result = subprocess.run(ssh_cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ssh_cmd, capture_output=True, text=True, check=True
+        )
         latency = time.time() - start_time
         output = _strip_ansi(result.stdout)
 
@@ -200,7 +198,9 @@ def run_openclaw_agent(prompt, context=None, agent_name=None):
                 f"cat {session_file}",
             ]
             try:
-                read_result = subprocess.run(read_cmd, capture_output=True, text=True, check=True)
+                read_result = subprocess.run(
+                    read_cmd, capture_output=True, text=True, check=True
+                )
                 tokens, trajectory = _parse_openclaw_session(read_result.stdout)
             except subprocess.CalledProcessError as e:
                 print(f"Warning: Failed to read session file: {e.stderr}")
@@ -211,7 +211,7 @@ def run_openclaw_agent(prompt, context=None, agent_name=None):
             "tokens": tokens,
             "tools": {},
             "trajectory": trajectory,
-            "skills": [],
+            "skills": []
         }
     except subprocess.CalledProcessError as e:
         return {
@@ -220,7 +220,7 @@ def run_openclaw_agent(prompt, context=None, agent_name=None):
             "tokens": {},
             "tools": {},
             "trajectory": [],
-            "skills": [],
+            "skills": []
         }
 
 
@@ -261,7 +261,7 @@ def run_openclaw_agent_local(prompt, context=None, agent_name=None):
     # newlines, which would otherwise break shell parsing.
     local_command = (
         f"{wipe_frag}"
-        'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
+        "export NVM_DIR=\"$HOME/.nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; "
         f"{shlex.quote(oc_bin)} --log-level debug agent --local "
         f"--agent {shlex.quote(agent_name)} {_oc_model_flag()}-m {shlex.quote(prompt)}"
     )
@@ -287,7 +287,7 @@ def run_openclaw_agent_local(prompt, context=None, agent_name=None):
         if match:
             session_file = os.path.expanduser(match.group(1))
             try:
-                with open(session_file) as f:
+                with open(session_file, "r") as f:
                     tokens, trajectory = _parse_openclaw_session(f.read())
             except OSError as e:
                 print(f"Warning: Failed to read local session file {session_file}: {e}")
@@ -298,7 +298,7 @@ def run_openclaw_agent_local(prompt, context=None, agent_name=None):
             "tokens": tokens,
             "tools": {},
             "trajectory": trajectory,
-            "skills": [],
+            "skills": []
         }
     except subprocess.CalledProcessError as e:
         return {
@@ -307,5 +307,5 @@ def run_openclaw_agent_local(prompt, context=None, agent_name=None):
             "tokens": {},
             "tools": {},
             "trajectory": [],
-            "skills": [],
+            "skills": []
         }

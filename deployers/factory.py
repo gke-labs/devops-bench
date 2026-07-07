@@ -1,11 +1,11 @@
 import os
-from typing import Any
-
+from typing import Dict, Any
 from deployers.base import Deployer
 from deployers.gcp.gcp_deployer import GCPDeployer
+from deployers.tf.tf_deployer import TFDeployer
+
 from deployers.gcp.variables import resolve_variables as resolve_gcp_vars
 from deployers.kind.variables import resolve_variables as resolve_kind_vars
-from deployers.tf.tf_deployer import TFDeployer
 
 PROVIDER_RESOLVERS = {
     "gcp": resolve_gcp_vars,
@@ -21,14 +21,12 @@ class NoOpDeployer(Deployer):
         self._project_id = project_id
 
     def up(self) -> None:
-        print(
-            "[NoOpDeployer] Skipping infrastructure provisioning (deployer: noop / BENCH_NO_INFRA)"
-        )
+        print("[NoOpDeployer] Skipping infrastructure provisioning (deployer: noop / BENCH_NO_INFRA)")
 
     def down(self) -> None:
         print("[NoOpDeployer] Skipping infrastructure teardown (deployer: noop / BENCH_NO_INFRA)")
 
-    def get_cluster_info(self) -> dict[str, Any]:
+    def get_cluster_info(self) -> Dict[str, Any]:
         return {
             "name": self._cluster_name,
             "location": "local",
@@ -38,21 +36,24 @@ class NoOpDeployer(Deployer):
 
 
 def get_deployer(
-    infra_config: dict[str, Any],
+    infra_config: Dict[str, Any],
     global_project_id: str,
     global_cluster_name: str,
-    global_location: str = None,
+    global_location: str = None
 ) -> Deployer:
     """
     Factory to instantiate the appropriate infrastructure deployer.
 
     Enforces GCP_LOCATION as the standard environment variable for location.
     """
-    # Respect task-level deployer first, fallback to infra_provider if it is a valid deployer, otherwise default to terraform
-    infra_provider = os.environ.get("INFRA_PROVIDER", "").lower()
+    # Respect task-level deployer first, fallback to cloud_provider if it is a valid deployer, otherwise default to terraform
+    cloud_provider = os.environ.get("CLOUD_PROVIDER", "").lower()
     deployer_type = infra_config.get("deployer")
     if not deployer_type:
-        deployer_type = infra_provider if infra_provider in ["tofu", "gcp"] else "tofu"
+        if cloud_provider in ["tofu", "gcp"]:
+            deployer_type = cloud_provider
+        else:
+            deployer_type = "tofu"
 
     # Skip provisioning when the task declares ``deployer: noop`` (e.g.
     # manifest-generation tasks that never touch a cluster) or when
@@ -69,8 +70,8 @@ def get_deployer(
         stack = infra_config.get("stack") or "prebuilt/kind"
         variables = infra_config.get("variables", {})
 
-        # Deduce provider from stack name or INFRA_PROVIDER env var
-        provider = infra_provider or ("kind" if "kind" in stack else "gcp")
+        # Deduce provider from stack name or CLOUD_PROVIDER env var
+        provider = cloud_provider or ("kind" if "kind" in stack else "gcp")
 
         # Dynamically resolve variables based on the cloud provider
         resolver = PROVIDER_RESOLVERS.get(provider)
@@ -81,5 +82,7 @@ def get_deployer(
 
     # Fallback to legacy GCPDeployer (kubetest2)
     return GCPDeployer(
-        project=global_project_id, location=location, cluster_name=global_cluster_name
+        project=global_project_id,
+        location=location,
+        cluster_name=global_cluster_name
     )

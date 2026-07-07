@@ -3,12 +3,12 @@ import subprocess
 import unittest
 from unittest.mock import MagicMock, patch
 
+from pkg.agents.verifier.verifier import VerifierAgent
 from pkg.agents.verifier.pod_healthy import PodHealthyVerifier
 from pkg.agents.verifier.scaling_complete import ScalingCompleteVerifier
-from pkg.agents.verifier.verifier import VerifierAgent
-
 
 class TestVerifierAgent(unittest.TestCase):
+
     def setUp(self):
         self.verifier = VerifierAgent()
 
@@ -22,7 +22,9 @@ class TestVerifierAgent(unittest.TestCase):
                 ]
             }
         )
-        mock_run.return_value = MagicMock(stdout=mock_output, returncode=0)
+        mock_run.return_value = MagicMock(
+            stdout=mock_output, returncode=0
+        )
 
         p_verifier = PodHealthyVerifier(selector="app=my-app")
         details = p_verifier._get_pods_details()
@@ -41,7 +43,9 @@ class TestVerifierAgent(unittest.TestCase):
                 ]
             }
         )
-        mock_run.return_value = MagicMock(stdout=mock_output, returncode=0)
+        mock_run.return_value = MagicMock(
+            stdout=mock_output, returncode=0
+        )
 
         p_verifier = PodHealthyVerifier(selector="app=my-app")
         details = p_verifier._get_pods_details()
@@ -52,7 +56,9 @@ class TestVerifierAgent(unittest.TestCase):
     @patch("subprocess.run")
     def test_scaling_complete_verifier_check_scaling_success(self, mock_run):
         mock_output = json.dumps({"status": {"readyReplicas": 3}})
-        mock_run.return_value = MagicMock(stdout=mock_output, returncode=0)
+        mock_run.return_value = MagicMock(
+            stdout=mock_output, returncode=0
+        )
 
         s_verifier = ScalingCompleteVerifier(deployment="my-dep", min_replicas=3)
         success, details = s_verifier._check_scaling()
@@ -62,7 +68,9 @@ class TestVerifierAgent(unittest.TestCase):
 
     @patch("subprocess.run")
     def test_pod_healthy_verifier_verify_wait_success(self, mock_run):
-        mock_run.return_value = MagicMock(stdout="pod/my-pod condition met", returncode=0)
+        mock_run.return_value = MagicMock(
+            stdout="pod/my-pod condition met", returncode=0
+        )
 
         p_verifier = PodHealthyVerifier(selector="app=my-app")
         result = p_verifier.verify(timeout_sec=60)
@@ -76,8 +84,9 @@ class TestVerifierAgent(unittest.TestCase):
         mock_run.side_effect = [
             subprocess.CalledProcessError(1, "kubectl wait", stderr="timed out"),
             MagicMock(
-                stdout=json.dumps({"items": [{"status": {"phase": "Running"}}]}), returncode=0
-            ),
+                stdout=json.dumps({"items": [{"status": {"phase": "Running"}}]}),
+                returncode=0
+            )
         ]
 
         p_verifier = PodHealthyVerifier(selector="app=my-app")
@@ -109,12 +118,12 @@ class TestVerifierAgent(unittest.TestCase):
             elif "deployment" in cmd:
                 return MagicMock(stdout=json.dumps({"status": {"readyReplicas": 2}}), returncode=0)
             return MagicMock(stdout="", returncode=0)
-
+            
         mock_run.side_effect = run_side_effect
 
         spec = {
             "pod_spec": {"type": "pod_healthy", "selector": "app=my-app"},
-            "scaling_spec": {"type": "scaling_complete", "deployment": "my-dep", "min_replicas": 2},
+            "scaling_spec": {"type": "scaling_complete", "deployment": "my-dep", "min_replicas": 2}
         }
         result = self.verifier.wait_for_condition(spec, timeout_sec=60)
 
@@ -137,14 +146,13 @@ class TestVerifierAgent(unittest.TestCase):
 
         spec = {
             "pod_spec": {"type": "pod_healthy", "selector": "app=my-app"},
-            "scaling_spec": {"type": "scaling_complete", "deployment": "my-dep", "min_replicas": 2},
+            "scaling_spec": {"type": "scaling_complete", "deployment": "my-dep", "min_replicas": 2}
         }
         result = self.verifier.wait_for_condition(spec, timeout_sec=60)
 
         self.assertFalse(result.success)
         self.assertIn("pod_spec failed", result.reason)
         self.assertIn("scaling_spec succeeded", result.reason)
-
 
 if __name__ == "__main__":
     unittest.main()

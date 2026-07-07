@@ -1,6 +1,5 @@
 import os
 import sys
-
 import yaml
 
 
@@ -71,7 +70,7 @@ def load_from_tasks_dir(dir_path: str) -> list:
         if "task.yaml" in files:
             yaml_path = os.path.join(root, "task.yaml")
             try:
-                with open(yaml_path) as stream:
+                with open(yaml_path, "r") as stream:
                     yaml_text = stream.read()
                     content = safe_parse_yaml(yaml_text)
                     docs = parse_documentation_from_yaml(yaml_text)
@@ -88,7 +87,9 @@ def load_from_tasks_dir(dir_path: str) -> list:
                             {
                                 "task_id": task_id if task_id is not None else 999,
                                 "name": name,
-                                "input": prompt.strip() if isinstance(prompt, str) else str(prompt),
+                                "input": prompt.strip()
+                                if isinstance(prompt, str)
+                                else str(prompt),
                                 "expected_output": expected.strip()
                                 if isinstance(expected, str)
                                 else str(expected),
@@ -106,3 +107,4 @@ def load_from_tasks_dir(dir_path: str) -> list:
 
     eval_data.sort(key=lambda k: k["task_id"])
     return eval_data
+

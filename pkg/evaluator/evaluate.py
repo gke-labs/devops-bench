@@ -4,40 +4,46 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
-
-from anthropic import Anthropic, AnthropicVertex
-from deepeval import evaluate
-from deepeval.dataset import EvaluationDataset
+import time
+import argparse
+from deepeval import assert_test, evaluate
 from deepeval.metrics import GEval
-from deepeval.models import DeepEvalBaseLLM
 from deepeval.test_case import LLMTestCase, SingleTurnParams
+from deepeval.tracing import observe
+from deepeval.models import DeepEvalBaseLLM
+from deepeval.dataset import EvaluationDataset
 from google import genai
+from anthropic import AnthropicVertex, Anthropic
 
 # Ensure module imports resolve locally
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 sys.path.insert(
     0,
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "../../pkg/agents/runner/api")),
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../pkg/agents/runner/api")
+    ),
 )
 
-import threading
-
-from deployers.factory import get_deployer
-from pkg.agents.runner.api.api import run_api_agent
 from pkg.agents.runner.api.llm_adapters import (
     AnthropicClientAdapter,
     GeminiClientAdapter,
     OllamaClientAdapter,
 )
+
+from pkg.agents.runner.api.api import run_api_agent
 from pkg.agents.runner.gcli import run_cli_agent
+from pkg.runenv import RunEnv, parallel_enabled
 from pkg.evaluator.loader import (
     load_from_tasks_dir,
-    parse_documentation_from_yaml,
     safe_parse_yaml,
+    parse_documentation_from_yaml,
 )
+import threading
 from pkg.manager.manager import ScenarioManager, pick_free_port
-from pkg.runenv import RunEnv, parallel_enabled
+from deployers.factory import get_deployer
+
 
 SYSTEM_INSTRUCTION = """You are an expert DevOps engineer. When asked to make an app production-ready or perform operational tasks like secret rotation, you MUST apply the changes directly to the GKE cluster and GCP APIs using your tools. Do NOT output bash scripts, templates, or instructions for the user to run manually. You must complete the entire operation yourself using tool calls."""
 
@@ -60,17 +66,19 @@ class GeminiDeepEvalModel(DeepEvalBaseLLM):
 
         self.model_name = model_name
         project_id = os.environ.get("PROJECT_ID") or os.environ.get("GCP_PROJECT_ID")
-        location = os.environ.get("LOCATION") or os.environ.get(
-            "GCP_VERTEX_LOCATION", "us-central1"
-        )
+        location = os.environ.get("LOCATION") or os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
         api_key = os.environ.get("JUDGE_API_KEY")
 
-        validate_config("judge", os.environ.get("JUDGE_PROVIDER", "google"), self.model_name)
+        validate_config(
+            "judge", os.environ.get("JUDGE_PROVIDER", "google"), self.model_name
+        )
 
         if api_key:
             self.client = genai.Client(api_key=api_key)
         elif project_id:
-            self.client = genai.Client(vertexai=True, project=project_id, location=location)
+            self.client = genai.Client(
+                vertexai=True, project=project_id, location=location
+            )
         else:
             self.client = genai.Client()
 
@@ -100,12 +108,12 @@ class AnthropicDeepEvalModel(DeepEvalBaseLLM):
 
         self.model_name = model_name
         project_id = os.environ.get("PROJECT_ID") or os.environ.get("GCP_PROJECT_ID")
-        location = os.environ.get("LOCATION") or os.environ.get(
-            "GCP_VERTEX_LOCATION", "us-central1"
-        )
+        location = os.environ.get("LOCATION") or os.environ.get("GCP_VERTEX_LOCATION", "us-central1")
         api_key = os.environ.get("JUDGE_API_KEY")
 
-        validate_config("judge", os.environ.get("JUDGE_PROVIDER", "anthropic"), self.model_name)
+        validate_config(
+            "judge", os.environ.get("JUDGE_PROVIDER", "anthropic"), self.model_name
+        )
 
         if api_key:
             self.client = Anthropic(api_key=api_key)
@@ -142,7 +150,6 @@ class OllamaDeepEvalModel(DeepEvalBaseLLM):
 
     def __init__(self, model_name=None):
         from openai import OpenAI
-
         if not model_name:
             model_name = os.environ.get("JUDGE_MODEL", "gemma4:2b")
         self.model_name = model_name
@@ -188,7 +195,7 @@ def replace_placeholders(text, project_id, cluster_name):
 
 
 def print_configuration_context(
-    infra_provider,
+    cloud_provider,
     project_id,
     cluster_name,
     bench_agent_type,
@@ -204,7 +211,7 @@ def print_configuration_context(
     """Prints a formatted summary of the active evaluation configurations."""
     print("-" * 50)
     print("Configuration Context:")
-    print(f"  - INFRA_PROVIDER:       {infra_provider}")
+    print(f"  - CLOUD_PROVIDER:       {cloud_provider}")
     print(f"  - PROJECT_ID:           {project_id}")
     print(f"  - CLUSTER_NAME:         {cluster_name}")
     print(f"  - BENCH_AGENT_TYPE:     {bench_agent_type}")
@@ -226,7 +233,7 @@ def load_evaluation_data(input_path):
         eval_data = load_from_tasks_dir(input_path)
     elif input_path.endswith((".yaml", ".yml")):
         print(f"Loading task specification from {input_path}...")
-        with open(input_path) as f:
+        with open(input_path, "r") as f:
             yaml_text = f.read()
             content = safe_parse_yaml(yaml_text)
             docs = parse_documentation_from_yaml(yaml_text)
@@ -244,7 +251,7 @@ def load_evaluation_data(input_path):
                 }
             ]
     else:
-        with open(input_path) as f:
+        with open(input_path, "r") as f:
             eval_data = json.load(f)
 
     if isinstance(eval_data, dict):
@@ -288,7 +295,9 @@ def load_configuration_context():
             judge_model_name = "gemma4:2b"
         judge_model = OllamaDeepEvalModel(model_name=judge_model_name)
     else:
-        print(f"Warning: Unknown judge provider '{judge_provider}'. Defaulting to Gemini.")
+        print(
+            f"Warning: Unknown judge provider '{judge_provider}'. Defaulting to Gemini."
+        )
         judge_model_name = judge_model_name or "gemini-3.1-pro-preview"
         judge_model = GeminiDeepEvalModel(model_name=judge_model_name)
 
@@ -296,9 +305,7 @@ def load_configuration_context():
     cluster_name = os.environ.get("CLUSTER_NAME") or os.environ.get("GKE_CLUSTER_NAME")
 
     if not project_id or not cluster_name:
-        print(
-            "Error: PROJECT_ID (or GCP_PROJECT_ID) and CLUSTER_NAME (or GKE_CLUSTER_NAME) must be set."
-        )
+        print("Error: PROJECT_ID (or GCP_PROJECT_ID) and CLUSTER_NAME (or GKE_CLUSTER_NAME) must be set.")
         sys.exit(1)
 
     # Establish per-run isolation BEFORE any provisioning so every gcloud /
@@ -313,10 +320,10 @@ def load_configuration_context():
     app_location = os.environ.get("APP_LOCATION", "N/A")
     agent_provider = os.environ.get("AGENT_PROVIDER", "google")
     agent_model = os.environ.get("AGENT_MODEL", "gemini-3.1-pro-preview")
-    infra_provider = os.environ.get("INFRA_PROVIDER", "gcp")
+    cloud_provider = os.environ.get("CLOUD_PROVIDER", "gcp")
 
     print_configuration_context(
-        infra_provider,
+        cloud_provider,
         project_id,
         cluster_name,
         bench_agent_type,
@@ -346,7 +353,9 @@ def execute_agent(bench_agent_type, agent_target, prompt, context):
             system_instruction=SYSTEM_INSTRUCTION,
         )
     elif bench_agent_type == "api":
-        mcp_server_path = os.environ.get("MCP_SERVER_PATH", "third_party/gke-mcp/gke-mcp")
+        mcp_server_path = os.environ.get(
+            "MCP_SERVER_PATH", "third_party/gke-mcp/gke-mcp"
+        )
         provider = os.environ.get("AGENT_PROVIDER", "google")
         if provider == "gemini" or provider == "google":
             llm_client = GeminiClientAdapter()
@@ -373,10 +382,10 @@ def execute_agent(bench_agent_type, agent_target, prompt, context):
 
 
 def create_evaluation_metrics(model):
-    with open("skills/outcome-validity-checklist.md") as f:
+    with open("skills/outcome-validity-checklist.md", "r") as f:
         outcome_criteria = f.read()
 
-    with open("skills/tool-invocation-skill.md") as f:
+    with open("skills/tool-invocation-skill.md", "r") as f:
         tool_criteria = f.read()
 
     outcome_validity = GEval(
@@ -427,7 +436,9 @@ def evaluate_documentation_grounding(documentation, all_test_case, judge_model, 
     if not doc_metrics:
         return
 
-    print(f"Evaluating {len(doc_metrics)} documentation constraint metrics sequentially...")
+    print(
+        f"Evaluating {len(doc_metrics)} documentation constraint metrics sequentially..."
+    )
     for m in doc_metrics:
         try:
             print(f"Evaluating doc metric: {m.name}...")
@@ -458,7 +469,9 @@ def evaluate_documentation_grounding(documentation, all_test_case, judge_model, 
                 critical_applied += 1
 
     # Score 5.0 (Success), 2.5 (Partial), 0.0 (Failure)
-    if total_constraints == 0 or applied_constraints == total_constraints:
+    if total_constraints == 0:
+        grounding_score = 5.0
+    elif applied_constraints == total_constraints:
         grounding_score = 5.0
     elif applied_constraints == 0:
         grounding_score = 0.0
@@ -472,7 +485,9 @@ def evaluate_documentation_grounding(documentation, all_test_case, judge_model, 
         else:
             grounding_score = 5.0
 
-    recall_accuracy = applied_constraints / total_constraints if total_constraints > 0 else 1.0
+    recall_accuracy = (
+        applied_constraints / total_constraints if total_constraints > 0 else 1.0
+    )
 
     scores["GroundingAccuracy"] = {
         "score": grounding_score,
@@ -529,12 +544,16 @@ def evaluate_metrics_batch(detailed_results, judge_model):
                 reqs_section = parts[1]
 
         if "expected manifest generated:" in reqs_section.lower():
-            parts = re.split(r"(?i)expected manifest generated\s*:", reqs_section, maxsplit=1)
+            parts = re.split(
+                r"(?i)expected manifest generated\s*:", reqs_section, maxsplit=1
+            )
             reqs_section = parts[0]
 
         bench_use_mcp = os.environ.get("BENCH_USE_MCP", "true").lower() == "true"
         raw_checklist_items = [
-            line.strip("- ") for line in reqs_section.split("\n") if line.strip().startswith("-")
+            line.strip("- ")
+            for line in reqs_section.split("\n")
+            if line.strip().startswith("-")
         ]
         checklist_items = []
         for item in raw_checklist_items:
@@ -548,7 +567,8 @@ def evaluate_metrics_batch(detailed_results, judge_model):
                 GEval(
                     name=f"Check: {item}",
                     criteria=(
-                        f"Verify that the actual output fulfills this specific requirement: {item}"
+                        "Verify that the actual output fulfills this specific"
+                        f" requirement: {item}"
                     ),
                     evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
                     model=judge_model,
@@ -649,22 +669,30 @@ def evaluate_metrics_batch(detailed_results, judge_model):
                     print(f"Error evaluating metric {m.name}: {e}")
 
             passed_checks = sum(
-                1 for m in dynamic_metrics if m.name in scores and scores[m.name]["success"]
+                1
+                for m in dynamic_metrics
+                if m.name in scores and scores[m.name]["success"]
             )
             total_checks = len(dynamic_metrics)
             scores["ChecklistScore"] = {
                 "score": passed_checks / total_checks if total_checks > 0 else 0.0,
-                "success": (passed_checks / total_checks >= 0.8 if total_checks > 0 else False),
+                "success": (
+                    passed_checks / total_checks >= 0.8 if total_checks > 0 else False
+                ),
                 "reason": f"Passed {passed_checks} out of {total_checks} checks.",
             }
 
         # Grounding Accuracy & Recall
         if documentation:
-            evaluate_documentation_grounding(documentation, all_test_case, judge_model, scores)
-            scores["DocRetrievalRate"] = calculate_doc_retrieval_rate(documentation, trajectory)
+            evaluate_documentation_grounding(
+                documentation, all_test_case, judge_model, scores
+            )
+            scores["DocRetrievalRate"] = calculate_doc_retrieval_rate(
+                documentation, trajectory
+            )
 
         if res.get("chaos_spec"):
-            print("Evaluating Planned Chaos Mode and Performance metrics...")
+            print(f"Evaluating Planned Chaos Mode and Performance metrics...")
             chaos_report = res.get("chaos_report", {})
             actual_fault = chaos_report.get("injected_fault", "pod deletion")
 
@@ -683,7 +711,9 @@ def evaluate_metrics_batch(detailed_results, judge_model):
             )
 
             try:
-                chaos_result = evaluate([all_test_case], metrics=[diag_metric, rec_metric])
+                chaos_result = evaluate(
+                    [all_test_case], metrics=[diag_metric, rec_metric]
+                )
                 for test_result in chaos_result.test_results:
                     for metric_data in test_result.metrics_data:
                         metric_name = metric_data.name
@@ -698,7 +728,9 @@ def evaluate_metrics_batch(detailed_results, judge_model):
                 print(f"Error evaluating chaos metrics: {e}")
 
             perf_report = res.get("perf_report", {})
-            scores["Workload_Deployment_Time_Seconds"] = perf_report.get("deployment_time_seconds")
+            scores["Workload_Deployment_Time_Seconds"] = perf_report.get(
+                "deployment_time_seconds"
+            )
             scores["Workload_Uptime_Percentage"] = perf_report.get("uptime_percentage")
             scores["Resource_Utilization_Efficiency"] = perf_report.get(
                 "resource_utilization_efficiency"
@@ -725,8 +757,8 @@ def main():
     )
 
     print(f"Running dataset evaluation with {len(eval_data)} cases...")
-    dataset = EvaluationDataset()  # noqa: F841
-    test_cases = []  # noqa: F841
+    dataset = EvaluationDataset()
+    test_cases = []
     detailed_results = []
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -751,7 +783,9 @@ def main():
 
             # Use dynamic cluster name from deployer for prompt replacement
             active_cluster_name = cluster_info.get("name", cluster_name)
-            prompt = replace_placeholders(item["input"], project_id, active_cluster_name)
+            prompt = replace_placeholders(
+                item["input"], project_id, active_cluster_name
+            )
 
             target_deployment = os.environ.get(
                 "TARGET_DEPLOYMENT_NAME", "hypercomputer-d1-frontend"
@@ -801,13 +835,17 @@ def main():
                     print(f"Warning: Failed to start ScenarioManager: {e}")
 
             if scenario_manager:
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[
+                    :-3
+                ]
                 print(
                     f"[{timestamp}] Waiting for Chaos Agent to establish the cluster load spike...",
                     flush=True,
                 )
                 scenario_manager.chaos_active_event.wait(timeout=45)
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[
+                    :-3
+                ]
                 print(
                     f"[{timestamp}] Cluster load spike is now active. Proceeding with Operator Agent...",
                     flush=True,
@@ -877,7 +915,6 @@ def main():
         except Exception as e:
             print(f"Critical error during task {item['name']}: {e}")
             import traceback
-
             traceback.print_exc()
         finally:
             global_no_teardown = os.environ.get("BENCH_NO_TEARDOWN", "false").lower() == "true"
@@ -923,7 +960,9 @@ def main():
 
     with open(os.path.join(run_dir, "results.json"), "w") as f:
         json.dump(detailed_results, f, indent=2)
-    print(f"Post-processing evaluation complete. Updated results saved to {run_dir}/results.json")
+    print(
+        f"Post-processing evaluation complete. Updated results saved to {run_dir}/results.json"
+    )
 
     print("\n=== Detailed Results ===")
     print(json.dumps(detailed_results, indent=2))

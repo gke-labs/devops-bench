@@ -1,14 +1,13 @@
 import time
-
+from typing import Union
 from pkg.agents.verifier.base import VerificationResult
 from pkg.agents.verifier.spec import VerificationSpec
-
 
 class VerifierAgent:
     """Uses kubectl to validate cluster state."""
 
     def wait_for_condition(
-        self, spec: VerificationSpec | dict | list, timeout_sec: int = 120
+        self, spec: Union[VerificationSpec, dict, list], timeout_sec: int = 120
     ) -> VerificationResult:
         """Waits for condition using watch or polling.
         Supports compound specifications (list or dict of specs) as well as single specs.
@@ -26,9 +25,7 @@ class VerifierAgent:
             for i, sub_spec in enumerate(root):
                 elapsed = time.time() - start_time
                 remaining_timeout = max(1, timeout_sec - int(elapsed))
-                sub_result = self.wait_for_condition(
-                    VerificationSpec(sub_spec), timeout_sec=remaining_timeout
-                )
+                sub_result = self.wait_for_condition(VerificationSpec(sub_spec), timeout_sec=remaining_timeout)
                 results.append(sub_result)
                 if not sub_result.success:
                     overall_success = False
@@ -49,9 +46,7 @@ class VerifierAgent:
             for name, sub_spec in root.items():
                 elapsed = time.time() - start_time
                 remaining_timeout = max(1, timeout_sec - int(elapsed))
-                sub_result = self.wait_for_condition(
-                    VerificationSpec(sub_spec), timeout_sec=remaining_timeout
-                )
+                sub_result = self.wait_for_condition(VerificationSpec(sub_spec), timeout_sec=remaining_timeout)
                 results[name] = sub_result
                 if not sub_result.success:
                     overall_success = False
