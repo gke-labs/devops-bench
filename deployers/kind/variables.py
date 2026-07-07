@@ -12,6 +12,7 @@ def resolve_variables(
 ) -> dict[str, Any]:
     """Resolves default variables for local KinD-based stacks."""
     variables = custom_variables.copy()
+    variables.setdefault("infra_provider", "kind")
     cluster_name = global_cluster_name or "devops-bench-kind"
     variables.setdefault("cluster_name", cluster_name)
     variables.setdefault("location", "local")

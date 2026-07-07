@@ -1,4 +1,4 @@
-variable "cloud_provider" {
+variable "infra_provider" {
   description = "The cloud provider to use (gcp or kind)"
   type        = string
 }

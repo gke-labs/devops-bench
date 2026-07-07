@@ -27,13 +27,13 @@ This directory contains the OpenTofu modules and prebuilt configurations used to
 
 ## 2. The Provider-Neutral Cluster Abstraction
 
-To avoid duplicating stacks for different cloud or local environments, tasks call the unified **`cluster`** module. The target environment is determined at runtime by the `cloud_provider` variable.
+To avoid duplicating stacks for different cloud or local environments, tasks call the unified **`cluster`** module. The target environment is determined at runtime by the `infra_provider` variable.
 
 ### Inputs for `modules/cluster`
 
 | Variable | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `cloud_provider` | `string` | **Required** | Target provider (`"gcp"` or `"kind"`) |
+| `infra_provider` | `string` | **Required** | Target provider (`"gcp"` or `"kind"`) |
 | `cluster_name` | `string` | **Required** | Name of the cluster |
 | `location` | `string` | `""` | Region/zone (GCP) or `"local"` (KinD) |
 | `node_count` | `number` | `3` | Number of worker nodes |
@@ -47,7 +47,7 @@ To avoid duplicating stacks for different cloud or local environments, tasks cal
 
 ## 3. How to Run Stacks on Different Providers
 
-When executing a task via the `devopsbench` runner, you can specify the target provider using the `--provider` flag. The runner will automatically inject the correct `cloud_provider` variable.
+When executing a task via the `devopsbench` runner, you can specify the target provider using the `--provider` flag. The runner will automatically inject the correct `infra_provider` variable.
 
 ### Running on GCP (GKE)
 ```bash

@@ -33,7 +33,7 @@ locals {
 # GKE/KinD cluster. Kyverno + the workloads are installed by setup.sh.
 module "cluster" {
   source          = "../../modules/cluster"
-  cloud_provider  = var.cloud_provider
+  infra_provider  = var.infra_provider
   project_id      = var.project_id
   cluster_name    = var.cluster_name
   location        = var.location
@@ -57,7 +57,7 @@ resource "null_resource" "setup" {
     interpreter = ["/bin/bash", "-c"]
     command     = "${path.module}/scripts/setup.sh"
     environment = {
-      INFRA_PROVIDER = var.cloud_provider
+      INFRA_PROVIDER = var.infra_provider
       PROJECT_ID     = var.project_id
       CLUSTER_NAME   = module.cluster.cluster_name
       LOCATION       = var.location

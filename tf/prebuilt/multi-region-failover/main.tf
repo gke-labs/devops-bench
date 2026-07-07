@@ -50,7 +50,7 @@ resource "random_id" "suffix" {
 # ---------------------------------------------------------------------------
 module "east" {
   source                = "../../modules/cluster"
-  cloud_provider        = "gcp"
+  infra_provider        = "gcp"
   project_id            = var.project_id
   cluster_name          = local.east_cluster
   location              = var.zone_primary
@@ -66,7 +66,7 @@ module "east" {
 
 module "west" {
   source                = "../../modules/cluster"
-  cloud_provider        = "gcp"
+  infra_provider        = "gcp"
   project_id            = var.project_id
   cluster_name          = local.west_cluster
   location              = var.zone_standby

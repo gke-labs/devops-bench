@@ -25,7 +25,7 @@ provider "kind" {}
 
 module "cluster" {
   source          = "../../modules/cluster"
-  cloud_provider  = var.cloud_provider
+  infra_provider  = var.infra_provider
   cluster_name    = var.cluster_name
   location        = var.location
   node_count      = var.node_count
@@ -37,7 +37,7 @@ module "cluster" {
 }
 
 resource "null_resource" "write_synthetic_logs" {
-  count = var.cloud_provider == "gcp" ? 1 : 0
+  count = var.infra_provider == "gcp" ? 1 : 0
 
   provisioner "local-exec" {
     command = <<EOT

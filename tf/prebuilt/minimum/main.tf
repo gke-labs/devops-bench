@@ -61,7 +61,7 @@ provider "kind" {}
 
 module "cluster" {
   source          = "../../modules/cluster"
-  cloud_provider  = var.cloud_provider
+  infra_provider  = var.infra_provider
   cluster_name    = var.cluster_name
   location        = var.location
   node_count      = var.node_count

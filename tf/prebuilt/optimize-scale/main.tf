@@ -27,7 +27,7 @@ provider "kind" {}
 # below are therefore collision-free without any name suffixing.
 module "cluster" {
   source          = "../../modules/cluster"
-  cloud_provider  = var.cloud_provider
+  infra_provider  = var.infra_provider
   project_id      = var.project_id
   cluster_name    = var.cluster_name
   location        = var.location
@@ -38,15 +38,15 @@ module "cluster" {
 }
 
 data "google_client_config" "default" {
-  count = var.cloud_provider == "gcp" ? 1 : 0
+  count = var.infra_provider == "gcp" ? 1 : 0
 }
 
 provider "kubernetes" {
-  host                   = var.cloud_provider == "gcp" ? "https://${module.cluster.endpoint}" : module.cluster.endpoint
-  token                  = var.cloud_provider == "gcp" ? data.google_client_config.default[0].access_token : null
-  client_certificate     = var.cloud_provider == "kind" ? module.cluster.client_certificate : null
-  client_key             = var.cloud_provider == "kind" ? module.cluster.client_key : null
-  cluster_ca_certificate = var.cloud_provider == "gcp" ? base64decode(module.cluster.cluster_ca_certificate) : (var.cloud_provider == "kind" ? module.cluster.cluster_ca_certificate : null)
+  host                   = var.infra_provider == "gcp" ? "https://${module.cluster.endpoint}" : module.cluster.endpoint
+  token                  = var.infra_provider == "gcp" ? data.google_client_config.default[0].access_token : null
+  client_certificate     = var.infra_provider == "kind" ? module.cluster.client_certificate : null
+  client_key             = var.infra_provider == "kind" ? module.cluster.client_key : null
+  cluster_ca_certificate = var.infra_provider == "gcp" ? base64decode(module.cluster.cluster_ca_certificate) : (var.infra_provider == "kind" ? module.cluster.cluster_ca_certificate : null)
 }
 
 
@@ -163,12 +163,12 @@ resource "kubernetes_service_v1" "target" {
     #
     # On KinD, we use ClusterIP and rely on the harness port-forward fallback,
     # avoiding a pending external IP wait.
-    type = var.cloud_provider == "gcp" ? "LoadBalancer" : "ClusterIP"
+    type = var.infra_provider == "gcp" ? "LoadBalancer" : "ClusterIP"
   }
 
   # Wait for the LB IP to be assigned before terraform returns, so the harness
   # can resolve the external IP immediately after apply. Only applicable to GKE.
-  wait_for_load_balancer = var.cloud_provider == "gcp" ? true : false
+  wait_for_load_balancer = var.infra_provider == "gcp" ? true : false
 }
 
 output "cluster_name" {

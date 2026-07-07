@@ -35,12 +35,12 @@ provider "kind" {}
 # manifests, validates them, applies them, then performs the upgrade.
 module "cluster" {
   source                = "../../modules/cluster"
-  cloud_provider        = var.cloud_provider
+  infra_provider        = var.infra_provider
   project_id            = var.project_id
   cluster_name          = var.cluster_name
   location              = var.location
-  node_count            = var.cloud_provider == "gcp" ? 1 : null
-  machine_type          = var.cloud_provider == "gcp" ? "e2-standard-4" : null
+  node_count            = var.infra_provider == "gcp" ? 1 : null
+  machine_type          = var.infra_provider == "gcp" ? "e2-standard-4" : null
   kubernetes_version    = var.start_version
   node_image            = var.node_image
   kubeconfig_path       = var.kubeconfig_path

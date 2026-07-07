@@ -38,6 +38,20 @@ def _isolated_work_dir(stack_dir: str, tf_root: Path) -> str:
         return stack_dir
 
 
+def _get_declared_variables(tf_dir: str) -> set[str]:
+    """Scan the stack directory for declared variable names."""
+    declared = set()
+    for path in Path(tf_dir).glob("*.tf"):
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("variable ") and '"' in line:
+                    parts = line.split('"')
+                    if len(parts) >= 2:
+                        declared.add(parts[1])
+    return declared
+
+
 class TFDeployer(Deployer):
     """
     TF implementation of the Deployer interface.
@@ -104,9 +118,11 @@ class TFDeployer(Deployer):
 
         self._run_cmd(["tofu", "init", "-input=false"], cwd=self.work_dir)
 
+        declared = _get_declared_variables(self.tf_dir)
         cmd = ["tofu", "apply", "-auto-approve", "-input=false", *self._state_flags()]
         for k, v in self.variables.items():
-            cmd.extend(["-var", f"{k}={v}"])
+            if k in declared:
+                cmd.extend(["-var", f"{k}={v}"])
 
         self._run_cmd(cmd, cwd=self.work_dir)
 
@@ -118,9 +134,11 @@ class TFDeployer(Deployer):
 
         self._run_cmd(["tofu", "init", "-input=false"], cwd=self.work_dir)
 
+        declared = _get_declared_variables(self.tf_dir)
         cmd = ["tofu", "destroy", "-auto-approve", "-input=false", *self._state_flags()]
         for k, v in self.variables.items():
-            cmd.extend(["-var", f"{k}={v}"])
+            if k in declared:
+                cmd.extend(["-var", f"{k}={v}"])
 
         self._run_cmd(cmd, cwd=self.work_dir)
 

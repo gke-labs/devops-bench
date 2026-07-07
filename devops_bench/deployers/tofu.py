@@ -58,6 +58,20 @@ def _format_var(value: Any) -> str:
     return str(value)
 
 
+def _get_declared_variables(tf_dir: str) -> set[str]:
+    """Scan the stack directory for declared variable names."""
+    declared = set()
+    for path in Path(tf_dir).glob("*.tf"):
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("variable ") and '"' in line:
+                    parts = line.split('"')
+                    if len(parts) >= 2:
+                        declared.add(parts[1])
+    return declared
+
+
 def _isolated_work_dir(stack_dir: str, tf_root: Path) -> str:
     """Return a per-run private copy of the stack dir, or ``stack_dir`` unchanged.
 
@@ -143,9 +157,11 @@ class TFDeployer(Deployer):
         self.variables = variables or {}
 
     def _var_flags(self) -> list[str]:
+        declared = _get_declared_variables(self.tf_dir)
         flags: list[str] = []
         for key, value in self.variables.items():
-            flags.extend(["-var", f"{key}={_format_var(value)}"])
+            if key in declared:
+                flags.extend(["-var", f"{key}={_format_var(value)}"])
         return flags
 
     @staticmethod

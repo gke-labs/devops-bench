@@ -48,7 +48,7 @@ locals {
 
 module "cluster" {
   source                   = "../../modules/cluster"
-  cloud_provider           = "gcp"
+  infra_provider           = "gcp"
   project_id               = var.project_id
   cluster_name             = var.cluster_name
   location                 = var.location

@@ -11,6 +11,7 @@ def resolve_variables(
 ) -> dict[str, Any]:
     """Resolves default variables for GCP-based TF stacks."""
     variables = custom_variables.copy()
+    variables.setdefault("infra_provider", "gcp")
     variables.setdefault("project_id", global_project_id)
     variables.setdefault("cluster_name", global_cluster_name)
     variables.setdefault("location", global_location)

@@ -66,7 +66,7 @@ python -m devops_bench tasks/common/opa-remediation/task.yaml
 
 ```bash
 cd tf/prebuilt/opa-remediation
-tofu init && tofu apply -auto-approve -var=cloud_provider=kind -var=cluster_name=opa-kind -var=kubeconfig_path=~/.kube/config
+tofu init && tofu apply -auto-approve -var=infra_provider=kind -var=cluster_name=opa-kind -var=kubeconfig_path=~/.kube/config
 export KUBECONFIG=~/.kube/config && kubectl config use-context gke_local-kind_local_opa-kind
 
 kubectl get pods -n kyverno                              # Kyverno controllers Running
@@ -75,7 +75,7 @@ kubectl get deploy -A | grep -E 'team-'                  # team workloads
 kubectl get policyreport,clusterpolicyreport -A          # FAIL results for the violations
 git clone ~/opa-repo-<cluster_name>.git /tmp/opa && ls /tmp/opa/workloads && rm -rf /tmp/opa
 
-tofu destroy -auto-approve -var=cloud_provider=kind -var=cluster_name=opa-kind -var=kubeconfig_path=~/.kube/config
+tofu destroy -auto-approve -var=infra_provider=kind -var=cluster_name=opa-kind -var=kubeconfig_path=~/.kube/config
 ```
 You should see failing policy results for the privileged workloads (`cache`, `payments`) and the
 limitless workloads (`web`, `worker`), but **not** for the compliant `api`.

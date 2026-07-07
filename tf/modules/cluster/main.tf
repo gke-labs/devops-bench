@@ -13,7 +13,7 @@ terraform {
 
 module "gke" {
   source                   = "./gke"
-  count                    = var.cloud_provider == "gcp" ? 1 : 0
+  count                    = var.infra_provider == "gcp" ? 1 : 0
   project_id               = var.project_id
   location                 = var.location != "" ? var.location : "us-central1-a"
   cluster_name             = var.cluster_name
@@ -29,7 +29,7 @@ module "gke" {
 
 module "kind" {
   source          = "./kind"
-  count           = var.cloud_provider == "kind" ? 1 : 0
+  count           = var.infra_provider == "kind" ? 1 : 0
   cluster_name    = var.cluster_name
   kubeconfig_path = var.kubeconfig_path
   node_image      = var.node_image
