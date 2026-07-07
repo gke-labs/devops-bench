@@ -40,4 +40,4 @@ expected_output: |
   - Agent reconciles the conflict so client and server agree on mutual TLS for the backend host (e.g. removes the offending DestinationRule or sets its tls mode to 'ISTIO_MUTUAL'), without simply disabling security (it does not weaken the backend to PERMISSIVE/disable mTLS to "fix" it).
   - After the fix, the cross-cluster call from the 'sleep' client succeeds (returns the backend's response from the peer cluster) and is served over mTLS.
   - Agent writes 'mesh-federation-report.md' documenting the root cause (the STRICT vs DISABLE mTLS mismatch across the two clusters), the remediation applied, and confirmation that cross-cluster traffic is restored and mutually authenticated.
-validated: false
+validated: true
