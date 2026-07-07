@@ -33,6 +33,17 @@ done
 command -v docker >/dev/null 2>&1 || { echo "error: docker is required but not found on PATH" >&2; exit 1; }
 : "${GITHUB_TOKEN:?set GITHUB_TOKEN (e.g. export GITHUB_TOKEN=\$(gh auth token))}"
 
+# Copybara pushes over HTTPS with the container's git, which won't use GITHUB_TOKEN on its own.
+# The image ships git 2.30, so GIT_CONFIG_* (git >=2.31) is ignored; instead mount a gitconfig with
+# an inline credential helper that echoes the token from the container env. The token is never
+# written to disk — only the helper snippet is (it reads $GITHUB_TOKEN at credential time).
+GITCONFIG="$(mktemp)"
+trap 'rm -f "$GITCONFIG"' EXIT
+cat > "$GITCONFIG" <<'GITCFG'
+[credential "https://github.com"]
+    helper = "!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f"
+GITCFG
+
 echo ">> copybara $WORKFLOW  (image: $COPYBARA_IMAGE)  args: ${EXTRA_ARGS[*]:-none}"
 
 set +e
@@ -44,6 +55,7 @@ docker run --rm \
   -w /usr/src/app \
   -e GITHUB_TOKEN \
   -e COPYBARA_CONFIG_ROOT=/usr/src/app \
+  -v "$GITCONFIG":/root/.gitconfig:ro \
   --entrypoint java \
   "$COPYBARA_IMAGE" \
   -jar /opt/copybara/copybara_deploy.jar \
