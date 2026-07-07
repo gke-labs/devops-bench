@@ -53,6 +53,11 @@ variable "gpu_type" {
   description = "Abstract GPU family: 'l4', 'a100', 't4', or '' for no GPU"
   type        = string
   default     = ""
+
+  validation {
+    condition     = contains(["", "l4", "a100", "t4"], var.gpu_type)
+    error_message = "gpu_type must be one of: '', 'l4', 'a100', 't4'."
+  }
 }
 
 variable "gpu_count" {

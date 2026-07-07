@@ -29,7 +29,7 @@ locals {
   repo_path = var.repo_path != "" ? var.repo_path : "~/app-repo-${var.cluster_name}.git"
 
   # Region-prefixed cluster names. The discriminator must land in the FIRST 15
-  # chars: tf/modules/gke derives the node SA account_id from
+  # chars: tf/modules/cluster/gke derives the node SA account_id from
   # substr(cluster_name, 0, 15), so a "-east"/"-west" *suffix* (past char 15)
   # would give both clusters the SAME account_id and collide on a single apply.
   # A leading "e-"/"w-" keeps the run token in-window (cross-run unique) while

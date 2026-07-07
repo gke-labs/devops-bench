@@ -62,6 +62,12 @@ class StubProvider(Provider):
 def stack_dir(tmp_path):
     path = tmp_path / "prebuilt" / "minimum"
     path.mkdir(parents=True)
+    (path / "variables.tf").write_text("""
+variable "project_id" {}
+variable "cluster_name" {}
+variable "location" {}
+variable "node_count" {}
+""")
     return path
 
 

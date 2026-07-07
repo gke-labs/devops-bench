@@ -5,7 +5,7 @@
 # harness toolchain plus the openclaw `oc` binary, so the whole harness runs on
 # the VM and invokes `oc` as a local subprocess. SSH is reached over IAP.
 #
-# It deliberately mirrors the plain-Compute patterns in tf/modules/gke (the agent
+# It deliberately mirrors the plain-Compute patterns in tf/modules/cluster/gke (the agent
 # service account + the IAP-SSH firewall rule).
 
 terraform {

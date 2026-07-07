@@ -47,16 +47,16 @@ To avoid duplicating stacks for different cloud or local environments, tasks cal
 
 ## 3. How to Run Stacks on Different Providers
 
-When executing a task via the `devopsbench` runner, you can specify the target provider using the `--provider` flag. The runner will automatically inject the correct `infra_provider` variable.
+When executing a task via the `devops-bench` runner, you specify the target provider using the `INFRA_PROVIDER` environment variable.
 
 ### Running on GCP (GKE)
 ```bash
-devopsbench run create-deployment --provider gcp
+INFRA_PROVIDER=gcp devops-bench tasks/gcp/deploy-hello-app/task.yaml
 ```
 
 ### Running Locally (KinD)
 ```bash
-devopsbench run create-deployment --provider kind
+INFRA_PROVIDER=kind devops-bench tasks/common/opa-remediation/task.yaml
 ```
 
 ---
