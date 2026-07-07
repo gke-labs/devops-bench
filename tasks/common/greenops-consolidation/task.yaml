@@ -36,4 +36,4 @@ expected_output: |
   - After consolidation the workloads are packed onto the minimum safe number of worker nodes (two), every pod is healthy/Running, and no PodDisruptionBudget was violated during the migration.
   - Agent writes 'greenops-report.md' documenting the consolidation it performed: which worker nodes it drained/freed for de-provisioning (and how many), and confirmation that every workload stayed available.
   - The 'greenops-report.md' also reports the projected energy/carbon saving — an estimated CO2 reduction derived from the freed-node count and the delivered carbon feed's node power-draw + grid carbon-intensity figures (the exact figure need not be precise as long as the reasoning is sound).
-validated: false
+validated: true
