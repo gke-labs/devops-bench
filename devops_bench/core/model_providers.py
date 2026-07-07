@@ -181,6 +181,6 @@ def resolve_provider(provider: str | None, *, default: str = "google") -> Provid
     canonical = _ALIASES.get(raw)
     if canonical is None:
         raise ConfigError(
-            f"unknown agent provider {provider!r}; known providers: {', '.join(known_providers())}"
+            f"unknown agent provider {raw!r}; known providers: {', '.join(known_providers())}"
         )
     return _SPECS[canonical]
