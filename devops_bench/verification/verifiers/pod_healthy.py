@@ -111,9 +111,7 @@ class PodHealthyVerifier(BaseVerifier):
                 kubeconfig=self.kubeconfig,
             )
         except Exception as exc:  # noqa: BLE001 - diagnostics path, never raises
-            _log.warning(
-                "Failed to fetch pod details for selector %s: %s", self.selector, exc
-            )
+            _log.warning("Failed to fetch pod details for selector %s: %s", self.selector, exc)
             return {"error": str(exc)}
 
     def _check_pods_status(self, raw: dict[str, Any]) -> bool:

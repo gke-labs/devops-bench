@@ -136,9 +136,7 @@ def args_to_config(args: argparse.Namespace) -> BenchmarkConfig:
         base,
         **overrides,
         no_infra=args.no_infra if args.no_infra is not None else base.no_infra,
-        no_teardown=(
-            args.no_teardown if args.no_teardown is not None else base.no_teardown
-        ),
+        no_teardown=(args.no_teardown if args.no_teardown is not None else base.no_teardown),
         parallel=args.parallel or base.parallel,
     )
 

@@ -167,9 +167,7 @@ class DefaultEvalHarness(Harness):
         )
         self.agent_type = (resolved_agent_type or _DEFAULT_AGENT_TYPE).lower()
         self.no_infra = no_infra if no_infra is not None else get_bool("BENCH_NO_INFRA")
-        self.no_teardown = (
-            no_teardown if no_teardown is not None else get_bool("BENCH_NO_TEARDOWN")
-        )
+        self.no_teardown = no_teardown if no_teardown is not None else get_bool("BENCH_NO_TEARDOWN")
         # Resolved once so capabilities and scoring observe the same value.
         self.use_mcp: bool = get_bool("BENCH_USE_MCP", True)
         # When running concurrently with other benchmark processes, allocate a
@@ -189,9 +187,7 @@ class DefaultEvalHarness(Harness):
             get_env("TARGET_DEPLOYMENT_NAME", self.default_target_deployment)
             or self.default_target_deployment
         )
-        self.namespace = (
-            get_env("NAMESPACE", self.default_namespace) or self.default_namespace
-        )
+        self.namespace = get_env("NAMESPACE", self.default_namespace) or self.default_namespace
         self.reporter = reporter or ResultReporter(results_root)
 
     @property
@@ -275,9 +271,7 @@ class DefaultEvalHarness(Harness):
         )
 
     @staticmethod
-    def _gate_capabilities(
-        env_caps: AllCapabilities, use_mcp: bool
-    ) -> AllCapabilities:
+    def _gate_capabilities(env_caps: AllCapabilities, use_mcp: bool) -> AllCapabilities:
         """Apply the harness's ``use_mcp`` gate to an env-derived capability set.
 
         Skills and rules are independent of MCP and pass through unchanged;
@@ -536,9 +530,7 @@ class DefaultEvalHarness(Harness):
             ``results.json`` schema.
         """
         run_dir = self.reporter.new_run_dir()
-        detailed_results: list[dict[str, Any]] = [
-            self._run_one(task, run_dir) for task in tasks
-        ]
+        detailed_results: list[dict[str, Any]] = [self._run_one(task, run_dir) for task in tasks]
 
         # Persist raw execution outputs before the (slower) scoring pass.
         self.reporter.write(run_dir, detailed_results)
@@ -555,9 +547,7 @@ class DefaultEvalHarness(Harness):
                 run_dir,
             )
         except Exception:  # noqa: BLE001 - execution results must survive scoring errors
-            _log.exception(
-                "scoring failed; returning unscored execution results from %s", run_dir
-            )
+            _log.exception("scoring failed; returning unscored execution results from %s", run_dir)
 
         # Emit the flattened, ingest-ready rows + run manifest. Best-effort: the
         # detailed results.json is already on disk, so a failure here must not
@@ -568,9 +558,7 @@ class DefaultEvalHarness(Harness):
             _log.exception("failed to write rows.json/manifest.json for %s", run_dir)
         return detailed_results
 
-    def _write_run_artifacts(
-        self, run_dir: Path, detailed_results: list[dict[str, Any]]
-    ) -> None:
+    def _write_run_artifacts(self, run_dir: Path, detailed_results: list[dict[str, Any]]) -> None:
         """Flatten ``detailed_results`` into ``rows.json`` + ``manifest.json``.
 
         Assembles the run-level :class:`~devops_bench.results.Manifest` from the
@@ -646,17 +634,13 @@ class DefaultEvalHarness(Harness):
             deployer.up()
             cluster_info = deployer.get_cluster_info()
             active_cluster_name = cluster_info.name or self.cluster_name
-            context = self.make_context(
-                task, cluster=cluster_info, workspace_path=workspace_path
-            )
+            context = self.make_context(task, cluster=cluster_info, workspace_path=workspace_path)
 
             prompt = self.replace_placeholders(task.prompt, active_cluster_name)
 
             chaos_specs = self._parse_chaos_specs(task.chaos_spec, active_cluster_name)
-            verification_mapping, verification_parse_errors = (
-                self._build_verification_mapping(
-                    task.verification_spec, active_cluster_name
-                )
+            verification_mapping, verification_parse_errors = self._build_verification_mapping(
+                task.verification_spec, active_cluster_name
             )
 
             # Hand the background scenario its own context with an isolated
@@ -678,13 +662,9 @@ class DefaultEvalHarness(Harness):
             agent_res = self.execute_agent(prompt, context)
             collect_generated_files(before_files, run_dir, source_dir=workspace_path)
 
-            expected_output = self.replace_placeholders(
-                task.expected_output, active_cluster_name
-            )
+            expected_output = self.replace_placeholders(task.expected_output, active_cluster_name)
 
-            chaos_report, perf_report = self._drain_scenario(
-                scenario_manager, scenario_thread
-            )
+            chaos_report, perf_report = self._drain_scenario(scenario_manager, scenario_thread)
 
             result = self._build_success_record(
                 task=task,
@@ -782,9 +762,7 @@ class DefaultEvalHarness(Harness):
                 # for consumers that only sample tool names; the trajectory is
                 # the source of truth.
                 "tools": [
-                    entry.get("name")
-                    for entry in dumped.get("trajectory", [])
-                    if entry.get("name")
+                    entry.get("name") for entry in dumped.get("trajectory", []) if entry.get("name")
                 ],
                 "trajectory": dumped.get("trajectory", []),
                 "status": "success",
@@ -796,9 +774,7 @@ class DefaultEvalHarness(Harness):
                 # flag alone would let an empty/errored run pass as a genuine low
                 # score. Require no agent error *and* a non-empty trajectory.
                 "validated": (
-                    task.validated
-                    and not agent_errors
-                    and bool(dumped.get("trajectory"))
+                    task.validated and not agent_errors and bool(dumped.get("trajectory"))
                 ),
                 "errors": agent_errors,
                 # First-error scalar so a parser reading ``error`` finds the
@@ -845,9 +821,7 @@ class DefaultEvalHarness(Harness):
             {
                 "input": prompt if prompt is not None else task.prompt,
                 "expected_output": (
-                    expected_output
-                    if expected_output is not None
-                    else task.expected_output
+                    expected_output if expected_output is not None else task.expected_output
                 ),
                 "status": "failed",
                 "error": error_text,
@@ -949,9 +923,7 @@ class DefaultEvalHarness(Harness):
             chaos_report["status"] = "timed_out"
         return chaos_report, perf_report
 
-    def _teardown(
-        self, deployer: Any, infra_config: dict[str, Any], name: str
-    ) -> None:
+    def _teardown(self, deployer: Any, infra_config: dict[str, Any], name: str) -> None:
         """Tear down infrastructure unless disabled by config or env.
 
         Args:

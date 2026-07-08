@@ -98,10 +98,7 @@ def _parse_through(data: Any, registry: Any, *, axis: str) -> BaseModel:
             return data
         raise _validation_error(
             f"chaos_spec_unregistered_{axis}_model",
-            (
-                f"chaos {axis} node {type(data).__name__!r} is not a "
-                f"registered {axis}"
-            ),
+            (f"chaos {axis} node {type(data).__name__!r} is not a registered {axis}"),
             input_value=data,
         )
     if not isinstance(data, dict):
@@ -124,19 +121,14 @@ def _parse_through(data: Any, registry: Any, *, axis: str) -> BaseModel:
     except NotRegisteredError as exc:
         raise _validation_error(
             f"chaos_spec_unknown_{axis}_type",
-            (
-                f"unknown chaos {axis} type {type_key!r}; "
-                f"registered: {sorted(registry.keys())}"
-            ),
+            (f"unknown chaos {axis} type {type_key!r}; registered: {sorted(registry.keys())}"),
             input_value=data,
         ) from exc
 
     return model_cls.model_validate(data)
 
 
-def _validation_error(
-    code: str, message: str, *, input_value: Any
-) -> ValidationError:
+def _validation_error(code: str, message: str, *, input_value: Any) -> ValidationError:
     """Build a :class:`ValidationError` around a single :class:`PydanticCustomError`.
 
     The registry's :class:`NotRegisteredError` carries useful context, but the

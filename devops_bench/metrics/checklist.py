@@ -70,9 +70,7 @@ def extract_checklist_items(expected_output: str, use_mcp: bool) -> list[str]:
             reqs_section = parts[1]
 
     if "expected manifest generated:" in reqs_section.lower():
-        parts = re.split(
-            r"(?i)expected manifest generated\s*:", reqs_section, maxsplit=1
-        )
+        parts = re.split(r"(?i)expected manifest generated\s*:", reqs_section, maxsplit=1)
         reqs_section = parts[0]
 
     # Strip only the leading "- " bullet; ``str.strip("- ")`` would also eat
@@ -108,21 +106,16 @@ class ChecklistMetric:
 
     def applies(self, ctx: MetricContext) -> bool:
         """Run only when the result's ``expected_output`` carries bullets."""
-        return bool(
-            extract_checklist_items(ctx.result.get("expected_output", ""), ctx.use_mcp)
-        )
+        return bool(extract_checklist_items(ctx.result.get("expected_output", ""), ctx.use_mcp))
 
     def evaluate(self, ctx: MetricContext) -> Iterable[MetricScore]:
         """Score each requirement and emit the aggregate ChecklistScore."""
-        items = extract_checklist_items(
-            ctx.result.get("expected_output", ""), ctx.use_mcp
-        )
+        items = extract_checklist_items(ctx.result.get("expected_output", ""), ctx.use_mcp)
         dynamic_metrics = [
             GEval(
                 name=f"Check: {item}",
                 criteria=(
-                    "Verify that the actual output fulfills this specific"
-                    f" requirement: {item}"
+                    f"Verify that the actual output fulfills this specific requirement: {item}"
                 ),
                 threshold=GEVAL_PASS_THRESHOLD,
                 evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],

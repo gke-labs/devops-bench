@@ -39,7 +39,5 @@ def load_skill_text(filename: str) -> str:
     """
     resource = resources.files(SKILLS_PACKAGE) / filename
     if not resource.is_file():
-        raise FileNotFoundError(
-            f"Judge skill {filename!r} not found in package {SKILLS_PACKAGE!r}"
-        )
+        raise FileNotFoundError(f"Judge skill {filename!r} not found in package {SKILLS_PACKAGE!r}")
     return resource.read_text(encoding="utf-8")

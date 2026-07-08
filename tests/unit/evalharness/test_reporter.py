@@ -371,9 +371,7 @@ def test_verification_parse_errors_flow_into_success_record(
         agent_res=_stub_agent_result(),
         chaos_report={},
         perf_report={},
-        verification_parse_errors=[
-            {"name": "broken", "reason": "missing type discriminator"}
-        ],
+        verification_parse_errors=[{"name": "broken", "reason": "missing type discriminator"}],
     )
     assert record["verification_parse_errors"] == [
         {"name": "broken", "reason": "missing type discriminator"}
@@ -394,9 +392,7 @@ def test_verification_parse_errors_flow_into_failed_record(
         RuntimeError("boom"),
         verification_parse_errors=[{"name": "broken", "reason": "bad type"}],
     )
-    assert record["verification_parse_errors"] == [
-        {"name": "broken", "reason": "bad type"}
-    ]
+    assert record["verification_parse_errors"] == [{"name": "broken", "reason": "bad type"}]
 
 
 def test_record_carries_generation_only_and_validated(isolated_env: None) -> None:

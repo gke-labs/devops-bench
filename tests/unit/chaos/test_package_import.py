@@ -39,9 +39,7 @@ def test_import_pulls_no_provider_sdk():
         "    assert forbidden not in loaded, forbidden\n"
         "print('ok')\n"
     )
-    proc = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, timeout=30
-    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
     assert "ok" in proc.stdout
 
@@ -71,9 +69,7 @@ def test_import_does_not_pull_chaos_agent_or_models_chain():
         "    assert expected in loaded, expected\n"
         "print('ok')\n"
     )
-    proc = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, timeout=30
-    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
     assert "ok" in proc.stdout
 
@@ -102,9 +98,7 @@ def test_parsing_a_spec_does_not_pull_the_agent_or_models_chain():
         "    assert forbidden not in loaded, forbidden\n"
         "print('ok')\n"
     )
-    proc = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, timeout=30
-    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
     assert "ok" in proc.stdout
 

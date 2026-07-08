@@ -34,8 +34,6 @@ def test_import_pulls_no_heavy_sdks():
         "    assert forbidden not in loaded, forbidden\n"
         "print('ok')\n"
     )
-    proc = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, timeout=30
-    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
     assert "ok" in proc.stdout

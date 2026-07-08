@@ -38,9 +38,33 @@ def test_parse_session_sums_usage_across_assistant_turns():
     session = "\n".join(
         json.dumps(line)
         for line in (
-            _assistant({"input": 2000, "output": 300, "cacheRead": 28000, "cacheWrite": 0, "totalTokens": 30300}),
-            _assistant({"input": 1500, "output": 250, "cacheRead": 41000, "cacheWrite": 0, "totalTokens": 42750}),
-            _assistant({"input": 900, "output": 120, "cacheRead": 60000, "cacheWrite": 0, "totalTokens": 61020}),
+            _assistant(
+                {
+                    "input": 2000,
+                    "output": 300,
+                    "cacheRead": 28000,
+                    "cacheWrite": 0,
+                    "totalTokens": 30300,
+                }
+            ),
+            _assistant(
+                {
+                    "input": 1500,
+                    "output": 250,
+                    "cacheRead": 41000,
+                    "cacheWrite": 0,
+                    "totalTokens": 42750,
+                }
+            ),
+            _assistant(
+                {
+                    "input": 900,
+                    "output": 120,
+                    "cacheRead": 60000,
+                    "cacheWrite": 0,
+                    "totalTokens": 61020,
+                }
+            ),
         )
     )
 

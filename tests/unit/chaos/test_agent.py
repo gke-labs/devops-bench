@@ -97,7 +97,13 @@ def test_agent_dispatches_tool_calls_and_returns_final_text():
         [
             (
                 "running fortio now",
-                [{"name": "run_command", "args": {"command": "fortio load -qps 50 http://x"}, "id": "c1"}],
+                [
+                    {
+                        "name": "run_command",
+                        "args": {"command": "fortio load -qps 50 http://x"},
+                        "id": "c1",
+                    }
+                ],
             ),
             ("done; saturated at 50 qps", []),
         ]

@@ -32,9 +32,7 @@ from devops_bench.metrics.pipeline import (
 
 def test_checklist_extracts_critical_requirements_bullets():
     expected = (
-        "Critical Requirements:\n"
-        "- Deployment must use 3 replicas\n"
-        "- Service exposes port 8080\n"
+        "Critical Requirements:\n- Deployment must use 3 replicas\n- Service exposes port 8080\n"
     )
     assert extract_checklist_items(expected, use_mcp=True) == [
         "Deployment must use 3 replicas",
@@ -53,11 +51,7 @@ def test_checklist_stops_at_expected_manifest_marker():
 
 
 def test_checklist_drops_tool_call_items_when_mcp_disabled():
-    expected = (
-        "Critical Requirements:\n"
-        "- Expected Tool Call: apply_manifest\n"
-        "- App is reachable\n"
-    )
+    expected = "Critical Requirements:\n- Expected Tool Call: apply_manifest\n- App is reachable\n"
     assert extract_checklist_items(expected, use_mcp=False) == ["App is reachable"]
     assert extract_checklist_items(expected, use_mcp=True) == [
         "Expected Tool Call: apply_manifest",
@@ -72,9 +66,7 @@ def test_checklist_empty_when_no_bullets():
 def test_checklist_preserves_trailing_hyphen():
     # ``lstrip("- ")`` must not eat a trailing hyphen the way ``strip("- ")`` would.
     expected = "Critical Requirements:\n- Deploy to namespace staging-\n"
-    assert extract_checklist_items(expected, use_mcp=True) == [
-        "Deploy to namespace staging-"
-    ]
+    assert extract_checklist_items(expected, use_mcp=True) == ["Deploy to namespace staging-"]
 
 
 def test_checklist_threshold_is_value_independent_of_tool_invocation():
@@ -87,9 +79,7 @@ def test_checklist_threshold_is_value_independent_of_tool_invocation():
 
 
 def _metric_result(name, score=1.0, success=True, reason="ok"):
-    metric_data = SimpleNamespace(
-        name=name, score=score, success=success, reason=reason
-    )
+    metric_data = SimpleNamespace(name=name, score=score, success=success, reason=reason)
     test_result = SimpleNamespace(metrics_data=[metric_data])
     return SimpleNamespace(test_results=[test_result])
 
@@ -236,9 +226,7 @@ def test_batch_invokes_grounding_and_chaos(mocker):
     from devops_bench.metrics import chaos_metrics, grounding
 
     grounding_call = mocker.patch.object(grounding, "evaluate_documentation_grounding")
-    retrieval = mocker.patch.object(
-        grounding, "calculate_doc_retrieval_rate", return_value=0.5
-    )
+    retrieval = mocker.patch.object(grounding, "calculate_doc_retrieval_rate", return_value=0.5)
     chaos = mocker.patch.object(chaos_metrics, "evaluate_chaos_metrics")
     judge = MagicMock()
     results = [
@@ -282,9 +270,7 @@ def test_batch_score_insertion_order_matches_legacy_results_json(mocker):
             }
         ),
     )
-    mocker.patch.object(
-        grounding, "calculate_doc_retrieval_rate", return_value=0.5
-    )
+    mocker.patch.object(grounding, "calculate_doc_retrieval_rate", return_value=0.5)
     mocker.patch.object(
         chaos_metrics,
         "evaluate_chaos_metrics",
@@ -311,6 +297,7 @@ def test_batch_score_insertion_order_matches_legacy_results_json(mocker):
     evaluate_metrics_batch(results, MagicMock(), use_mcp=True)
 
     keys = list(results[0]["scores"].keys())
+
     # Locate the section anchors and assert outcome -> tool -> checklist ->
     # grounding -> chaos. We pin the first-occurrence index of one canonical
     # key from each family so the assertion is robust to the per-family
@@ -337,9 +324,7 @@ def test_canonical_tool_name_strips_mcp_prefix():
 
 
 def test_build_context_threads_generation_only(mocker):
-    mocker.patch.object(
-        pipeline, "LLMTestCase", side_effect=lambda **kw: SimpleNamespace(**kw)
-    )
+    mocker.patch.object(pipeline, "LLMTestCase", side_effect=lambda **kw: SimpleNamespace(**kw))
     ctx = pipeline._build_context(_base_result(generation_only=True), MagicMock(), True)
     assert ctx.generation_only is True
     # Absent key defaults to False.
@@ -347,9 +332,7 @@ def test_build_context_threads_generation_only(mocker):
 
 
 def test_build_context_normalizes_tool_names_for_judge(mocker):
-    mocker.patch.object(
-        pipeline, "LLMTestCase", side_effect=lambda **kw: SimpleNamespace(**kw)
-    )
+    mocker.patch.object(pipeline, "LLMTestCase", side_effect=lambda **kw: SimpleNamespace(**kw))
     res = _base_result(
         tools=["default__generate_manifest"],
         trajectory=[{"name": "default__generate_manifest", "status": "completed"}],

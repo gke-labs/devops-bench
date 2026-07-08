@@ -40,9 +40,7 @@ def _fresh_import(module: str) -> set[str]:
         f"import {module}  # noqa: F401\n"
         f"print([s for s in {_SDKS!r} if s in sys.modules])\n"
     )
-    proc = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, timeout=30
-    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
     return set(eval(proc.stdout.strip()))  # noqa: S307 - trusted child output
 
@@ -54,9 +52,7 @@ def test_metrics_exposes_public_symbols():
         "assert hasattr(m, 'MetricScore')\n"
         "print('ok')\n"
     )
-    proc = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, timeout=30
-    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
     assert proc.returncode == 0, proc.stderr
     assert "ok" in proc.stdout
 

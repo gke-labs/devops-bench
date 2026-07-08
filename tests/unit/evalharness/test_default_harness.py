@@ -256,6 +256,7 @@ def test_ensure_builtin_agents_swallows_only_import_errors(
     top, etc.) must bubble out so the operator sees the real failure
     instead of a silent ``debug`` log.
     """
+
     # Case 1: ImportError is swallowed — function returns normally.
     def fake_import_missing_sdk(name: str) -> Any:
         raise ImportError("anthropic SDK not installed")

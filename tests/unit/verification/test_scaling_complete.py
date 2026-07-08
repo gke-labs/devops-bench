@@ -31,9 +31,7 @@ def test_success_when_ready_replicas_meet_minimum():
         "devops_bench.verification.verifiers.scaling_complete.get_resource",
         return_value=deployment,
     ):
-        result = ScalingCompleteVerifier(
-            deployment="web", min_replicas=2
-        ).verify(timeout_sec=5)
+        result = ScalingCompleteVerifier(deployment="web", min_replicas=2).verify(timeout_sec=5)
 
     assert result.success is True
     assert "Ready replicas (3) >= min replicas (2)" in result.reason
@@ -48,9 +46,7 @@ def test_failure_when_ready_replicas_below_minimum():
         "devops_bench.verification.verifiers.scaling_complete.get_resource",
         return_value=deployment,
     ):
-        result = ScalingCompleteVerifier(
-            deployment="web", min_replicas=3
-        ).verify(timeout_sec=0)
+        result = ScalingCompleteVerifier(deployment="web", min_replicas=3).verify(timeout_sec=0)
 
     assert result.success is False
     assert "Ready replicas (1) < min replicas (3)" in result.reason
@@ -64,9 +60,7 @@ def test_null_status_does_not_crash_check():
         "devops_bench.verification.verifiers.scaling_complete.get_resource",
         return_value=deployment,
     ):
-        result = ScalingCompleteVerifier(
-            deployment="web", min_replicas=1
-        ).verify(timeout_sec=0)
+        result = ScalingCompleteVerifier(deployment="web", min_replicas=1).verify(timeout_sec=0)
 
     assert result.success is False
     assert "Ready replicas (0) < min replicas (1)" in result.reason
@@ -77,9 +71,7 @@ def test_subprocess_error_is_reported_in_reason():
         "devops_bench.verification.verifiers.scaling_complete.get_resource",
         side_effect=SubprocessError(["kubectl"], returncode=1, stderr="not found"),
     ):
-        result = ScalingCompleteVerifier(
-            deployment="web", min_replicas=1
-        ).verify(timeout_sec=0)
+        result = ScalingCompleteVerifier(deployment="web", min_replicas=1).verify(timeout_sec=0)
 
     assert result.success is False
     assert "Failed to get deployment" in result.reason
@@ -93,9 +85,9 @@ def test_success_when_ready_replicas_within_bounds():
         "devops_bench.verification.verifiers.scaling_complete.get_resource",
         return_value=deployment,
     ):
-        result = ScalingCompleteVerifier(
-            deployment="web", min_replicas=1, max_replicas=3
-        ).verify(timeout_sec=5)
+        result = ScalingCompleteVerifier(deployment="web", min_replicas=1, max_replicas=3).verify(
+            timeout_sec=5
+        )
 
     assert result.success is True
     assert "within bounds [1, 3]" in result.reason
@@ -107,9 +99,9 @@ def test_failure_when_ready_replicas_above_maximum():
         "devops_bench.verification.verifiers.scaling_complete.get_resource",
         return_value=deployment,
     ):
-        result = ScalingCompleteVerifier(
-            deployment="web", min_replicas=1, max_replicas=3
-        ).verify(timeout_sec=0)
+        result = ScalingCompleteVerifier(deployment="web", min_replicas=1, max_replicas=3).verify(
+            timeout_sec=0
+        )
 
     assert result.success is False
     assert "Ready replicas (5) > max replicas (3)" in result.reason

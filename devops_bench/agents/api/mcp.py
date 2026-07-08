@@ -66,9 +66,7 @@ class MCPClient:
                 "MCP server command."
             )
         server_params = StdioServerParameters(command=parts[0], args=parts[1:])
-        stdio_transport = await self.exit_stack.enter_async_context(
-            stdio_client(server_params)
-        )
+        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
         self.read_stream, self.write_stream = stdio_transport
         self.session = await self.exit_stack.enter_async_context(
             ClientSession(self.read_stream, self.write_stream)

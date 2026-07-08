@@ -24,12 +24,8 @@ from devops_bench.metrics.chaos_metrics import evaluate_chaos_metrics
 
 
 def _chaos_result():
-    diag = SimpleNamespace(
-        name="DiagnosisAccuracy [GEval]", score=5.0, success=True, reason="r"
-    )
-    rec = SimpleNamespace(
-        name="GracefulRecovery", score=4.0, success=True, reason="r"
-    )
+    diag = SimpleNamespace(name="DiagnosisAccuracy [GEval]", score=5.0, success=True, reason="r")
+    rec = SimpleNamespace(name="GracefulRecovery", score=4.0, success=True, reason="r")
     test_result = SimpleNamespace(metrics_data=[diag, rec])
     return SimpleNamespace(test_results=[test_result])
 
@@ -74,10 +70,9 @@ def test_chaos_defaults_fault_and_survives_eval_error(mocker):
     mocker.patch.object(
         chaos_metrics,
         "GEval",
-        side_effect=lambda **kw: captured.setdefault("criteria", []).append(
-            kw["criteria"]
-        )
-        or MagicMock(),
+        side_effect=lambda **kw: (
+            captured.setdefault("criteria", []).append(kw["criteria"]) or MagicMock()
+        ),
     )
     mocker.patch("deepeval.evaluate", side_effect=RuntimeError("judge down"))
     scores: dict = {}

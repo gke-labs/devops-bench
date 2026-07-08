@@ -183,10 +183,7 @@ class VerifierAgent:
         # ``verify(remaining)`` call, so they cannot linger long.
         ex = ThreadPoolExecutor(max_workers=workers)
         try:
-            futs = {
-                ex.submit(self._run, child, deadline): i
-                for i, child in enumerate(node.checks)
-            }
+            futs = {ex.submit(self._run, child, deadline): i for i, child in enumerate(node.checks)}
             done, _ = futures_wait(futs, timeout=max(0.0, deadline - time.monotonic()))
             for f, i in futs.items():
                 if f not in done:
@@ -203,9 +200,7 @@ class VerifierAgent:
         finally:
             ex.shutdown(wait=False, cancel_futures=True)
         ok = all(r.success for r in results)
-        reasons = [
-            f"[{i}] {'ok' if r.success else 'fail'}" for i, r in enumerate(results)
-        ]
+        reasons = [f"[{i}] {'ok' if r.success else 'fail'}" for i, r in enumerate(results)]
         return VerificationResult(
             success=ok,
             elapsed_time=time.monotonic() - start,

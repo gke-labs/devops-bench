@@ -62,9 +62,7 @@ def _build_capabilities_from_env(env: Mapping[str, str] | None) -> AllCapabiliti
     if mcp_command or allowed_tools:
         # ``name="default"`` is generic: env-driven from_env has no catalog to
         # pull a real name from, and the agent never inspects it.
-        mcp_servers = (
-            McpBinding(name="default", command=mcp_command, tools=allowed_tools),
-        )
+        mcp_servers = (McpBinding(name="default", command=mcp_command, tools=allowed_tools),)
 
     skills_paths = _parse_csv(get_env("AGENT_SKILLS_PATHS", env=env))
     skills = SkillBinding(paths=skills_paths)

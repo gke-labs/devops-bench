@@ -88,12 +88,8 @@ def test_optimize_scale_spec_dispatches_end_to_end_with_stubbed_leaves():
             success=True, elapsed_time=0.0, reason="pods ready", name=self.name
         )
 
-    def fake_scale(
-        self: ScalingCompleteVerifier, timeout_sec: float
-    ) -> VerificationResult:
-        return VerificationResult(
-            success=True, elapsed_time=0.0, reason="scaled", name=self.name
-        )
+    def fake_scale(self: ScalingCompleteVerifier, timeout_sec: float) -> VerificationResult:
+        return VerificationResult(success=True, elapsed_time=0.0, reason="scaled", name=self.name)
 
     with (
         patch.object(PodHealthyVerifier, "verify", fake_pod),

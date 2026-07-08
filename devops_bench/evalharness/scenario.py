@@ -161,9 +161,7 @@ class ScenarioManager:
 
         try:
             chaos_result = self._inject_chaos(spec, ctx)
-            self.result_holder["chaos_report"] = self._chaos_report_from_result(
-                spec, chaos_result
-            )
+            self.result_holder["chaos_report"] = self._chaos_report_from_result(spec, chaos_result)
         except Exception as exc:  # noqa: BLE001 - surface failure into the report
             _log.error("error running scenario: %s", exc)
             self.result_holder["chaos_report"]["status"] = "failed"
@@ -196,12 +194,8 @@ class ScenarioManager:
                 "verification completed: %s",
                 verification_result.model_dump_json(indent=2),
             )
-            self.result_holder["chaos_report"]["verification"] = (
-                verification_result.model_dump()
-            )
-            self.result_holder["perf_report"] = self._perf_from_verification(
-                verification_result
-            )
+            self.result_holder["chaos_report"]["verification"] = verification_result.model_dump()
+            self.result_holder["perf_report"] = self._perf_from_verification(verification_result)
         except Exception as exc:  # noqa: BLE001 - surface failure into the report
             _log.error("verification failed with exception: %s", exc)
             self.result_holder["chaos_report"]["verification"] = {
@@ -297,10 +291,7 @@ class ScenarioManager:
             except Exception as exc:  # noqa: BLE001 - poll keeps retrying
                 _log.debug("waiting for LB IP on %s/%s: %s", namespace, service, exc)
                 return False
-            ingress = (
-                (doc.get("status") or {}).get("loadBalancer", {}).get("ingress")
-                or []
-            )
+            ingress = (doc.get("status") or {}).get("loadBalancer", {}).get("ingress") or []
             if not ingress:
                 return False
             entry = ingress[0] or {}
