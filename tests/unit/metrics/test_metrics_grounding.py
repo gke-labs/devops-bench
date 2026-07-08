@@ -120,9 +120,7 @@ def test_grounding_no_constraints_returns_early(mocker):
     evaluate = mocker.patch("deepeval.evaluate")
     scores: dict = {}
 
-    evaluate_documentation_grounding(
-        [{"constraints": []}], MagicMock(), MagicMock(), scores
-    )
+    evaluate_documentation_grounding([{"constraints": []}], MagicMock(), MagicMock(), scores)
 
     evaluate.assert_not_called()
     assert scores == {}
@@ -204,9 +202,7 @@ def test_grounding_dedups_shared_constraint_text(mocker):
         {"constraints": [{"text": "use TLS", "critical": True}]},
     ]
     scores: dict = {}
-    evaluate = _evaluate_by_outcome(
-        mocker, {"Doc Constraint: use TLS": (5.0, True)}
-    )
+    evaluate = _evaluate_by_outcome(mocker, {"Doc Constraint: use TLS": (5.0, True)})
 
     evaluate_documentation_grounding(docs, MagicMock(), MagicMock(), scores)
 

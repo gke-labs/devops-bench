@@ -78,9 +78,7 @@ def _canonical_tool_name(name: str) -> str:
     return name.split("__", 1)[1] if "__" in name else name
 
 
-def _build_context(
-    res: dict[str, Any], judge_model: Any, use_mcp: bool
-) -> MetricContext:
+def _build_context(res: dict[str, Any], judge_model: Any, use_mcp: bool) -> MetricContext:
     """Build the per-result :class:`MetricContext`, sharing test cases.
 
     Args:

@@ -109,8 +109,7 @@ def _dispatcher_recording(results: dict[str, str]):
 async def test_turn_cap_warns_and_stops_at_max_turns(caplog):
     # Every turn issues a tool call, so only the cap stops the loop.
     turns = [
-        _Turn(text=f"turn{i}", calls=[{"name": "t", "args": {}, "id": str(i)}])
-        for i in range(5)
+        _Turn(text=f"turn{i}", calls=[{"name": "t", "args": {}, "id": str(i)}]) for i in range(5)
     ]
     client = FakeLLMClient(turns)
     dispatch, _ = _dispatcher_recording({"t": "ok"})

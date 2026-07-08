@@ -50,19 +50,12 @@ def _patch_resources(mocker, files_by_name):
 
 
 def test_load_skill_text_reads_packaged_resource(mocker):
-    _patch_resources(
-        mocker, {"outcome-validity-checklist.md": "## Evaluation Criteria"}
-    )
-    assert (
-        _skills.load_skill_text("outcome-validity-checklist.md")
-        == "## Evaluation Criteria"
-    )
+    _patch_resources(mocker, {"outcome-validity-checklist.md": "## Evaluation Criteria"})
+    assert _skills.load_skill_text("outcome-validity-checklist.md") == "## Evaluation Criteria"
 
 
 def test_load_outcome_criteria_uses_loader(mocker):
-    _patch_resources(
-        mocker, {outcome_validity.OUTCOME_SKILL_FILENAME: "OUTCOME-MD"}
-    )
+    _patch_resources(mocker, {outcome_validity.OUTCOME_SKILL_FILENAME: "OUTCOME-MD"})
     assert outcome_validity.load_outcome_criteria() == "OUTCOME-MD"
 
 

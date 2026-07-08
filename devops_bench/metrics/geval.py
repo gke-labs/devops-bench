@@ -112,9 +112,7 @@ class ModelLayerJudge(DeepEvalBaseLLM):
         return self._model_name
 
 
-def get_judge_model(
-    provider: str | None = None, model_name: str | None = None
-) -> ModelLayerJudge:
+def get_judge_model(provider: str | None = None, model_name: str | None = None) -> ModelLayerJudge:
     """Build the default judge model from configuration.
 
     Args:

@@ -91,19 +91,13 @@ class ScalingCompleteVerifier(BaseVerifier):
         ready_replicas = (dep_data.get("status") or {}).get("readyReplicas", 0)
         raw = {"deployment": dep_data}
         if ready_replicas < self.min_replicas:
-            reason = (
-                f"Ready replicas ({ready_replicas}) < min replicas ({self.min_replicas})"
-            )
+            reason = f"Ready replicas ({ready_replicas}) < min replicas ({self.min_replicas})"
             return False, reason, raw
         if self.max_replicas is not None and ready_replicas > self.max_replicas:
-            reason = (
-                f"Ready replicas ({ready_replicas}) > max replicas ({self.max_replicas})"
-            )
+            reason = f"Ready replicas ({ready_replicas}) > max replicas ({self.max_replicas})"
             return False, reason, raw
         if self.max_replicas is None:
-            reason = (
-                f"Ready replicas ({ready_replicas}) >= min replicas ({self.min_replicas})"
-            )
+            reason = f"Ready replicas ({ready_replicas}) >= min replicas ({self.min_replicas})"
         else:
             reason = (
                 f"Ready replicas ({ready_replicas}) within bounds "

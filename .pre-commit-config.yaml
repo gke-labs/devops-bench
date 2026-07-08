@@ -6,6 +6,8 @@ repos:
         entry: uv run ruff format
         language: system
         types: [python]
+        # Match the CI guardrail scope: the rest of the repo is not yet compliant.
+        files: ^(devops_bench|tests/unit)/
         stages: [pre-commit]
 
       - id: ruff
@@ -13,6 +15,7 @@ repos:
         entry: uv run ruff check
         language: system
         types: [python]
+        files: ^(devops_bench|tests/unit)/
         stages: [pre-commit]
 
       - id: uv-lock-check

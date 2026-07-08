@@ -38,9 +38,7 @@ def test_metric_score_to_entry_bare_value_for_rate_metrics():
 
 def test_metric_score_to_entry_dict_for_judged_metrics():
     # Judged metrics: success + reason flip the entry to the legacy dict shape.
-    ms = MetricScore(
-        name="OutcomeValidity", score=0.9, success=True, reason="solid"
-    )
+    ms = MetricScore(name="OutcomeValidity", score=0.9, success=True, reason="solid")
     assert ms.to_entry() == {"score": 0.9, "success": True, "reason": "solid"}
 
 
@@ -64,14 +62,10 @@ def test_run_geval_strips_geval_suffix_exactly_once(mocker):
     # and emit the bare name.
     test_result = SimpleNamespace(
         metrics_data=[
-            SimpleNamespace(
-                name="OutcomeValidity [GEval]", score=0.7, success=True, reason="ok"
-            )
+            SimpleNamespace(name="OutcomeValidity [GEval]", score=0.7, success=True, reason="ok")
         ]
     )
-    mocker.patch(
-        "deepeval.evaluate", return_value=SimpleNamespace(test_results=[test_result])
-    )
+    mocker.patch("deepeval.evaluate", return_value=SimpleNamespace(test_results=[test_result]))
 
     out = run_geval(MagicMock(), [MagicMock()])
 
@@ -85,15 +79,9 @@ def test_run_geval_strips_geval_suffix_exactly_once(mocker):
 def test_run_geval_leaves_non_geval_names_alone(mocker):
     # Metric data that does not carry the suffix passes through unchanged.
     test_result = SimpleNamespace(
-        metrics_data=[
-            SimpleNamespace(
-                name="GracefulRecovery", score=4.0, success=True, reason="r"
-            )
-        ]
+        metrics_data=[SimpleNamespace(name="GracefulRecovery", score=4.0, success=True, reason="r")]
     )
-    mocker.patch(
-        "deepeval.evaluate", return_value=SimpleNamespace(test_results=[test_result])
-    )
+    mocker.patch("deepeval.evaluate", return_value=SimpleNamespace(test_results=[test_result]))
 
     out = run_geval(MagicMock(), [MagicMock()])
 

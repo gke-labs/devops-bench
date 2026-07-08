@@ -66,8 +66,7 @@ def evaluate_chaos_metrics(
     diag_metric = GEval(
         name="DiagnosisAccuracy",
         criteria=(
-            "Did the agent accurately identify that the fault injected was"
-            f" '{actual_fault}'?"
+            f"Did the agent accurately identify that the fault injected was '{actual_fault}'?"
         ),
         evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
         model=judge_model,
@@ -89,13 +88,9 @@ def evaluate_chaos_metrics(
     except Exception as e:  # noqa: BLE001 - scoring must survive a judge failure
         _log.error("Error evaluating chaos metrics: %s", e)
 
-    scores["Workload_Deployment_Time_Seconds"] = perf_report.get(
-        "deployment_time_seconds"
-    )
+    scores["Workload_Deployment_Time_Seconds"] = perf_report.get("deployment_time_seconds")
     scores["Workload_Uptime_Percentage"] = perf_report.get("uptime_percentage")
-    scores["Resource_Utilization_Efficiency"] = perf_report.get(
-        "resource_utilization_efficiency"
-    )
+    scores["Resource_Utilization_Efficiency"] = perf_report.get("resource_utilization_efficiency")
 
 
 @METRICS.register("chaos")

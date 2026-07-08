@@ -128,9 +128,7 @@ class ResultReporter:
         _log.info("wrote rows.json with %d rows to %s", len(rows), path)
         return path
 
-    def write_manifest(
-        self, run_dir: str | os.PathLike[str], manifest: dict[str, Any]
-    ) -> Path:
+    def write_manifest(self, run_dir: str | os.PathLike[str], manifest: dict[str, Any]) -> Path:
         """Write the run-level manifest to ``<run_dir>/manifest.json``.
 
         Args:

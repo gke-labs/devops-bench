@@ -208,9 +208,7 @@ class GroundingMetric:
         """Score grounding constraints and derive the doc-retrieval rate."""
         documentation = ctx.result.get("documentation", [])
         scores: dict[str, Any] = {}
-        evaluate_documentation_grounding(
-            documentation, ctx.all_case, ctx.judge, scores
-        )
+        evaluate_documentation_grounding(documentation, ctx.all_case, ctx.judge, scores)
         retrieval_rate = calculate_doc_retrieval_rate(
             documentation, ctx.result.get("trajectory", [])
         )

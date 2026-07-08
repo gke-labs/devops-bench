@@ -428,9 +428,7 @@ def test_parallel_leaf_unhandled_exception_becomes_failed_child_not_group_abort(
     def bad_pod(self: PodHealthyVerifier, timeout_sec: float) -> VerificationResult:
         raise RuntimeError("boom")
 
-    def ok_scale(
-        self: ScalingCompleteVerifier, timeout_sec: float
-    ) -> VerificationResult:
+    def ok_scale(self: ScalingCompleteVerifier, timeout_sec: float) -> VerificationResult:
         return _stub_result(success=True, reason="scaled")
 
     spec = VerificationSpec(

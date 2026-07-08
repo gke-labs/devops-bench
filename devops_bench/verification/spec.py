@@ -144,10 +144,7 @@ def parse_node(data: Any) -> BaseModel:
             return data
         raise _validation_error(
             "verification_spec_unregistered_model",
-            (
-                f"verification spec node {type(data).__name__!r} is not a "
-                "registered verifier"
-            ),
+            (f"verification spec node {type(data).__name__!r} is not a registered verifier"),
             input_value=data,
         )
     if not isinstance(data, dict):
@@ -171,19 +168,14 @@ def parse_node(data: Any) -> BaseModel:
     except NotRegisteredError as exc:
         raise _validation_error(
             "verification_spec_unknown_type",
-            (
-                f"unknown verifier type {type_key!r}; "
-                f"registered: {sorted(VERIFIERS.keys())}"
-            ),
+            (f"unknown verifier type {type_key!r}; registered: {sorted(VERIFIERS.keys())}"),
             input_value=data,
         ) from exc
 
     return model_cls.model_validate(data)
 
 
-def _validation_error(
-    code: str, message: str, *, input_value: Any
-) -> ValidationError:
+def _validation_error(code: str, message: str, *, input_value: Any) -> ValidationError:
     """Build a ``ValidationError`` around a single ``PydanticCustomError``."""
     custom = PydanticCustomError(code, message)
     return ValidationError.from_exception_data(

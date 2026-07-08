@@ -181,7 +181,5 @@ def test_non_list_input_raises():
 def test_has_regression_and_exit_semantics():
     clean = cr.compare([_record({})], [_record({})])
     assert not cr.has_regression(clean)
-    flipped = cr.compare(
-        [_record({}, status="success")], [_record({}, status="failed")]
-    )
+    flipped = cr.compare([_record({}, status="success")], [_record({}, status="failed")])
     assert cr.has_regression(flipped)

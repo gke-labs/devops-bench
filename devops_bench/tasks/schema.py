@@ -145,9 +145,7 @@ class Task(BaseModel):
     validated: bool = False
 
     @classmethod
-    def from_dict(
-        cls, raw: dict[str, Any], *, name_default: str = "", folder: str = ""
-    ) -> "Task":
+    def from_dict(cls, raw: dict[str, Any], *, name_default: str = "", folder: str = "") -> "Task":
         """Build a task from a parsed spec mapping, validating types strictly.
 
         Adapts the source naming before validation: ``task_id`` is accepted as an

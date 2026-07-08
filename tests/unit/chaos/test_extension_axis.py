@@ -71,9 +71,7 @@ def test_dummy_fault_resolves_via_registry_with_no_central_edit(_isolated_regist
             ctx: RunContext,
             chaos_active_event: threading.Event | None = None,
         ) -> ChaosResult:
-            return ChaosResult(
-                success=True, injected_fault=self.type, output=self.payload
-            )
+            return ChaosResult(success=True, injected_fault=self.type, output=self.payload)
 
     # Harness-resolution path: registry.get(key) — no edit to chaos/spec.py
     # required for the harness to find a brand-new fault.

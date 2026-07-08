@@ -46,6 +46,11 @@ jobs:
         # Scoped to the devops_bench component; the rest of the repo is not yet compliant.
         run: uv run ruff check devops_bench tests/unit
 
+      - name: Format
+        # Same scope as Lint. ruff is pinned exactly (==) in pyproject so this check
+        # cannot drift with formatter style changes across ruff releases.
+        run: uv run ruff format --check devops_bench tests/unit
+
       - name: Unit tests
         run: uv run pytest tests/unit -q
 

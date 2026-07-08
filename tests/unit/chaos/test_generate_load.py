@@ -105,9 +105,7 @@ def test_run_chaos_command_surfaces_executor_exception_as_error_string():
 
 
 def test_inject_returns_chaos_result_on_success():
-    fault = GenerateLoadFault(
-        target=LoadTarget(service_url="http://localhost:8080", qps=50)
-    )
+    fault = GenerateLoadFault(target=LoadTarget(service_url="http://localhost:8080", qps=50))
 
     # Patch the ChaosAgent the fault constructs so no model / SDK / network runs.
     class _StubAgent:
@@ -263,9 +261,7 @@ def test_inject_opens_port_forward_and_points_url_at_local_tunnel():
             _drive_load(self.kwargs)
             return "spike complete"
 
-    ctx = _make_ctx(
-        {_ENV_TARGET_DEPLOYMENT: "web-app", _ENV_TARGET_NAMESPACE: "prod"}
-    )
+    ctx = _make_ctx({_ENV_TARGET_DEPLOYMENT: "web-app", _ENV_TARGET_NAMESPACE: "prod"})
     with (
         patch.object(k8s_kubectl.subprocess, "Popen", return_value=proc) as popen_mock,
         patch.object(k8s_kubectl.time, "sleep"),  # don't actually sleep the settle window
@@ -320,9 +316,7 @@ def test_inject_uses_custom_local_port_for_parallel_runs():
             captured["url_during_run"] = fault.target.service_url
             return "spike complete"
 
-    ctx = _make_ctx(
-        {_ENV_TARGET_DEPLOYMENT: "web-app", _ENV_LOCAL_PORT: "34567"}
-    )
+    ctx = _make_ctx({_ENV_TARGET_DEPLOYMENT: "web-app", _ENV_LOCAL_PORT: "34567"})
     with (
         patch.object(k8s_kubectl.subprocess, "Popen", return_value=proc) as popen_mock,
         patch.object(k8s_kubectl.time, "sleep"),
@@ -337,9 +331,7 @@ def test_inject_uses_custom_local_port_for_parallel_runs():
 
 def test_inject_early_port_forward_exit_becomes_failed_result():
     """A port-forward that dies in the settle window yields a failed ChaosResult."""
-    fault = GenerateLoadFault(
-        target=LoadTarget(service_url="http://x.svc.cluster.local", qps=1)
-    )
+    fault = GenerateLoadFault(target=LoadTarget(service_url="http://x.svc.cluster.local", qps=1))
     dead = MagicMock()
     dead.poll.return_value = 1  # exited during the settle window
     dead.returncode = 1
@@ -363,9 +355,7 @@ def test_inject_early_port_forward_exit_becomes_failed_result():
 
 def test_inject_skips_port_forward_when_flagged():
     """``CHAOS_SKIP_PORT_FORWARD`` runs the loop against the existing URL, no Popen."""
-    fault = GenerateLoadFault(
-        target=LoadTarget(service_url="http://existing", qps=1)
-    )
+    fault = GenerateLoadFault(target=LoadTarget(service_url="http://existing", qps=1))
     captured: dict = {}
 
     class _StubAgent:

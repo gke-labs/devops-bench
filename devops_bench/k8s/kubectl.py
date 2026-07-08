@@ -287,9 +287,7 @@ def port_forward(
             process.wait(timeout=settle_sec)
         except Exception as exc:  # noqa: BLE001 - never mask the raise reason
             _log.warning("error reaping early-exited port-forward: %s", exc)
-        raise RuntimeError(
-            f"kubectl port-forward exited early (code {returncode}) for {target}"
-        )
+        raise RuntimeError(f"kubectl port-forward exited early (code {returncode}) for {target}")
 
     try:
         yield

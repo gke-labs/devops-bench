@@ -60,9 +60,10 @@ def test_harness_reads_use_mcp_once_at_construction(
     """``BENCH_USE_MCP`` is read once during ``__init__``, not on every method."""
     monkeypatch.setenv("BENCH_USE_MCP", "true")
 
-    with patch("devops_bench.evalharness.default.get_bool", wraps=__import__(
-        "devops_bench.core", fromlist=["get_bool"]
-    ).get_bool) as wrapped:
+    with patch(
+        "devops_bench.evalharness.default.get_bool",
+        wraps=__import__("devops_bench.core", fromlist=["get_bool"]).get_bool,
+    ) as wrapped:
         harness = DefaultEvalHarness(project_id="p", cluster_name="c")
 
         bench_use_mcp_reads = [

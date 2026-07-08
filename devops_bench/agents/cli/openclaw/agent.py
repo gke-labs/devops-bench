@@ -110,6 +110,7 @@ def _ensure_node_on_path(env_overlay: dict[str, str]) -> dict[str, str]:
     merged["PATH"] = f"{node_bin}{os.pathsep}{existing}" if existing else node_bin
     return merged
 
+
 _log = get_logger("agents.cli.openclaw.agent")
 
 # Per-run layout under the temp working dir. ``state`` is openclaw's state root

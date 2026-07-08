@@ -47,6 +47,7 @@ def _mcp_caps(command: str = "server", *, tools: tuple[str, ...] = ()) -> AllCap
         mcp_servers=(McpBinding(name="test", command=tuple(command.split()), tools=tools),),
     )
 
+
 # ---------------------------------------------------------------------------
 # Test doubles
 # ---------------------------------------------------------------------------
@@ -354,9 +355,7 @@ def test_extract_tokens_reads_openai_ollama_shape():
 
 def test_extract_tokens_google_total_passes_through_when_present():
     """When the provider supplies its own total it wins over the computed sum."""
-    usage = SimpleNamespace(
-        prompt_token_count=5, candidates_token_count=7, total_token_count=99
-    )
+    usage = SimpleNamespace(prompt_token_count=5, candidates_token_count=7, total_token_count=99)
     response = SimpleNamespace(usage_metadata=usage)
     # The helper does not second-guess a provider-supplied total even when it
     # disagrees with prompt+candidates (some providers include reasoning/cached
@@ -460,9 +459,7 @@ def test_execute_records_openai_tokens_through_to_agentresult(monkeypatch):
         [
             _Turn(
                 text="done",
-                usage=SimpleNamespace(
-                    prompt_tokens=10, completion_tokens=20, total_tokens=30
-                ),
+                usage=SimpleNamespace(prompt_tokens=10, completion_tokens=20, total_tokens=30),
                 usage_attr="usage",
             )
         ]
@@ -579,8 +576,7 @@ def test_execute_records_missing_mcp_when_tool_requested_without_server(monkeypa
             "name": "ghost",
             "args": {},
             "result": (
-                "Error: tool 'ghost' requested but no MCP server is configured for "
-                "this agent."
+                "Error: tool 'ghost' requested but no MCP server is configured for this agent."
             ),
             "status": "error",
         },
@@ -662,8 +658,7 @@ def test_execute_returns_errored_on_mcpclient_value_error(monkeypatch):
 
         async def __aenter__(self) -> _BoomMCP:
             raise ValueError(
-                "MCP server_path is empty; set AGENT_MCP_SERVER to the MCP "
-                "server command."
+                "MCP server_path is empty; set AGENT_MCP_SERVER to the MCP server command."
             )
 
         async def __aexit__(self, *_a: Any) -> None: ...
@@ -784,12 +779,9 @@ def test_agent_source_has_no_bench_use_mcp_or_environ_reads():
                 # Allow doc references — only reject when the same line names an
                 # env accessor (``environ`` / ``getenv`` / ``get_env``).
                 line_text = src.read_text().splitlines()[node.lineno - 1]
-                accessor_hit = any(
-                    a in line_text for a in ("environ", "getenv", "get_env")
-                )
+                accessor_hit = any(a in line_text for a in ("environ", "getenv", "get_env"))
                 assert not accessor_hit, (
-                    f"{src.name} reads {node.value!r} via an env accessor "
-                    f"at line {node.lineno}"
+                    f"{src.name} reads {node.value!r} via an env accessor at line {node.lineno}"
                 )
 
 
@@ -878,13 +870,13 @@ def test_execute_runs_with_both_mcp_and_skills(monkeypatch, tmp_path):
     """Both bindings populated → MCP session is opened *and* skills are discovered."""
     skill_dir = tmp_path / "skills"
     (skill_dir / "demo").mkdir(parents=True)
-    (skill_dir / "demo" / "SKILL.md").write_text(
-        '---\nname: "demo"\ndescription: x\n---\nbody\n'
-    )
+    (skill_dir / "demo" / "SKILL.md").write_text('---\nname: "demo"\ndescription: x\n---\nbody\n')
 
     fc = [{"name": "do_thing", "args": {}, "id": "c1"}]
     fake = _FakeLLMClient([_Turn(text="working", calls=fc), _Turn(text="done")])
-    mcp = _FakeMCPClient(tools=[SimpleNamespace(name="do_thing", description="d", inputSchema=None)])
+    mcp = _FakeMCPClient(
+        tools=[SimpleNamespace(name="do_thing", description="d", inputSchema=None)]
+    )
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
     monkeypatch.setattr(agent_mod, "MCPClient", lambda _path: mcp)
 

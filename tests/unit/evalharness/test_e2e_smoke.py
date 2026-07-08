@@ -205,9 +205,7 @@ def test_optimize_scale_smoke_end_to_end(
     real_start_scenario = harness.start_scenario
 
     def patched_start_scenario(chaos_specs, mapping, ctx):
-        return real_start_scenario(
-            chaos_specs, mapping, ctx, skip_port_forward=True
-        )
+        return real_start_scenario(chaos_specs, mapping, ctx, skip_port_forward=True)
 
     monkeypatch.setattr(harness, "start_scenario", patched_start_scenario)
 
@@ -217,9 +215,7 @@ def test_optimize_scale_smoke_end_to_end(
         # Inject without driving a real LLM / fortio binary.
         patch.object(GenerateLoadFault, "inject", _fake_inject),
         # Verification: typed result returned without touching k8s.
-        patch.object(
-            VerifierAgent, "wait_for_condition", _fake_verification_result
-        ),
+        patch.object(VerifierAgent, "wait_for_condition", _fake_verification_result),
         # Metrics: registry-driven loop replaced with the fake scorer so the
         # smoke does not pull deepeval / a real judge.
         patch(
@@ -227,9 +223,7 @@ def test_optimize_scale_smoke_end_to_end(
             _fake_evaluate_metrics,
             create=True,
         ),
-        patch(
-            "devops_bench.metrics.get_judge_model", lambda: object(), create=True
-        ),
+        patch("devops_bench.metrics.get_judge_model", lambda: object(), create=True),
     ):
         results = harness.run(tasks)
 
@@ -281,9 +275,7 @@ def test_optimize_scale_smoke_end_to_end(
     assert record["chaos_report"]["status"] == "success"
     assert record["chaos_report"]["injected_fault"] == "generate_load"
     assert record["chaos_report"]["verification"]["success"] is True
-    assert record["chaos_report"]["verification"]["name"] == (
-        "Planned Load Spike Verification"
-    )
+    assert record["chaos_report"]["verification"]["name"] == ("Planned Load Spike Verification")
     assert record["perf_report"]["uptime_percentage"] == 100.0
 
     # ----- scores wrote in place via the (stubbed) metrics registry ------
@@ -329,26 +321,20 @@ def test_smoke_uses_workspace_path_for_artifact_diff(
         # context, so the artifact diff cannot regress to ``"."`` hardcoded.
         assert ctx.workspace_path is not None
         assert os.fspath(ctx.workspace_path) == str(sandbox.resolve())
-        return real_start_scenario(
-            chaos_specs, mapping, ctx, skip_port_forward=True
-        )
+        return real_start_scenario(chaos_specs, mapping, ctx, skip_port_forward=True)
 
     monkeypatch.setattr(harness, "start_scenario", patched_start_scenario)
 
     with (
         patch.object(TimeTrigger, "wait", lambda self, ctx: None),
         patch.object(GenerateLoadFault, "inject", _fake_inject),
-        patch.object(
-            VerifierAgent, "wait_for_condition", _fake_verification_result
-        ),
+        patch.object(VerifierAgent, "wait_for_condition", _fake_verification_result),
         patch(
             "devops_bench.metrics.evaluate_metrics_batch",
             _fake_evaluate_metrics,
             create=True,
         ),
-        patch(
-            "devops_bench.metrics.get_judge_model", lambda: object(), create=True
-        ),
+        patch("devops_bench.metrics.get_judge_model", lambda: object(), create=True),
     ):
         results = harness.run(tasks)
 

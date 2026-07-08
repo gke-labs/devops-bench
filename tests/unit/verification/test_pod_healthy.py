@@ -114,8 +114,6 @@ def test_name_is_echoed_onto_result():
         "devops_bench.verification.verifiers.pod_healthy.wait",
         return_value=completed,
     ):
-        result = PodHealthyVerifier(name="web-pods", selector="app=web").verify(
-            timeout_sec=10
-        )
+        result = PodHealthyVerifier(name="web-pods", selector="app=web").verify(timeout_sec=10)
 
     assert result.name == "web-pods"

@@ -35,14 +35,10 @@ __all__ = [
 #: Registry of concrete :class:`Fault` subclasses, keyed by their ``type``.
 #: ``entry_point_group`` lets external packages register a fault without
 #: touching this tree.
-FAULTS: Registry[type[Fault]] = Registry(
-    "faults", entry_point_group="devops_bench.faults"
-)
+FAULTS: Registry[type[Fault]] = Registry("faults", entry_point_group="devops_bench.faults")
 
 #: Registry of concrete :class:`Trigger` subclasses, keyed by their ``type``.
-TRIGGERS: Registry[type[Trigger]] = Registry(
-    "triggers", entry_point_group="devops_bench.triggers"
-)
+TRIGGERS: Registry[type[Trigger]] = Registry("triggers", entry_point_group="devops_bench.triggers")
 
 
 class ChaosResult(BaseModel):

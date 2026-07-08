@@ -212,9 +212,7 @@ def test_scenario_resolves_verify_against_mapping() -> None:
     spec = _build_spec(verify_key="planned-verify")
     verification_node = object()  # opaque stand-in; VerifierAgent is mocked
 
-    fake_result = VerificationResult(
-        success=True, elapsed_time=2.5, reason="all good"
-    )
+    fake_result = VerificationResult(success=True, elapsed_time=2.5, reason="all good")
 
     with (
         patch.object(TimeTrigger, "wait", lambda self, ctx: None),
@@ -225,9 +223,7 @@ def test_scenario_resolves_verify_against_mapping() -> None:
                 success=True, injected_fault=self.type, elapsed_time=0.0
             ),
         ),
-        patch.object(
-            VerifierAgent, "wait_for_condition", return_value=fake_result
-        ) as mock_wait,
+        patch.object(VerifierAgent, "wait_for_condition", return_value=fake_result) as mock_wait,
     ):
         manager = ScenarioManager(
             target_deployment="dep",
@@ -384,9 +380,7 @@ def test_scenario_resolves_lb_ip_and_points_action_url_at_it() -> None:
         captured["service_url"] = self.target.service_url
         return ChaosResult(success=True, injected_fault=self.type, elapsed_time=0.0)
 
-    fake_svc = {
-        "status": {"loadBalancer": {"ingress": [{"ip": "34.10.20.30"}]}}
-    }
+    fake_svc = {"status": {"loadBalancer": {"ingress": [{"ip": "34.10.20.30"}]}}}
 
     with (
         patch.object(TimeTrigger, "wait", lambda self, ctx: None),

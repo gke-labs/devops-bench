@@ -108,7 +108,9 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
             if content is None:
                 content = event.get("output")
             if content is not None:
-                target.result = content if isinstance(content, str) else json.dumps(content, default=str)
+                target.result = (
+                    content if isinstance(content, str) else json.dumps(content, default=str)
+                )
             status = str(event.get("status", "")).lower()
             failed = bool(event.get("is_error")) or status in ("error", "failed", "failure")
             target.status = "error" if failed else "completed"

@@ -177,9 +177,7 @@ def extract_tokens(response: Any) -> dict:
 
     # Try the Google attr first, then the OpenAI-style attr, then the Anthropic
     # alias.
-    prompt = _first_int_attr(
-        usage, "prompt_token_count", "prompt_tokens", "input_tokens"
-    )
+    prompt = _first_int_attr(usage, "prompt_token_count", "prompt_tokens", "input_tokens")
     candidates = _first_int_attr(
         usage, "candidates_token_count", "completion_tokens", "output_tokens"
     )
@@ -408,7 +406,9 @@ class ApiAgent(AgentHarness):
         # an empty-command binding is treated as "no MCP". ``shlex.join``
         # round-trips ``MCPClient``'s ``shlex.split`` so a spaced argv token
         # (``("uv run", "mcp-server")``) is rebuilt as a single quoted word.
-        mcp_server_path = shlex.join(mcp_binding.command) if mcp_binding and mcp_binding.command else None
+        mcp_server_path = (
+            shlex.join(mcp_binding.command) if mcp_binding and mcp_binding.command else None
+        )
         skills_paths = self.config.capabilities.skills.paths
         rules_text = self.config.capabilities.rules.text
 
