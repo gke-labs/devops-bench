@@ -71,3 +71,24 @@ def test_materialize_skills_writes_named_skill_files(tmp_path: Path):
 def test_materialize_skills_skips_missing_paths(tmp_path: Path):
     """A non-existent source path is warned and skipped, not fatal."""
     assert materialize_skills(tmp_path / "dest", (str(tmp_path / "nope"),)) == []
+
+
+def test_build_mcp_servers_resolves_path_like_commands(tmp_path: Path, monkeypatch):
+    """Path-like commands that exist on disk are absolutized; bare commands are not."""
+    monkeypatch.chdir(tmp_path)
+
+    # 1. Path-like command that exists -> resolved to absolute
+    local_cmd = tmp_path / "my-local-mcp"
+    local_cmd.touch()
+    servers = build_mcp_servers((McpBinding(name="gke", command=("./my-local-mcp",)),))
+    assert servers["gke"]["command"] == str(local_cmd.resolve())
+
+    # 2. Bare command exists as a file in cwd -> NOT resolved (stays bare)
+    dummy_node = tmp_path / "node"
+    dummy_node.touch()
+    servers = build_mcp_servers((McpBinding(name="node_srv", command=("node",)),))
+    assert servers["node_srv"]["command"] == "node"
+
+    # 3. Path-like command that does NOT exist -> NOT resolved
+    servers = build_mcp_servers((McpBinding(name="missing", command=("./missing-mcp",)),))
+    assert servers["missing"]["command"] == "./missing-mcp"
