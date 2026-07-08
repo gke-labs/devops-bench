@@ -146,6 +146,7 @@ cross-border imports from step 3):
 ```bash
 uv sync --frozen                          # strict library-mode build (as CI does)
 uv run ruff check devops_bench tests/unit # lint scope CI uses; or scope to the PR's paths
+uv run ruff format devops_bench tests/unit # upstream CI enforces format --check; export formatted
 uv run pytest tests/unit/<area> -q        # the co-located tests for this PR
 ```
 
