@@ -42,11 +42,11 @@ Both are listed in the `PROVIDERS` registry.
 **How the provider is picked** (precedence, highest first):
 
 1. An explicit `provider:` key in the task's `infrastructure:` block.
-2. The `CLOUD_PROVIDER` environment variable.
+2. The `INFRA_PROVIDER` environment variable.
 3. Deduced from the stack name: if `kind` appears in the name it's the `kind` provider, otherwise `gcp`.
 
 > [!IMPORTANT]
-> Deduction only applies to in-repo (relative) stacks. An absolute or external stack path **must** name its provider explicitly (via `provider:` or `CLOUD_PROVIDER`) — the harness will not guess. An unknown provider name is a configuration error.
+> Deduction only applies to in-repo (relative) stacks. An absolute or external stack path **must** name its provider explicitly (via `provider:` or `INFRA_PROVIDER`) — the harness will not guess. An unknown provider name is a configuration error.
 
 ## What the Terraform provisions
 
@@ -104,7 +104,7 @@ The provider fills in sensible defaults for whatever you leave out. For GCP that
 | Variable | Effect |
 | --- | --- |
 | `BENCH_NO_INFRA` | `true` forces the `NoOpDeployer`, overriding the task's `deployer`. |
-| `CLOUD_PROVIDER` | Selects the provider when the task doesn't name one. |
+| `INFRA_PROVIDER` | Selects the provider when the task doesn't name one. |
 | `GCP_PROJECT_ID` | Default GCP project for credentials and variable defaults. |
 | `GCP_LOCATION` | Default region/zone (falls back to `us-central1-a`). |
 | `NAMESPACE` | Passed through to GCP stacks as the `namespace` variable. |

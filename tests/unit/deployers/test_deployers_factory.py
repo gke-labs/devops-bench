@@ -184,6 +184,36 @@ def test_get_deployer_infra_provider_env(mocker, base_config):
     assert deployer.variables["project_id"] == base_config["project_id"]
 
 
+def test_get_deployer_cloud_provider_fallback_env(mocker, base_config, caplog):
+    mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
+    mocker.patch.dict(os.environ, {"CLOUD_PROVIDER": "gcp"})
+    with caplog.at_level("WARNING", logger="devops_bench.deployers.factory"):
+        deployer = get_deployer(
+            {"deployer": "tofu", "stack": "prebuilt/kind"},
+            base_config["project_id"],
+            base_config["cluster_name"],
+            base_config["location"],
+        )
+    assert isinstance(deployer, TFDeployer)
+    assert deployer.variables["project_id"] == base_config["project_id"]
+    assert any(
+        "CLOUD_PROVIDER environment variable is deprecated" in rec.message for rec in caplog.records
+    )
+
+
+def test_get_deployer_infra_provider_precedence(mocker, base_config):
+    mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
+    mocker.patch.dict(os.environ, {"INFRA_PROVIDER": "kind", "CLOUD_PROVIDER": "gcp"})
+    deployer = get_deployer(
+        {"deployer": "tofu", "stack": "prebuilt/kind"},
+        base_config["project_id"],
+        base_config["cluster_name"],
+        base_config["location"],
+    )
+    assert isinstance(deployer, TFDeployer)
+    assert deployer.variables["location"] == "local"
+
+
 def test_get_deployer_unknown_provider_raises(mocker, base_config):
     mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
     with pytest.raises(ConfigError, match="unknown provider"):
