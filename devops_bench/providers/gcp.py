@@ -76,6 +76,21 @@ class GcpProvider(Provider):
             capture=False,
         )
 
+        context_name = f"gke_{project}_{location}_{cluster_name}"
+        _log.info(
+            "Enabling application default credentials for auth plugin in context %s", context_name
+        )
+        run(
+            [
+                "kubectl",
+                "config",
+                "set-credentials",
+                context_name,
+                "--exec-arg=--use_application_default_credentials",
+            ],
+            capture=False,
+        )
+
         return ClusterInfo.from_dict(
             {"name": cluster_name, "location": location, "project": project}
         )

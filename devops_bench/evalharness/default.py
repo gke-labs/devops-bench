@@ -485,6 +485,7 @@ class DefaultEvalHarness(Harness):
         chaos_specs: list[ChaosSpec],
         verification_mapping: dict[str, Any],
         ctx: RunContext,
+        task: Task | None = None,
         *,
         skip_port_forward: bool = False,
     ) -> tuple[ScenarioManager, threading.Thread] | None:
@@ -495,6 +496,7 @@ class DefaultEvalHarness(Harness):
             verification_mapping: Name-keyed mapping of typed verification
                 specs the chaos ``verify:`` key is resolved against.
             ctx: Per-task run context handed to triggers / faults.
+            task: Optional task to extract custom deployment/namespace variables from.
             skip_port_forward: When True, do not open ``kubectl port-forward``;
                 used by the E2E smoke harness when running against the
                 :class:`~devops_bench.deployers.NoOpDeployer`.
@@ -508,9 +510,27 @@ class DefaultEvalHarness(Harness):
 
         spec = chaos_specs[0]
         local_port = pick_free_port() if self.parallel else None
+        target_dep = (
+            get_env("TARGET_DEPLOYMENT_NAME", "")
+            or (
+                task.infrastructure.get("variables", {}).get("target_deployment_name")
+                if task and task.infrastructure
+                else ""
+            )
+            or self.target_deployment
+        )
+        ns = (
+            get_env("NAMESPACE", "")
+            or (
+                task.infrastructure.get("variables", {}).get("namespace")
+                if task and task.infrastructure
+                else ""
+            )
+            or self.namespace
+        )
         scenario_manager = ScenarioManager(
-            self.target_deployment,
-            self.namespace,
+            target_dep,
+            ns,
             verification_mapping=verification_mapping,
             skip_port_forward=skip_port_forward,
             local_port=local_port,
@@ -673,6 +693,7 @@ class DefaultEvalHarness(Harness):
                 chaos_specs,
                 verification_mapping,
                 replace(context, env=dict(context.env)),
+                task,
             )
             if scenario is not None:
                 scenario_manager, scenario_thread = scenario

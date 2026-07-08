@@ -65,10 +65,7 @@ class MCPClient:
                 "MCP server_path is empty; set AGENT_TARGET/MCP_SERVER_PATH to the "
                 "MCP server command."
             )
-        server_params = StdioServerParameters(
-            command=parts[0],
-            args=parts[1:],
-        )
+        server_params = StdioServerParameters(command=parts[0], args=parts[1:])
         stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
         self.read_stream, self.write_stream = stdio_transport
         self.session = await self.exit_stack.enter_async_context(
