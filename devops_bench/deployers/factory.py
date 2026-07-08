@@ -19,15 +19,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from devops_bench.core import ConfigError, get_bool, get_env, get_logger
+from devops_bench.core import ConfigError, get_bool, get_env
 from devops_bench.deployers.base import Deployer
 from devops_bench.deployers.noop import NoOpDeployer
 from devops_bench.deployers.tofu import TFDeployer
 from devops_bench.providers import PROVIDERS, ResolveContext
 
 __all__ = ["get_deployer"]
-
-_log = get_logger("deployers.factory")
 
 _DEFAULT_LOCATION = "us-central1-a"
 _DEFAULT_STACK = "prebuilt/kind"
@@ -52,20 +50,11 @@ def _select_provider(infra_config: dict[str, Any], stack: str) -> str:
         ConfigError: If an absolute/external stack has no explicit provider.
     """
     if get_env("CLOUD_PROVIDER", ""):
-        _log.warning(
-            "CLOUD_PROVIDER environment variable is deprecated and will be removed in a future "
-            "version. Please use INFRA_PROVIDER instead."
+        raise ConfigError(
+            "CLOUD_PROVIDER environment variable has been renamed to INFRA_PROVIDER. "
+            "Please use INFRA_PROVIDER instead."
         )
-    explicit = (
-        (
-            infra_config.get("provider")
-            or get_env("INFRA_PROVIDER", "")
-            or get_env("CLOUD_PROVIDER", "")
-            or ""
-        )
-        .strip()
-        .lower()
-    )
+    explicit = (infra_config.get("provider") or get_env("INFRA_PROVIDER", "") or "").strip().lower()
     if explicit:
         return explicit
     if Path(stack).expanduser().is_absolute():
