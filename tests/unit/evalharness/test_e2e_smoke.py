@@ -204,9 +204,9 @@ def test_optimize_scale_smoke_end_to_end(
     # deployer, and the start_scenario call routes skip_port_forward=True.
     real_start_scenario = harness.start_scenario
 
-    def patched_start_scenario(chaos_specs, mapping, ctx, task=None, **kwargs):
+    def patched_start_scenario(chaos_specs, mapping, ctx, *args, **kwargs):
         return real_start_scenario(
-            chaos_specs, mapping, ctx, task, **kwargs, skip_port_forward=True
+            chaos_specs, mapping, ctx, *args, **kwargs, skip_port_forward=True
         )
 
     monkeypatch.setattr(harness, "start_scenario", patched_start_scenario)
@@ -318,12 +318,14 @@ def test_smoke_uses_workspace_path_for_artifact_diff(
 
     real_start_scenario = harness.start_scenario
 
-    def patched_start_scenario(chaos_specs, mapping, ctx):
+    def patched_start_scenario(chaos_specs, mapping, ctx, *args, **kwargs):
         # Confirm the harness threaded the resolved workspace into the
         # context, so the artifact diff cannot regress to ``"."`` hardcoded.
         assert ctx.workspace_path is not None
         assert os.fspath(ctx.workspace_path) == str(sandbox.resolve())
-        return real_start_scenario(chaos_specs, mapping, ctx, skip_port_forward=True)
+        return real_start_scenario(
+            chaos_specs, mapping, ctx, *args, **kwargs, skip_port_forward=True
+        )
 
     monkeypatch.setattr(harness, "start_scenario", patched_start_scenario)
 

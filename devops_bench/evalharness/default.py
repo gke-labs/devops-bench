@@ -300,9 +300,35 @@ class DefaultEvalHarness(Harness):
             rules=env_caps.rules if env_caps.rules.text else AgentRules(),
         )
 
+    def _resolve_deployment_and_namespace(self, task: Task | None = None) -> tuple[str, str]:
+        """Resolve the target deployment name and namespace.
+
+        Precedence: env var → task variables → harness default.
+        """
+        infra_vars = {}
+        if task and task.infrastructure:
+            infra_vars = task.infrastructure.get("variables") or {}
+
+        target_dep = (
+            get_env("TARGET_DEPLOYMENT_NAME", "")
+            or infra_vars.get("target_deployment_name", "")
+            or self.target_deployment
+        )
+        ns = get_env("NAMESPACE", "") or infra_vars.get("namespace", "") or self.namespace
+        return (
+            str(target_dep) if target_dep is not None else "",
+            str(ns) if ns is not None else "",
+        )
+
     # -- placeholder substitution -----------------------------------------
 
-    def replace_placeholders(self, text: str, cluster_name: str, task: Task | None = None) -> str:
+    def replace_placeholders(
+        self,
+        text: str,
+        cluster_name: str,
+        target_deployment: str | None = None,
+        namespace: str | None = None,
+    ) -> str:
         """Substitute infrastructure placeholders in a prompt or expectation.
 
         ``TARGET_DEPLOYMENT_NAME`` and ``NAMESPACE`` form the integration
@@ -313,29 +339,14 @@ class DefaultEvalHarness(Harness):
         Args:
             text: Text containing ``{{...}}`` placeholders.
             cluster_name: Active cluster name to substitute.
-            task: Optional task to extract custom deployment/namespace variables from.
+            target_deployment: Optional target deployment name override.
+            namespace: Optional namespace override.
 
         Returns:
             The text with all known placeholders replaced.
         """
-        target_dep = (
-            get_env("TARGET_DEPLOYMENT_NAME", "")
-            or (
-                task.infrastructure.get("variables", {}).get("target_deployment_name")
-                if task and task.infrastructure
-                else ""
-            )
-            or self.target_deployment
-        )
-        ns = (
-            get_env("NAMESPACE", "")
-            or (
-                task.infrastructure.get("variables", {}).get("namespace")
-                if task and task.infrastructure
-                else ""
-            )
-            or self.namespace
-        )
+        target_dep = target_deployment or self.target_deployment
+        ns = namespace or self.namespace
         return (
             text.replace("{{PROJECT_ID}}", self.project_id)
             .replace("{{GCP_PROJECT_ID}}", self.project_id)
@@ -347,7 +358,11 @@ class DefaultEvalHarness(Harness):
         )
 
     def _resolve_spec_placeholders(
-        self, spec: Any, cluster_name: str, task: Task | None = None
+        self,
+        spec: Any,
+        cluster_name: str,
+        target_deployment: str | None = None,
+        namespace: str | None = None,
     ) -> Any:
         """Walk a nested spec and substitute placeholders in every string leaf.
 
@@ -356,7 +371,8 @@ class DefaultEvalHarness(Harness):
                 scalar, or ``None``).
             cluster_name: Active cluster name passed through to
                 :meth:`replace_placeholders`.
-            task: Optional task passed through to :meth:`replace_placeholders`.
+            target_deployment: Optional target deployment name override.
+            namespace: Optional namespace override.
 
         Returns:
             A new structure with placeholders resolved. ``None`` round-trips
@@ -365,12 +381,17 @@ class DefaultEvalHarness(Harness):
         if spec is None:
             return None
         if isinstance(spec, str):
-            return self.replace_placeholders(spec, cluster_name, task)
+            return self.replace_placeholders(spec, cluster_name, target_deployment, namespace)
         if isinstance(spec, list):
-            return [self._resolve_spec_placeholders(item, cluster_name, task) for item in spec]
+            return [
+                self._resolve_spec_placeholders(item, cluster_name, target_deployment, namespace)
+                for item in spec
+            ]
         if isinstance(spec, dict):
             return {
-                key: self._resolve_spec_placeholders(value, cluster_name, task)
+                key: self._resolve_spec_placeholders(
+                    value, cluster_name, target_deployment, namespace
+                )
                 for key, value in spec.items()
             }
         return spec
@@ -378,7 +399,11 @@ class DefaultEvalHarness(Harness):
     # -- spec parsing (typed contracts at every seam) ---------------------
 
     def _parse_chaos_specs(
-        self, raw: Any, cluster_name: str, task: Task | None = None
+        self,
+        raw: Any,
+        cluster_name: str,
+        target_deployment: str | None = None,
+        namespace: str | None = None,
     ) -> list[ChaosSpec]:
         """Parse the raw task ``chaos_spec`` blob into typed :class:`ChaosSpec` list.
 
@@ -387,7 +412,7 @@ class DefaultEvalHarness(Harness):
         """
         if not raw:
             return []
-        resolved = self._resolve_spec_placeholders(raw, cluster_name, task)
+        resolved = self._resolve_spec_placeholders(raw, cluster_name, target_deployment, namespace)
         # A placeholder-substituted JSON string round-trips through
         # ``json.loads`` to a list/dict the discriminated union can validate.
         if isinstance(resolved, str):
@@ -400,7 +425,11 @@ class DefaultEvalHarness(Harness):
         return [ChaosSpec.model_validate(entry) for entry in entries if entry]
 
     def _build_verification_mapping(
-        self, raw: Any, cluster_name: str, task: Task | None = None
+        self,
+        raw: Any,
+        cluster_name: str,
+        target_deployment: str | None = None,
+        namespace: str | None = None,
     ) -> tuple[dict[str, Any], list[dict[str, str]]]:
         """Build a name-keyed verification mapping the chaos seam consumes.
 
@@ -424,6 +453,8 @@ class DefaultEvalHarness(Harness):
         Args:
             raw: The task's ``verification_spec`` blob.
             cluster_name: Active cluster name for placeholder substitution.
+            target_deployment: Optional target deployment name override.
+            namespace: Optional namespace override.
 
         Returns:
             A pair ``(mapping, errors)``:
@@ -438,7 +469,7 @@ class DefaultEvalHarness(Harness):
             return {}, []
 
         errors: list[dict[str, str]] = []
-        resolved = self._resolve_spec_placeholders(raw, cluster_name, task)
+        resolved = self._resolve_spec_placeholders(raw, cluster_name, target_deployment, namespace)
         if isinstance(resolved, str):
             try:
                 resolved = json.loads(resolved)
@@ -485,7 +516,8 @@ class DefaultEvalHarness(Harness):
         chaos_specs: list[ChaosSpec],
         verification_mapping: dict[str, Any],
         ctx: RunContext,
-        task: Task | None = None,
+        target_deployment: str | None = None,
+        namespace: str | None = None,
         *,
         skip_port_forward: bool = False,
     ) -> tuple[ScenarioManager, threading.Thread] | None:
@@ -496,7 +528,8 @@ class DefaultEvalHarness(Harness):
             verification_mapping: Name-keyed mapping of typed verification
                 specs the chaos ``verify:`` key is resolved against.
             ctx: Per-task run context handed to triggers / faults.
-            task: Optional task to extract custom deployment/namespace variables from.
+            target_deployment: Optional resolved target deployment name.
+            namespace: Optional resolved namespace.
             skip_port_forward: When True, do not open ``kubectl port-forward``;
                 used by the E2E smoke harness when running against the
                 :class:`~devops_bench.deployers.NoOpDeployer`.
@@ -510,24 +543,8 @@ class DefaultEvalHarness(Harness):
 
         spec = chaos_specs[0]
         local_port = pick_free_port() if self.parallel else None
-        target_dep = (
-            get_env("TARGET_DEPLOYMENT_NAME", "")
-            or (
-                task.infrastructure.get("variables", {}).get("target_deployment_name")
-                if task and task.infrastructure
-                else ""
-            )
-            or self.target_deployment
-        )
-        ns = (
-            get_env("NAMESPACE", "")
-            or (
-                task.infrastructure.get("variables", {}).get("namespace")
-                if task and task.infrastructure
-                else ""
-            )
-            or self.namespace
-        )
+        target_dep = target_deployment or self.target_deployment
+        ns = namespace or self.namespace
         scenario_manager = ScenarioManager(
             target_dep,
             ns,
@@ -679,11 +696,16 @@ class DefaultEvalHarness(Harness):
             cluster_info = deployer.get_cluster_info()
             active_cluster_name = cluster_info.name or self.cluster_name
             context = self.make_context(task, cluster=cluster_info, workspace_path=workspace_path)
-            prompt = self.replace_placeholders(task.prompt, active_cluster_name, task)
 
-            chaos_specs = self._parse_chaos_specs(task.chaos_spec, active_cluster_name, task)
+            target_dep, ns = self._resolve_deployment_and_namespace(task)
+
+            prompt = self.replace_placeholders(task.prompt, active_cluster_name, target_dep, ns)
+
+            chaos_specs = self._parse_chaos_specs(
+                task.chaos_spec, active_cluster_name, target_dep, ns
+            )
             verification_mapping, verification_parse_errors = self._build_verification_mapping(
-                task.verification_spec, active_cluster_name, task
+                task.verification_spec, active_cluster_name, target_dep, ns
             )
 
             # Hand the background scenario its own context with an isolated
@@ -693,7 +715,8 @@ class DefaultEvalHarness(Harness):
                 chaos_specs,
                 verification_mapping,
                 replace(context, env=dict(context.env)),
-                task,
+                target_deployment=target_dep,
+                namespace=ns,
             )
             if scenario is not None:
                 scenario_manager, scenario_thread = scenario
@@ -707,7 +730,7 @@ class DefaultEvalHarness(Harness):
             collect_generated_files(before_files, run_dir, source_dir=workspace_path)
 
             expected_output = self.replace_placeholders(
-                task.expected_output, active_cluster_name, task
+                task.expected_output, active_cluster_name, target_dep, ns
             )
 
             chaos_report, perf_report = self._drain_scenario(scenario_manager, scenario_thread)
