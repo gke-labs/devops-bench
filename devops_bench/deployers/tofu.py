@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -64,11 +65,9 @@ def _get_declared_variables(tf_dir: str) -> set[str]:
     for path in Path(tf_dir).glob("*.tf"):
         with open(path) as f:
             for line in f:
-                line = line.strip()
-                if line.startswith("variable ") and '"' in line:
-                    parts = line.split('"')
-                    if len(parts) >= 2:
-                        declared.add(parts[1])
+                match = re.match(r'^\s*variable\s+"([^"]+)"', line)
+                if match:
+                    declared.add(match.group(1))
     return declared
 
 
@@ -162,6 +161,12 @@ class TFDeployer(Deployer):
         for key, value in self.variables.items():
             if key in declared:
                 flags.extend(["-var", f"{key}={_format_var(value)}"])
+            else:
+                _log.warning(
+                    "dropping variable %r passed to tofu stack %r: not declared in tf files",
+                    key,
+                    self.tf_dir,
+                )
         return flags
 
     @staticmethod
