@@ -48,11 +48,6 @@ NEVER_SYNC = [
     ".agents/skills/migration-prep/**",
     ".claude/skills/migration-prep",
     "docs/how-to/leaderboard.md",
-    # TEMP stopgap: core/model_providers.py is in gke-labs core/ but not yet exported to
-    # kubernetes-sigs, so the flipped core/** frontier would make the back-sync delete it. Exclude
-    # it until it lands upstream, then REMOVE these two lines so it reconciles like the rest of core/.
-    "devops_bench/core/model_providers.py",
-    "tests/unit/core/test_model_providers.py",
     "copy.bara.sky",
     "migrated.bara.sky",
     "pyproject.toml",
