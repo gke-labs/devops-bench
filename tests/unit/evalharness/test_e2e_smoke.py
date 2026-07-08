@@ -204,8 +204,10 @@ def test_optimize_scale_smoke_end_to_end(
     # deployer, and the start_scenario call routes skip_port_forward=True.
     real_start_scenario = harness.start_scenario
 
-    def patched_start_scenario(chaos_specs, mapping, ctx):
-        return real_start_scenario(chaos_specs, mapping, ctx, skip_port_forward=True)
+    def patched_start_scenario(chaos_specs, mapping, ctx, task=None, **kwargs):
+        return real_start_scenario(
+            chaos_specs, mapping, ctx, task, **kwargs, skip_port_forward=True
+        )
 
     monkeypatch.setattr(harness, "start_scenario", patched_start_scenario)
 

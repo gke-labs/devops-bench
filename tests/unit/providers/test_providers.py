@@ -73,8 +73,8 @@ def test_gcp_ensure_cluster_credentials_runs_gcloud(mocker):
     assert info.name == "test-cluster"
     assert info.location == "us-central1-a"
     assert info.project == "test-project"
-    mock_run.assert_called_once()
-    assert mock_run.call_args.args[0] == [
+    assert mock_run.call_count == 2
+    assert mock_run.call_args_list[0].args[0] == [
         "gcloud",
         "container",
         "clusters",
@@ -84,6 +84,13 @@ def test_gcp_ensure_cluster_credentials_runs_gcloud(mocker):
         "us-central1-a",
         "--project",
         "test-project",
+    ]
+    assert mock_run.call_args_list[1].args[0] == [
+        "kubectl",
+        "config",
+        "set-credentials",
+        "gke_test-project_us-central1-a_test-cluster",
+        "--exec-arg=--use_application_default_credentials",
     ]
 
 
