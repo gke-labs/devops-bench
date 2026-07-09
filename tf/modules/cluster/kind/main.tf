@@ -14,6 +14,10 @@ resource "kind_cluster" "default" {
   wait_for_ready  = true
 }
 
+# Duplicates the KinD context to match a GKE-like name pattern.
+# This is required for third-party gke-mcp tools to resolve the context when
+# running tasks against local KinD clusters, as the MCP client expects the
+# context to conform to the "gke_{project}_{location}_{cluster}" format.
 resource "null_resource" "duplicate_context" {
   depends_on = [kind_cluster.default]
 
