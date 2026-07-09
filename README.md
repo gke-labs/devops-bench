@@ -77,6 +77,23 @@ For real GKE/kind runs and parallel matrices, see the [run-evals how-to](docs/ho
 
 See the latest scores on the [leaderboard](https://gke-labs.github.io/devops-bench/).
 
+## Adding a benchmark task
+
+New tasks live under `tasks/<provider>/<name>/task.yaml`, each pairing a `chaos_spec` (what breaks) with a `verification_spec`/`expected_output` (how it's graded). The `tests/` directory is reserved for the Python codebase's own unit tests — it is not where benchmark task definitions go. The full schema, placeholders, and worked examples are in [docs/how-to/add-a-task.md](docs/how-to/add-a-task.md) — read that before you start.
+
+### Best practices for new tasks
+
+1. **Design realistic, focused failure modes in `chaos_spec`.**
+   - *Single root cause:* unless you're deliberately building an advanced multi-stage cascading scenario, each `chaos_spec` should model exactly one realistic failure or stress mechanism (a traffic spike, a pod kill, injected latency).
+   - *Clear parameters:* `qps`, `duration`, and disruption targets should reflect realistic production conditions without overwhelming the host running the eval.
+2. **Balance deterministic and LLM-as-judge evaluation.** Put every objective, concrete assertion — HTTP status, latency thresholds, error-rate ceilings, `kubectl get` readiness — in `verification_spec`. Use LLM-as-judge grading (via `expected_output` and the judge metrics) for things that need reasoning, like an agent's diagnostic summary or incident-triage notes. Combining hard state checks with judged reasoning gives a more reliable score than either alone.
+3. **Ensure cleanup.** Deployer and validation logic must leave the cluster/project clean so the next run starts fresh. **Unless it's absolutely necessary, define infra requirements as managed Terraform/OpenTofu resources, not ad-hoc shell scripts.** A resource a `local-exec` script creates falls outside OpenTofu's state, so `tofu destroy` can't remove it — you end up hand-rolling a destroy-time sweep, and a forgotten one leaks (this is exactly how `tf/prebuilt/minimum`'s `hello-app-<cluster>` Artifact Registry repo leak happened — see [known issues](docs/appendix/known_issues.md)). Reach for a script only when the OpenTofu provider genuinely can't express what you need, and keep it idempotent and scoped to resources the stack itself tears down.
+4. **Use lightweight, fast-pulling manifests.** Use small base images (`alpine`, `busybox`, `nginx:alpine`) in your task manifests, and avoid depending on the open internet or third-party APIs during validation — stub or seed what you need inside the cluster instead.
+5. **Keep tasks organized and discoverable.** File each task under the provider directory that matches its deployer (`gcp`, `kind`, `noop`, or `common`), give it a globally unique `task_id`, and use a descriptive `name` — there's no formal difficulty/category field today, so naming and placement are how reviewers and other contributors scope a task at a glance.
+6. **Adhere to code quality and licensing standards.** Any Python helper or deployer module you add needs the Apache 2.0 header (validate with `uv run python hack/boilerplate.py --dry-run`) and explicit type hints on every function. Run `uv run ruff check --fix && uv run ruff format` before opening a PR.
+
+Before submitting, run the `task-review` skill over your task — see [the skills overview](docs/getting-started.md#skills-in-this-repo).
+
 ## Documentation
 
 We welcome contributions around adding new tasks, models or agent harness. You can review documentation in [`docs/`](docs/README.md) for detailed instructions and skills. Start with [Getting started](docs/getting-started.md), then browse the component docs and
