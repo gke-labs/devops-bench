@@ -48,12 +48,9 @@ expected_output: |
           averageValue: 100
 documentation:
   - doc_name: "Expose custom metrics for autoscaling"
-    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/expose-custom-metrics-autoscaling"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/expose-custom-metrics-autoscaling"
     constraints:
-      - text: "autoscaling.gke.io|"
+      - text: "autoscaling.gke.io|web-metric|renamed_metric"
         critical: true
-  - doc_name: "Expose custom metrics for load balancers"
-    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/expose-custom-metrics-load-balancer"
-    constraints:
-      - text: "exportName"
+      - text: "prometheusMetricName:"
         critical: true

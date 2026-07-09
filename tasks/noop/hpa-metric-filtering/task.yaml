@@ -29,9 +29,11 @@ expected_output: |
             version: v2
 documentation:
   - doc_name: "Expose custom metrics for autoscaling"
-    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/expose-custom-metrics-autoscaling"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/expose-custom-metrics-autoscaling"
     constraints:
       - text: "kind: AutoscalingMetric"
+        critical: true
+      - text: "matchLabels:"
         critical: true
       - text: "name: http_requests_total"
         critical: true
