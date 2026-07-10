@@ -46,3 +46,11 @@ expected_output: |
         target:
           type: AverageValue
           averageValue: 100
+documentation:
+  - doc_name: "Expose custom metrics for autoscaling"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/expose-custom-metrics-autoscaling"
+    constraints:
+      - text: "autoscaling.gke.io|web-metric|renamed_metric"
+        critical: true
+      - text: "prometheusMetricName:"
+        critical: true
