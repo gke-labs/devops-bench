@@ -71,6 +71,7 @@ from devops_bench.agents.cli.openclaw.parsing import (
 from devops_bench.agents.config import AgentConfig
 from devops_bench.agents.result import AgentResult
 from devops_bench.agents.shared.cli_capabilities import (
+    agent_workdir,
     build_mcp_servers,
     materialize_skills,
 )
@@ -403,11 +404,12 @@ class OpenClawAgent(AgentHarness):
         candidate = os.path.expanduser("~/bin/oc")
         return candidate if os.path.exists(candidate) else "oc"
 
-    def _execute(self, prompt: str) -> AgentResult:
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
         """Run ``oc agent --local`` with the granted capabilities and extract the trajectory.
 
-        The granted capabilities are laid down in a per-run temp dir before
-        invocation:
+        The granted capabilities are laid down in ``workspace_path`` (the
+        harness-owned per-run workspace, when supplied, else a throwaway temp
+        dir this method owns) before invocation:
 
         * ``<run>/state`` — ``OPENCLAW_STATE_DIR`` (sessions + skills root).
         * ``<run>/state/skills/<name>/SKILL.md`` — one per discovered skill.
@@ -421,8 +423,7 @@ class OpenClawAgent(AgentHarness):
         oc_bin = self._resolve_oc_bin()
         final_prompt = _prepend_rules(caps.rules.text, prompt)
 
-        with tempfile.TemporaryDirectory(prefix="oc-run-") as rundir:
-            workdir = Path(rundir)
+        with agent_workdir(workspace_path, prefix="oc-run-") as workdir:
             state_dir = workdir / _OPENCLAW_STATE_DIRNAME
             state_dir.mkdir(parents=True, exist_ok=True)
 

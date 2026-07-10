@@ -20,7 +20,8 @@ import copy
 import datetime
 import importlib
 import json
-import os
+import shutil
+import tempfile
 import threading
 from dataclasses import replace
 from pathlib import Path
@@ -501,20 +502,21 @@ class DefaultEvalHarness(Harness):
 
     # -- agent execution --------------------------------------------------
 
-    def execute_agent(self, prompt: str, _ctx: RunContext) -> AgentResult:
+    def execute_agent(self, prompt: str, ctx: RunContext) -> AgentResult:
         """Run the configured agent against ``prompt`` through the registry.
 
         Args:
             prompt: The (placeholder-resolved) task prompt.
-            _ctx: The per-task run context. Reserved for future per-run hooks;
-                agents consume only the resolved prompt and rely on their
-                :class:`AgentConfig` for everything else.
+            ctx: The per-task run context. ``ctx.workspace_path`` is handed to
+                the agent so a CLI wrapper executes in the harness-owned
+                workspace instead of a throwaway directory the harness never
+                inspects.
 
         Returns:
             The typed :class:`AgentResult` the agent emitted.
         """
         agent = self.resolve_agent(self.agent_type)
-        return agent.run(prompt)
+        return agent.run(prompt, workspace_path=ctx.workspace_path)
 
     # -- pipeline ---------------------------------------------------------
 
@@ -617,7 +619,7 @@ class DefaultEvalHarness(Harness):
         scenario_manager: ScenarioManager | None = None
         scenario_thread: threading.Thread | None = None
         result: dict[str, Any] | None = None
-        workspace_path = Path(os.getcwd())
+        workspace_path: Path | None = None
         verification_parse_errors: list[dict[str, str]] = []
         # Track the substituted prompt / expectation as they are computed so a
         # failed record can carry the same resolved strings a success record
@@ -634,6 +636,10 @@ class DefaultEvalHarness(Harness):
             deployer.up()
             cluster_info = deployer.get_cluster_info()
             active_cluster_name = cluster_info.name or self.cluster_name
+            # Own a real per-run workspace so the artifact diff is rooted at
+            # the directory the agent actually writes to (its CLI wrapper's
+            # working directory), not the harness process's launch cwd.
+            workspace_path = Path(tempfile.mkdtemp(prefix="devops-bench-workspace-"))
             context = self.make_context(task, cluster=cluster_info, workspace_path=workspace_path)
 
             prompt = self.replace_placeholders(task.prompt, active_cluster_name)
@@ -690,6 +696,8 @@ class DefaultEvalHarness(Harness):
                 scenario_manager.stop()
             if deployer is not None:
                 self._teardown(deployer, infra_config, task.name)
+            if workspace_path is not None:
+                shutil.rmtree(workspace_path, ignore_errors=True)
 
         return result
 

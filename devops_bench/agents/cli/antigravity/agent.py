@@ -20,7 +20,6 @@ import json
 import os
 import pathlib
 import shutil
-import tempfile
 from typing import TYPE_CHECKING
 
 from devops_bench import core
@@ -164,14 +163,15 @@ class AgyCliAgent(base.AgentHarness):
             return candidate
         return "agy"
 
-    def _execute(self, prompt: str) -> agents_result.AgentResult:
+    def _execute(
+        self, prompt: str, workspace_path: pathlib.Path | None = None
+    ) -> agents_result.AgentResult:
         caps = self.config.capabilities
         binary = self._resolve_binary()
 
         env_overlay = _build_env(self.config)
 
-        with tempfile.TemporaryDirectory(prefix="agy-run-") as tmpdir:
-            workdir = pathlib.Path(tmpdir)
+        with cli_capabilities.agent_workdir(workspace_path, prefix="agy-run-") as workdir:
             gemini_dir = workdir / ".gemini"
             # <gemini_dir>/antigravity-cli/ is the single directory agy reads
             # its config from and writes its state to (see the OAuth token,

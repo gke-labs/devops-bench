@@ -21,7 +21,10 @@ skills tree. Importing this module pulls no provider SDK.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,11 +34,36 @@ from devops_bench.core import get_logger
 if TYPE_CHECKING:
     from devops_bench.agents.capabilities import McpBinding
 
-__all__ = ["build_mcp_servers", "materialize_skills"]
+__all__ = ["agent_workdir", "build_mcp_servers", "materialize_skills"]
 
 _log = get_logger("agents.shared.cli_capabilities")
 
 _SKILL_FILE = "SKILL.md"
+
+
+@contextlib.contextmanager
+def agent_workdir(workspace_path: Path | None, *, prefix: str) -> Iterator[Path]:
+    """Yield the directory a CLI agent subprocess should run in.
+
+    When the harness supplies ``workspace_path`` (its own per-run workspace,
+    kept alive across the run so artifact collection can diff it afterward),
+    that directory is yielded as-is and is NOT cleaned up here — the harness
+    owns its lifecycle. Otherwise a throwaway ``TemporaryDirectory`` is
+    created and removed on exit, preserving each CLI agent's standalone
+    behavior (e.g. a direct unit-test invocation with no harness workspace).
+
+    Args:
+        workspace_path: The harness-owned workspace directory, or ``None``.
+        prefix: Prefix for the fallback temp directory's name.
+
+    Yields:
+        The directory the CLI agent subprocess should run in.
+    """
+    if workspace_path is not None:
+        yield workspace_path
+        return
+    with tempfile.TemporaryDirectory(prefix=prefix) as tmpdir:
+        yield Path(tmpdir)
 
 
 def build_mcp_servers(mcp_servers: tuple[McpBinding, ...]) -> dict[str, dict]:

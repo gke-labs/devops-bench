@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from devops_bench.agents.config import AgentConfig
 from devops_bench.agents.result import AgentResult
@@ -72,7 +73,7 @@ class AgentHarness(ABC):
     def __init__(self, config: AgentConfig | None = None) -> None:
         self.config = config or AgentConfig()
 
-    def run(self, prompt: str) -> AgentResult:
+    def run(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
         """Execute the agent against ``prompt`` and return a typed result.
 
         Template method: wraps :meth:`_execute` in the latency stamp and the
@@ -81,6 +82,10 @@ class AgentHarness(ABC):
 
         Args:
             prompt: Task prompt handed to the agent.
+            workspace_path: Harness-owned working directory the agent should
+                execute in, when the harness supplies one (so files the agent
+                writes can be diffed and collected afterward). ``None`` lets
+                the agent fall back to its own throwaway working directory.
 
         Returns:
             An :class:`AgentResult` with ``latency`` always populated. A
@@ -89,7 +94,7 @@ class AgentHarness(ABC):
         traced = _maybe_observe(self._execute)
         start = time.monotonic()
         try:
-            result = traced(prompt)
+            result = traced(prompt, workspace_path)
         except Exception as exc:  # noqa: BLE001 - safety net for the whole benchmark
             elapsed = time.monotonic() - start
             _log.exception("agent _execute raised; converting to errored result")
@@ -103,7 +108,7 @@ class AgentHarness(ABC):
         return result
 
     @abstractmethod
-    def _execute(self, prompt: str) -> AgentResult:
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
         """Run the agent and return its typed result.
 
         Subclass extension point. Implementations build the provider-specific
@@ -114,6 +119,9 @@ class AgentHarness(ABC):
 
         Args:
             prompt: Task prompt handed to the agent.
+            workspace_path: Harness-owned working directory, or ``None`` when
+                the harness has not supplied one. A subclass with no local
+                filesystem workspace (e.g. a pure API agent) may ignore it.
 
         Returns:
             An :class:`AgentResult` (``latency`` may be left zero — the base
