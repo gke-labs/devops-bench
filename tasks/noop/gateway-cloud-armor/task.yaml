@@ -27,3 +27,18 @@ expected_output: |
       group: gateway.networking.k8s.io
       kind: Gateway
       name: public-gw
+
+documentation:
+  - doc_name: "Configure Gateway resources using Policies"
+    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/configure-gateway-resources"
+    constraints:
+      - text: "kind: GCPBackendPolicy"
+        critical: true
+      - text: "securityPolicy: block-ddos-policy"
+        critical: true
+      - text: "group: gateway.networking.k8s.io"
+        critical: true
+      - text: "kind: Gateway"
+        critical: true
+      - text: "name: public-gw"
+        critical: true
