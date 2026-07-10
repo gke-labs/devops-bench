@@ -36,9 +36,9 @@ documentation:
         critical: true
       - text: "securityPolicy: block-ddos-policy"
         critical: true
-      - text: "group: gateway.networking.k8s.io"
+      - text: "targetRef.group: gateway.networking.k8s.io"
         critical: true
-      - text: "kind: Gateway"
+      - text: "targetRef.kind: Gateway"
         critical: true
-      - text: "name: public-gw"
+      - text: "targetRef.name: public-gw"
         critical: true
