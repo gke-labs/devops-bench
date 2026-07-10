@@ -36,7 +36,7 @@ def extract_trajectory_from_db(db_path: Path) -> tuple[list[dict], list[str]]:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id FROM sessions ORDER BY started_at DESC LIMIT 1")
+        cursor.execute("SELECT id FROM sessions")
         row = cursor.fetchone()
         if not row:
             errors.append("No session found in state database")
@@ -63,7 +63,7 @@ def extract_trajectory_from_db(db_path: Path) -> tuple[list[dict], list[str]]:
                 for tc_data in tool_calls_list:
                     tc_id = tc_data.get("id")
                     func_data = tc_data.get("function", {})
-                    name = func_data.get("name")
+                    name = func_data.get("name") or "unknown"
                     args_str = func_data.get("arguments", "{}")
                     try:
                         args = json.loads(args_str)

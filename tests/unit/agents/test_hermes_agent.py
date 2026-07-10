@@ -22,15 +22,8 @@ from unittest.mock import patch
 
 import yaml
 
-from devops_bench.agents.cli.hermes.agent import HermesAgent, _build_env, _hermes_provider
+from devops_bench.agents.cli.hermes.agent import HermesAgent, _build_env
 from devops_bench.agents.config import AgentConfig
-
-
-def test_hermes_provider_mapping():
-    assert _hermes_provider("google") == "gemini"
-    assert _hermes_provider("google-vertex") == "vertex"
-    assert _hermes_provider("openai") == "openai"
-    assert _hermes_provider(None) is None
 
 
 def test_build_env():
@@ -45,25 +38,21 @@ def test_build_env():
     assert env.get("GEMINI_API_KEY") == "test-key"
 
 
-def test_build_env_fallback():
-    config = AgentConfig(
-        provider=None,
-        api_key="fallback-key",
-    )
-    env = _build_env(config)
-    assert env.get("GEMINI_API_KEY") == "fallback-key"
-
-
-def test_resolve_hermes_bin():
+@patch("os.path.exists")
+def test_resolve_hermes_bin(mock_exists):
     # If target is provided, it should be used
     agent = HermesAgent(AgentConfig(target="/custom/bin/hermes"))
     assert agent._resolve_hermes_bin() == "/custom/bin/hermes"
 
-    # Default logic is tricky to test since it relies on os.path.exists
-    # We'll just verify the call doesn't throw.
     agent_no_target = HermesAgent(AgentConfig(target=None))
-    bin_path = agent_no_target._resolve_hermes_bin()
-    assert bin_path in ["hermes", os.path.expanduser("~/.local/bin/hermes")]
+
+    # If candidate path exists, it should be used
+    mock_exists.return_value = True
+    assert agent_no_target._resolve_hermes_bin() == os.path.expanduser("~/.local/bin/hermes")
+
+    # If candidate path doesn't exist, fall back to "hermes"
+    mock_exists.return_value = False
+    assert agent_no_target._resolve_hermes_bin() == "hermes"
 
 
 def test_prepare_config(tmp_path: Path):

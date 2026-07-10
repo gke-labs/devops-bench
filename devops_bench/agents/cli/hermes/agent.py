@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -34,8 +33,9 @@ from devops_bench.agents.shared.cli_capabilities import (
     materialize_skills,
 )
 from devops_bench.core import get_logger
-from devops_bench.core.errors import ConfigError
+from devops_bench.core.errors import SubprocessError
 from devops_bench.core.model_providers import resolve_provider
+from devops_bench.core.subprocess import run as devops_run
 
 if TYPE_CHECKING:
     from devops_bench.agents.capabilities import McpBinding
@@ -45,6 +45,7 @@ _log = get_logger("agents.cli.hermes.agent")
 _HERMES_CONFIG_FILE = "config.yaml"
 _HERMES_ENV_FILE = ".env"
 _HERMES_STATE_DB = "state.db"
+_SOUL_FILE = "SOUL.md"
 
 
 def _prepend_rules(rules_text: str, prompt: str) -> str:
@@ -54,38 +55,13 @@ def _prepend_rules(rules_text: str, prompt: str) -> str:
     return f"{rules_text.rstrip()}\n\n{prompt}"
 
 
-def _hermes_provider(provider: str | None) -> str | None:
-    """Map devops-bench provider name to Hermes provider ID."""
-    if not provider:
-        return None
-    raw = provider.strip().lower()
-    if raw in ("google", "gemini"):
-        return "gemini"
-    if raw in ("google-vertex", "google_vertex", "vertex"):
-        return "vertex"
-    return raw
-
-
 def _build_env(config: AgentConfig) -> dict[str, str]:
     """Build env overlay with provider-specific API keys."""
     overlay: dict[str, str] = {}
-    if config.provider:
-        try:
-            spec = resolve_provider(config.provider)
-            if config.api_key:
-                for var in spec.api_key_envs:
-                    overlay[var] = config.api_key
-        except ConfigError as exc:
-            _log.warning("Failed to resolve provider %s: %s", config.provider, exc)
-            # Fallback
-            if config.api_key:
-                overlay["GEMINI_API_KEY"] = config.api_key
-                overlay["GOOGLE_API_KEY"] = config.api_key
-    elif config.api_key:
-        overlay["GEMINI_API_KEY"] = config.api_key
-        overlay["GOOGLE_API_KEY"] = config.api_key
-        overlay["OPENAI_API_KEY"] = config.api_key
-        overlay["OPENROUTER_API_KEY"] = config.api_key
+    if config.provider and config.api_key:
+        spec = resolve_provider(config.provider)
+        for var in spec.api_key_envs:
+            overlay[var] = config.api_key
 
     if config.extra_env:
         overlay.update(config.extra_env)
@@ -124,8 +100,8 @@ class HermesAgent(AgentHarness):
             shutil.copy(user_hermes_dir / _HERMES_CONFIG_FILE, run_dir / _HERMES_CONFIG_FILE)
         if (user_hermes_dir / _HERMES_ENV_FILE).exists():
             shutil.copy(user_hermes_dir / _HERMES_ENV_FILE, run_dir / _HERMES_ENV_FILE)
-        if (user_hermes_dir / "SOUL.md").exists():
-            shutil.copy(user_hermes_dir / "SOUL.md", run_dir / "SOUL.md")
+        if (user_hermes_dir / _SOUL_FILE).exists():
+            shutil.copy(user_hermes_dir / _SOUL_FILE, run_dir / _SOUL_FILE)
 
         config_path = run_dir / _HERMES_CONFIG_FILE
         config_data = {}
@@ -172,20 +148,20 @@ class HermesAgent(AgentHarness):
             if self.config.model:
                 cmd.extend(["-m", self.config.model])
 
-            hermes_prov = _hermes_provider(self.config.provider)
-            if hermes_prov:
+            if self.config.provider:
+                spec = resolve_provider(self.config.provider)
+                hermes_prov = "vertex" if spec.backend == "vertex" else spec.adapter_family
                 cmd.extend(["--provider", hermes_prov])
 
             try:
-                completed = subprocess.run(
+                completed = devops_run(
                     cmd,
-                    capture_output=True,
-                    text=True,
                     check=False,
                     timeout=self.config.timeout_sec,
-                    env={**os.environ, **env_overlay},
+                    extra_env=env_overlay,
                 )
-            except subprocess.TimeoutExpired as exc:
+            except SubprocessError as exc:
+                # If check=False, SubprocessError is only raised on timeout
                 stdout_text = exc.stdout or ""
                 stderr_text = exc.stderr or ""
                 trajectory = []
@@ -201,7 +177,8 @@ class HermesAgent(AgentHarness):
                 return AgentResult(
                     output=f"Timeout expired.\n\n=== STDOUT ===\n{stdout_text}\n\n=== STDERR ===\n{stderr_text}",
                     trajectory=trajectory,
-                    errors=[f"hermes agent timed out after {exc.timeout}s"] + export_errors,
+                    errors=[f"hermes agent timed out after {self.config.timeout_sec}s"]
+                    + export_errors,
                     metadata={"timeout": True},
                 )
             except OSError as exc:

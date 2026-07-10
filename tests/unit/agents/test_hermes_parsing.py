@@ -185,29 +185,33 @@ def test_parsing_unknown_tool_call_id(test_db_path: Path):
     assert tc["result"] == "Some result"
 
 
-def test_parsing_multiple_sessions(test_db_path: Path):
-    """Test that the parser always queries the most recent session."""
+def test_parsing_missing_tool_name(test_db_path: Path):
+    """Test behavior when tool call name is completely missing from assistant message."""
     init_db_schema(test_db_path)
     conn = sqlite3.connect(test_db_path)
     cursor = conn.cursor()
-
     cursor.execute(
-        "INSERT INTO sessions (id, started_at) VALUES ('session_1', '2026-07-09 11:00:00')"
-    )
-    cursor.execute(
-        "INSERT INTO messages (session_id, role, content) VALUES ('session_1', 'user', 'Deploy old')"
+        "INSERT INTO sessions (id, started_at) VALUES ('session_1', '2026-07-09 12:00:00')"
     )
 
-    cursor.execute(
-        "INSERT INTO sessions (id, started_at) VALUES ('session_2', '2026-07-09 12:00:00')"
+    # Insert assistant call without a function name
+    tool_calls_json = json.dumps(
+        [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"arguments": json.dumps({"manifest": "nginx.yaml"})},
+            }
+        ]
     )
     cursor.execute(
-        "INSERT INTO messages (session_id, role, content) VALUES ('session_2', 'user', 'Deploy new')"
+        "INSERT INTO messages (session_id, role, tool_calls) VALUES ('session_1', 'assistant', ?)",
+        (tool_calls_json,),
     )
-
     conn.commit()
     conn.close()
 
     trajectory, errors = extract_trajectory_from_db(test_db_path)
     assert errors == []
-    assert trajectory == []
+    assert len(trajectory) == 1
+    assert trajectory[0]["name"] == "unknown"

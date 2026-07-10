@@ -24,6 +24,7 @@ Three harnesses ship today. Each self-registers under a canonical key.
 | --- | --- | --- | --- |
 | `gemini` | The Google **Gemini CLI** binary | Headless subprocess; trajectory parsed from `--output-format stream-json` on stdout | MCP, skills, rules, allowed-tools |
 | `openclaw` | The **Openclaw Agent CLI** | `openclaw agent --local` with per-run isolated state/config; trajectory via `openclaw sessions export-trajectory` | MCP, skills, rules |
+| `hermes` | The **Hermes Agent CLI** binary | Subprocess driving `hermes chat` with a run-scoped home directory (`$HERMES_HOME`); trajectory parsed from SQLite `state.db` | MCP, skills, rules |
 | `api` | **In-process** model call | Calls `get_model(provider, model)` and runs a model-agnostic MCP tool-use loop (`max_turns`, default 50) | MCP (spawns a stdio server), skills (served as tools), rules (system instruction) |
 
 > `oc` is just a shorthand alias for the `openclaw` CLI; this doc uses `openclaw` throughout.
