@@ -30,7 +30,7 @@ expected_output: |
 
 documentation:
   - doc_name: "Configure Gateway resources using Policies"
-    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/configure-gateway-resources"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/configure-gateway-resources"
     constraints:
       - text: "kind: GCPBackendPolicy"
         critical: true
