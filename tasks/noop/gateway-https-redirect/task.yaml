@@ -32,7 +32,7 @@ expected_output: |
           statusCode: 301
 documentation:
   - doc_name: "Deploying Gateways - Force HTTPS redirection"
-    url: "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/deploying-gateways"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/deploying-gateways"
     constraints:
       - text: "type: RequestRedirect"
         critical: true
