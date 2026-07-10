@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -44,6 +43,7 @@ from devops_bench.agents.cli.gemini_cli.parsing import parse_stream_json
 from devops_bench.agents.config import AgentConfig
 from devops_bench.agents.result import AgentResult
 from devops_bench.agents.shared.cli_capabilities import (
+    agent_workdir,
     build_mcp_servers,
     materialize_skills,
 )
@@ -204,21 +204,23 @@ class GeminiCliAgent(AgentHarness):
         self.skills = caps.skills
         self.rules = caps.rules
 
-    def _execute(self, prompt: str) -> AgentResult:
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
         """Build argv, run the CLI, and parse the stream-json output.
 
-        The agent always runs the binary inside a per-run temp working
-        directory and lays down the granted capabilities there before
-        invocation, using the CLI's native workspace channels (all auto-loaded
-        from the cwd, so the user's ``~/.gemini`` stays untouched and concurrent
-        runs never race):
+        The agent runs the binary inside ``workspace_path`` when the harness
+        supplies one, else its own per-run temp working directory, and lays
+        down the granted capabilities there before invocation, using the
+        CLI's native workspace channels (all auto-loaded from the cwd, so the
+        user's ``~/.gemini`` stays untouched and concurrent runs never race):
 
         * ``GEMINI.md`` — the operator brief, when ``rules.text`` is set.
         * ``.gemini/settings.json`` — ``mcpServers`` for each command-bearing
           MCP binding, plus ``skills.enabled`` when skills were materialized.
         * ``.gemini/skills/<name>/SKILL.md`` — one per discovered skill.
 
-        The temp dir is cleaned up when ``_execute`` returns.
+        A temp working directory (used when ``workspace_path`` is ``None``) is
+        cleaned up when ``_execute`` returns; a harness-supplied
+        ``workspace_path`` is left for the harness to collect and clean up.
         """
         caps = self.config.capabilities
         target = os.path.expanduser(self.config.target or "gemini")
@@ -226,8 +228,7 @@ class GeminiCliAgent(AgentHarness):
         env_overlay = _build_env(self.config)
         rules_text = caps.rules.text
 
-        with tempfile.TemporaryDirectory(prefix="gemini-run-") as tmpdir:
-            workdir = Path(tmpdir)
+        with agent_workdir(workspace_path, prefix="gemini-run-") as workdir:
             if rules_text:
                 (workdir / _GEMINI_RULES_FILE).write_text(rules_text, encoding="utf-8")
 
@@ -243,7 +244,7 @@ class GeminiCliAgent(AgentHarness):
                 completed = run(
                     argv,
                     extra_env=env_overlay,
-                    cwd=tmpdir,
+                    cwd=workdir,
                     check=False,
                     timeout=self.config.timeout_sec,
                 )

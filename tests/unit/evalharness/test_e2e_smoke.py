@@ -58,7 +58,7 @@ class _StubAgent(AgentHarness):
 
     last_prompt: str | None = None
 
-    def _execute(self, prompt: str) -> AgentResult:
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
         _StubAgent.last_prompt = prompt
         return AgentResult(
             output="Tuned HPA, added requests/limits, observed load handled.",
@@ -297,7 +297,7 @@ def test_smoke_uses_workspace_path_for_artifact_diff(
     smoke_env: None,
     stub_agent_registered: None,
 ) -> None:
-    """Artifact diff is rooted at ``RunContext.workspace_path``, not literal cwd."""
+    """Artifact diff is rooted at a harness-owned workspace, not the launch cwd."""
     tasks = FileSystemTaskLoader().load_tasks(str(_OPTIMIZE_SCALE_DIR))
     harness = DefaultEvalHarness(
         project_id="proj",
@@ -307,20 +307,26 @@ def test_smoke_uses_workspace_path_for_artifact_diff(
     )
 
     # Run the harness from a sandbox so an accidental ``snapshot_dir(".")``
-    # call would diff the empty sandbox — not the user's cwd. The smoke
-    # assertion is that ``run`` completes without writing into the user's
-    # source tree.
+    # call would diff the empty sandbox, not the user's cwd. The assertion
+    # below pins that the workspace threaded to the agent is a fresh
+    # harness-owned directory, distinct from wherever the harness process
+    # happens to be launched from.
     sandbox = tmp_path / "sandbox"
     sandbox.mkdir()
     monkeypatch.chdir(sandbox)
 
+    seen_workspace: Path | None = None
     real_start_scenario = harness.start_scenario
 
     def patched_start_scenario(chaos_specs, mapping, ctx):
-        # Confirm the harness threaded the resolved workspace into the
-        # context, so the artifact diff cannot regress to ``"."`` hardcoded.
+        nonlocal seen_workspace
+        # Confirm the harness threaded a real, harness-owned workspace into
+        # the context — not the harness process's literal launch cwd — so
+        # the artifact diff cannot regress to diffing the wrong directory.
         assert ctx.workspace_path is not None
-        assert os.fspath(ctx.workspace_path) == str(sandbox.resolve())
+        assert ctx.workspace_path.is_dir()
+        assert os.fspath(ctx.workspace_path) != str(sandbox.resolve())
+        seen_workspace = ctx.workspace_path
         return real_start_scenario(chaos_specs, mapping, ctx, skip_port_forward=True)
 
     monkeypatch.setattr(harness, "start_scenario", patched_start_scenario)
@@ -339,6 +345,9 @@ def test_smoke_uses_workspace_path_for_artifact_diff(
         results = harness.run(tasks)
 
     assert len(results) == 1
+    # The harness-owned workspace is cleaned up once the run completes.
+    assert seen_workspace is not None
+    assert not seen_workspace.exists()
     # Generated-files dir is only created when a new entry exists; the stub
     # agent writes nothing, so the dir stays absent.
     run_dirs = [p for p in tmp_path.iterdir() if p.is_dir() and p.name.startswith("run_")]

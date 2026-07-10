@@ -33,7 +33,7 @@ def test_abstract_base_cannot_be_instantiated():
 
 def test_subclass_run_returns_typed_result_with_latency():
     class _Stub(AgentHarness):
-        def _execute(self, prompt: str) -> AgentResult:
+        def _execute(self, prompt: str, workspace_path=None) -> AgentResult:
             return AgentResult(output=f"echo:{prompt}", trajectory=[])
 
     result = _Stub().run("hi")
@@ -44,7 +44,7 @@ def test_subclass_run_returns_typed_result_with_latency():
 
 def test_subclass_can_self_stamp_latency():
     class _Stub(AgentHarness):
-        def _execute(self, prompt: str) -> AgentResult:
+        def _execute(self, prompt: str, workspace_path=None) -> AgentResult:
             # Subclasses with finer-grained timing may pre-fill latency; the
             # base must leave that value untouched.
             return AgentResult(output="x", trajectory=[], latency=99.0)
@@ -54,7 +54,7 @@ def test_subclass_can_self_stamp_latency():
 
 def test_safety_net_converts_unexpected_exception_to_errored_result():
     class _Boom(AgentHarness):
-        def _execute(self, prompt: str) -> AgentResult:
+        def _execute(self, prompt: str, workspace_path=None) -> AgentResult:
             raise RuntimeError("kaboom")
 
     result = _Boom().run("hi")
@@ -68,7 +68,7 @@ def test_safety_net_converts_unexpected_exception_to_errored_result():
 
 def test_config_default_is_a_fresh_agent_config():
     class _Stub(AgentHarness):
-        def _execute(self, prompt: str) -> AgentResult:
+        def _execute(self, prompt: str, workspace_path=None) -> AgentResult:
             return AgentResult(output="", trajectory=[])
 
     a = _Stub()
@@ -81,7 +81,7 @@ def test_third_party_can_register_with_no_central_edit():
     """A dummy agent registers via @AGENTS.register and resolves via .get."""
 
     class _Dummy(AgentHarness):
-        def _execute(self, prompt: str) -> AgentResult:
+        def _execute(self, prompt: str, workspace_path=None) -> AgentResult:
             return AgentResult(output="", trajectory=[])
 
     AGENTS.register("dummy-extension")(_Dummy)
