@@ -47,6 +47,7 @@ variable "agent_service_account" {
 variable "enable_iap_ssh" {
   description = "Enable IAP SSH firewall rule for the cluster"
   type        = bool
+  default     = false
 }
 
 variable "gpu_type" {

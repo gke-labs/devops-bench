@@ -84,15 +84,26 @@ locals {
     "t4"   = "nvidia-tesla-t4"
   }
 
-  # Fallback machine-to-GPU auto-deduction
-  machine_to_gpu_map = {
-    "g2-standard-4" = "nvidia-l4"
-    "a2-highgpu-1g" = "nvidia-tesla-a100"
+  # Map machine family prefix to GKE native guest accelerator strings
+  machine_family_gpu_map = {
+    "g2" = "nvidia-l4"
+    "a2" = "nvidia-tesla-a100"
   }
 
+  is_g2 = length(regexall("^g2-", var.machine_type)) > 0
+  is_a2 = length(regexall("^a2-", var.machine_type)) > 0
+
   # Determine final GPU attachment parameters
-  enable_gpu = var.gpu_type != "" || length(regexall("^g2-|^a2-", var.machine_type)) > 0
-  gpu_type   = var.gpu_type != "" ? lookup(local.abstract_gpu_map, var.gpu_type, "nvidia-l4") : lookup(local.machine_to_gpu_map, var.machine_type, "nvidia-l4")
+  enable_gpu = var.gpu_type != "" || local.is_g2 || local.is_a2
+
+  # Extract machine family (e.g. "g2" from "g2-standard-4")
+  machine_family = split("-", var.machine_type)[0]
+
+  # Deduce GPU type from machine family if not explicitly set but GPU is enabled.
+  # This will fail at plan time if machine_family is not in machine_family_gpu_map.
+  deduced_gpu_type = var.gpu_type == "" && local.enable_gpu ? local.machine_family_gpu_map[local.machine_family] : ""
+
+  gpu_type = var.gpu_type != "" ? lookup(local.abstract_gpu_map, var.gpu_type) : local.deduced_gpu_type
 }
 
 resource "google_container_node_pool" "primary_nodes" {

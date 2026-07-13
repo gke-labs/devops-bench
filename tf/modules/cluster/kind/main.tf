@@ -12,6 +12,22 @@ resource "kind_cluster" "default" {
   node_image      = var.node_image
   kubeconfig_path = pathexpand(var.kubeconfig_path)
   wait_for_ready  = true
+
+  kind_config {
+    kind        = "Cluster"
+    api_version = "kind.x-k8s.io/v1alpha4"
+
+    node {
+      role = "control-plane"
+    }
+
+    dynamic "node" {
+      for_each = range(max(0, var.node_count - 1))
+      content {
+        role = "worker"
+      }
+    }
+  }
 }
 
 # Duplicates the KinD context to match a GKE-like name pattern.

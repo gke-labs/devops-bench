@@ -35,5 +35,6 @@ module "kind" {
   node_image      = var.node_image
   project_id      = var.project_id
   location        = var.location != "" ? var.location : "local"
+  node_count      = var.node_count
 }
 

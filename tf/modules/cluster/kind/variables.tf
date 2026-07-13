@@ -26,3 +26,9 @@ variable "location" {
   description = "The cluster location (or local)"
   default     = "local"
 }
+
+variable "node_count" {
+  type        = number
+  description = "Number of nodes (1 control-plane + worker nodes)"
+  default     = 3
+}

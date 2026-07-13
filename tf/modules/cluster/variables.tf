@@ -1,6 +1,11 @@
 variable "infra_provider" {
   type        = string
   description = "The target cloud provider (gcp, kind)"
+
+  validation {
+    condition     = contains(["gcp", "kind"], var.infra_provider)
+    error_message = "infra_provider must be one of: 'gcp', 'kind'."
+  }
 }
 
 variable "cluster_name" {
