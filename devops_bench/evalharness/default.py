@@ -666,6 +666,8 @@ class DefaultEvalHarness(Harness):
             _log.info("executing agent for prompt: %s", prompt)
             before_files = snapshot_dir(workspace_path)
             agent_res = self.execute_agent(prompt, context)
+            # NOTE/TODO: This collects ALL frontmatter from bootstrapping, not just generated files.
+            # Consider a more targeted filter in a future iteration.
             collect_generated_files(before_files, run_dir, source_dir=workspace_path)
 
             expected_output = self.replace_placeholders(task.expected_output, active_cluster_name)
