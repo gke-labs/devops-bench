@@ -43,7 +43,7 @@ MIGRATED = [
     # "devops_bench/agents/base.py",
     # "devops_bench/agents/config.py",
     # "devops_bench/agents/result.py",
-    # "devops_bench/agents/__init__.py",
+    "devops_bench/agents/__init__.py",
     # "devops_bench/agents/capabilities/**",
     # "tests/unit/agents/test_agents_base.py",
     # "tests/unit/agents/test_agents_config.py",
@@ -158,7 +158,7 @@ MIGRATED = [
     # "devops_bench/metrics/chaos_metrics.py",
     # "tests/unit/metrics/test_metrics_chaos.py",
     # benchmark task data (batched across owners)
-    # "tasks/**",
+    "tasks/**",
 
     # --- Wave 6: harness base + scenario, and module docs/skills (each after its module lands) ---
     # "devops_bench/evalharness/base.py",
@@ -227,7 +227,7 @@ MIGRATED = [
     # "docs/components/glossary.md",
     # "docs/contributing.md",
     # "docs/appendix/known_issues.md",
-    # "AGENTS.md",
+    "AGENTS.md",
     # "CLAUDE.md",
     # "devops_bench/AGENTS.md",
     # ".agents/skills/docs-sync/**",
