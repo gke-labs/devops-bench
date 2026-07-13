@@ -34,22 +34,23 @@ def extract_trajectory_from_db(db_path: Path) -> tuple[list[dict], list[str]]:
 
     try:
         conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        try:
+            cursor = conn.cursor()
 
-        cursor.execute("SELECT id FROM sessions")
-        row = cursor.fetchone()
-        if not row:
-            errors.append("No session found in state database")
+            cursor.execute("SELECT id FROM sessions ORDER BY id DESC LIMIT 1")
+            row = cursor.fetchone()
+            if not row:
+                errors.append("No session found in state database")
+                return [], errors
+            session_id = row[0]
+
+            cursor.execute(
+                "SELECT role, content, tool_calls, tool_call_id, tool_name FROM messages WHERE session_id = ? ORDER BY id",
+                (session_id,),
+            )
+            messages = cursor.fetchall()
+        finally:
             conn.close()
-            return [], errors
-        session_id = row[0]
-
-        cursor.execute(
-            "SELECT role, content, tool_calls, tool_call_id, tool_name FROM messages WHERE session_id = ? ORDER BY id",
-            (session_id,),
-        )
-        messages = cursor.fetchall()
-        conn.close()
     except sqlite3.Error as exc:
         errors.append(f"Database error: {exc}")
         return [], errors

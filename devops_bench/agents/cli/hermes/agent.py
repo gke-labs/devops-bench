@@ -78,8 +78,11 @@ class HermesAgent(AgentHarness):
     - Rules: prepended to the prompt
     """
 
-    def __init__(self, config: AgentConfig | None = None) -> None:
+    def __init__(
+        self, config: AgentConfig | None = None, *, inherit_user_config: bool = False
+    ) -> None:
         AgentHarness.__init__(self, config)
+        self.inherit_user_config = inherit_user_config
         caps = self.config.capabilities
         self.rules = caps.rules
         self.mcp_servers = caps.mcp_servers
@@ -93,15 +96,16 @@ class HermesAgent(AgentHarness):
         return candidate if os.path.exists(candidate) else "hermes"
 
     def _prepare_config(self, run_dir: Path, mcp_servers: tuple[McpBinding, ...]) -> None:
-        """Copy user config and merge MCP servers."""
+        """Initialize run-scoped config and merge MCP servers."""
         user_hermes_dir = Path(os.path.expanduser("~/.hermes"))
 
-        if (user_hermes_dir / _HERMES_CONFIG_FILE).exists():
-            shutil.copy(user_hermes_dir / _HERMES_CONFIG_FILE, run_dir / _HERMES_CONFIG_FILE)
-        if (user_hermes_dir / _HERMES_ENV_FILE).exists():
-            shutil.copy(user_hermes_dir / _HERMES_ENV_FILE, run_dir / _HERMES_ENV_FILE)
-        if (user_hermes_dir / _SOUL_FILE).exists():
-            shutil.copy(user_hermes_dir / _SOUL_FILE, run_dir / _SOUL_FILE)
+        if self.inherit_user_config:
+            if (user_hermes_dir / _HERMES_CONFIG_FILE).exists():
+                shutil.copy(user_hermes_dir / _HERMES_CONFIG_FILE, run_dir / _HERMES_CONFIG_FILE)
+            if (user_hermes_dir / _HERMES_ENV_FILE).exists():
+                shutil.copy(user_hermes_dir / _HERMES_ENV_FILE, run_dir / _HERMES_ENV_FILE)
+            if (user_hermes_dir / _SOUL_FILE).exists():
+                shutil.copy(user_hermes_dir / _SOUL_FILE, run_dir / _SOUL_FILE)
 
         config_path = run_dir / _HERMES_CONFIG_FILE
         config_data = {}

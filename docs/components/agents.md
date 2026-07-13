@@ -18,7 +18,7 @@ agent.run(prompt) -> AgentResult     # base: latency + safety net
 
 ## Supported harnesses
 
-Three harnesses ship today. Each self-registers under a canonical key.
+Each harness self-registers under a canonical key.
 
 | Key | Wraps | How it runs | Capabilities |
 | --- | --- | --- | --- |

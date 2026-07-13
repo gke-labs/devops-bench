@@ -727,11 +727,6 @@ def test_execute_writes_no_config_when_no_launchable_server(monkeypatch, tmp_pat
 def test_execute_writes_model_override_config_without_mcp(monkeypatch, tmp_path):
     """A model absent from oc's catalog gets an isolated config + OPENCLAW_CONFIG_PATH
     even with no MCP server — and works keyless (vertex/ADC)."""
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("AGENT_API_KEY", raising=False)
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    monkeypatch.delenv("GOOGLE_CLOUD_API_KEY", raising=False)
-
     captured: dict = {}
 
     def fake_bash(cmd, **kwargs):

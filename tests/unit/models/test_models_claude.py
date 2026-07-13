@@ -277,7 +277,6 @@ def test_generate_content_arg_overrides_env_max_tokens(mocker):
 
 
 def test_generate_content_omits_system_when_empty(mocker):
-    mocker.patch.dict(os.environ, {}, clear=True)
     client = mocker.patch.object(claude, "AsyncAnthropicVertex").return_value
     create = AsyncMock(return_value="resp")
     client.messages.create = create
@@ -289,7 +288,6 @@ def test_generate_content_omits_system_when_empty(mocker):
 
 
 def test_generate_content_omits_tools_when_empty(mocker):
-    mocker.patch.dict(os.environ, {}, clear=True)
     client = mocker.patch.object(claude, "AsyncAnthropicVertex").return_value
     create = AsyncMock(return_value="resp")
     client.messages.create = create
