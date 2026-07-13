@@ -34,7 +34,7 @@ _DEFAULT_STACK = "prebuilt/kind"
 def _select_provider(infra_config: dict[str, Any], stack: str) -> str:
     """Determine the provider name for a tofu stack.
 
-    Precedence: explicit ``provider`` config key → ``INFRA_PROVIDER`` / ``CLOUD_PROVIDER`` env →
+    Precedence: explicit ``provider`` config key → ``INFRA_PROVIDER`` env →
     substring deduction from the stack name. Deduction is only applied to
     in-repo (relative) stacks; an out-of-repo (absolute or ``~``) stack must name
     its provider explicitly rather than be guessed at.
@@ -49,18 +49,18 @@ def _select_provider(infra_config: dict[str, Any], stack: str) -> str:
     Raises:
         ConfigError: If an absolute/external stack has no explicit provider.
     """
+    explicit = (infra_config.get("provider") or get_env("INFRA_PROVIDER", "") or "").strip().lower()
+    if explicit:
+        return explicit
     if get_env("CLOUD_PROVIDER", ""):
         raise ConfigError(
             "CLOUD_PROVIDER environment variable has been renamed to INFRA_PROVIDER. "
             "Please use INFRA_PROVIDER instead."
         )
-    explicit = (infra_config.get("provider") or get_env("INFRA_PROVIDER", "") or "").strip().lower()
-    if explicit:
-        return explicit
     if Path(stack).expanduser().is_absolute():
         raise ConfigError(
             f"external stack {stack!r} requires an explicit provider; set 'provider' in task "
-            "config or the INFRA_PROVIDER / CLOUD_PROVIDER env var (e.g. 'gcp' or 'kind')"
+            "config or the INFRA_PROVIDER env var (e.g. 'gcp' or 'kind')"
         )
     return "kind" if "kind" in stack else "gcp"
 
@@ -127,4 +127,9 @@ def get_deployer(
     )
     variables = provider.resolve_variables(ctx, custom_variables)
 
-    return TFDeployer(tf_dir=stack, provider=provider, variables=variables)
+    return TFDeployer(
+        tf_dir=stack,
+        provider=provider,
+        variables=variables,
+        custom_keys=set(custom_variables.keys()),
+    )
