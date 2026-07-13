@@ -60,7 +60,13 @@ def _format_var(value: Any) -> str:
 
 
 def _get_declared_variables(tf_dir: str) -> set[str]:
-    """Scan the stack directory for declared variable names."""
+    """Scan the stack directory for declared variable names.
+
+    Note: This is a fast, regex-based scanner. It has limitations:
+    - It only scans `.tf` files, missing variables declared in `.tf.json` files.
+    - It uses a simple line-based regex, which can falsely match variable
+      declarations that are commented out (e.g. inside multi-line comments).
+    """
     declared = set()
     for path in Path(tf_dir).glob("*.tf"):
         with open(path) as f:
@@ -136,6 +142,7 @@ class TFDeployer(Deployer):
         tf_dir: str,
         provider: Provider,
         variables: dict[str, Any] | None = None,
+        custom_keys: set[str] | None = None,
     ) -> None:
         tf_path = Path(tf_dir).expanduser()
         if tf_path.is_absolute():
@@ -154,6 +161,7 @@ class TFDeployer(Deployer):
 
         self.provider = provider
         self.variables = variables or {}
+        self.custom_keys = custom_keys or set()
 
     def _var_flags(self) -> list[str]:
         declared = _get_declared_variables(self.tf_dir)
@@ -161,6 +169,10 @@ class TFDeployer(Deployer):
         for key, value in self.variables.items():
             if key in declared:
                 flags.extend(["-var", f"{key}={_format_var(value)}"])
+            elif key in self.custom_keys:
+                raise ConfigError(
+                    f"Variable {key!r} defined in task config is not declared in TF stack {self.tf_dir!r}"
+                )
             else:
                 _log.warning(
                     "dropping variable %r passed to tofu stack %r: not declared in tf files",

@@ -301,3 +301,26 @@ def test_var_flags_drops_and_logs_undeclared_variables(stack_dir, provider, capl
         for record in caplog.records
     )
     assert "project_id=test-project" in flags
+
+
+def test_var_flags_raises_on_undeclared_custom_variables(stack_dir, provider):
+    variables = {
+        "project_id": "test-project",
+        "cluster_name": "test-cluster",
+        "location": "us-central1-a",
+        "node_count": 3,
+        "undeclared_custom_var": "should-raise",
+    }
+    # Pass undeclared_custom_var as a custom key (simulating task config variables)
+    custom_keys = {"undeclared_custom_var"}
+    deployer = TFDeployer(
+        tf_dir=str(stack_dir),
+        provider=provider,
+        variables=variables,
+        custom_keys=custom_keys,
+    )
+
+    with pytest.raises(
+        ConfigError, match="Variable 'undeclared_custom_var' defined in task config is not declared"
+    ):
+        deployer._var_flags()
