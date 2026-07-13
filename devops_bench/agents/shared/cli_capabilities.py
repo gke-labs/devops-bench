@@ -45,9 +45,9 @@ def build_mcp_servers(mcp_servers: tuple[McpBinding, ...]) -> dict[str, dict]:
     spawn a stdio MCP server, and an empty-command binding denotes a server the
     binary already hosts itself.
 
-    If the command is path-like (starts with a relative path prefix or contains
-    a path separator) and exists on disk, it is resolved to its absolute path to
-    prevent execution ambiguity in the agent's workspace.
+    If the command is path-like (contains a path separator) and exists on disk,
+    it is resolved to its absolute path to prevent execution ambiguity in the
+    agent's workspace. If it does not exist, a warning is logged.
 
     Args:
         mcp_servers: Bindings granted for the run.
@@ -63,8 +63,14 @@ def build_mcp_servers(mcp_servers: tuple[McpBinding, ...]) -> dict[str, dict]:
             continue
         name = binding.name or f"mcp{index}"
         cmd = binding.command[0]
-        if (cmd.startswith(("./", "../")) or os.sep in cmd) and os.path.exists(cmd):
-            cmd = os.path.abspath(cmd)
+        if os.sep in cmd:
+            if os.path.exists(cmd):
+                cmd = os.path.abspath(cmd)
+            else:
+                _log.warning(
+                    "Path-like MCP command '%s' not found relative to harness; passing unchanged",
+                    cmd,
+                )
         entry: dict = {"command": cmd}
         if len(binding.command) > 1:
             entry["args"] = list(binding.command[1:])

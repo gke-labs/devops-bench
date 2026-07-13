@@ -73,7 +73,7 @@ def test_materialize_skills_skips_missing_paths(tmp_path: Path):
     assert materialize_skills(tmp_path / "dest", (str(tmp_path / "nope"),)) == []
 
 
-def test_build_mcp_servers_resolves_path_like_commands(tmp_path: Path, monkeypatch):
+def test_build_mcp_servers_resolves_path_like_commands(tmp_path: Path, monkeypatch, caplog):
     """Path-like commands that exist on disk are absolutized; bare commands are not."""
     monkeypatch.chdir(tmp_path)
 
@@ -92,3 +92,7 @@ def test_build_mcp_servers_resolves_path_like_commands(tmp_path: Path, monkeypat
     # 3. Path-like command that does NOT exist -> NOT resolved
     servers = build_mcp_servers((McpBinding(name="missing", command=("./missing-mcp",)),))
     assert servers["missing"]["command"] == "./missing-mcp"
+    assert (
+        "Path-like MCP command './missing-mcp' not found relative to harness; passing unchanged"
+        in caplog.text
+    )
