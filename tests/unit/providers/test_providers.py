@@ -47,7 +47,8 @@ def test_registry_populated():
 # --- GcpProvider ---------------------------------------------------------------
 
 
-def test_gcp_resolve_variables_fills_defaults(ctx):
+def test_gcp_resolve_variables_fills_defaults(ctx, monkeypatch):
+    monkeypatch.delenv("KUBECONFIG", raising=False)
     variables = GcpProvider().resolve_variables(ctx, {"node_count": 5, "cluster_name": "override"})
     assert variables == {
         "infra_provider": "gcp",
@@ -64,7 +65,38 @@ def test_gcp_resolve_variables_namespace_from_env(ctx, monkeypatch):
     assert variables["namespace"] == "team-a"
 
 
-def test_gcp_ensure_cluster_credentials_runs_gcloud(mocker):
+def test_gcp_resolve_variables_kubeconfig_from_env(ctx, monkeypatch):
+    monkeypatch.setenv("KUBECONFIG", "/path/to/kubeconfig")
+    variables = GcpProvider().resolve_variables(ctx, {})
+    assert variables["kubeconfig_path"] == "/path/to/kubeconfig"
+
+
+def test_gcp_ensure_cluster_credentials_runs_gcloud_no_adc(mocker, monkeypatch):
+    monkeypatch.delenv("GCP_USE_ADC", raising=False)
+    mock_run = mocker.patch("devops_bench.providers.gcp.run")
+    info = GcpProvider().ensure_cluster_credentials(
+        "test-cluster", "us-central1-a", {"project_id": "test-project"}
+    )
+
+    assert info.name == "test-cluster"
+    assert info.location == "us-central1-a"
+    assert info.project == "test-project"
+    assert mock_run.call_count == 1
+    assert mock_run.call_args_list[0].args[0] == [
+        "gcloud",
+        "container",
+        "clusters",
+        "get-credentials",
+        "test-cluster",
+        "--location",
+        "us-central1-a",
+        "--project",
+        "test-project",
+    ]
+
+
+def test_gcp_ensure_cluster_credentials_runs_gcloud_with_adc(mocker, monkeypatch):
+    monkeypatch.setenv("GCP_USE_ADC", "true")
     mock_run = mocker.patch("devops_bench.providers.gcp.run")
     info = GcpProvider().ensure_cluster_credentials(
         "test-cluster", "us-central1-a", {"project_id": "test-project"}
