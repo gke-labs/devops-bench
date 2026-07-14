@@ -204,7 +204,9 @@ export AGENT_MODEL="gemini-3.1-pro-preview"
 # export ANTHROPIC_API_KEY=""
 # Keyless via Vertex AI (rides the VM metadata-server ADC; needs Model Garden
 # enablement for the Claude models + roles/aiplatform.user on the VM service
-# account; GCP_PROJECT_ID / GCP_VERTEX_LOCATION are exported by the matrix driver):
+# account. Run the matrix with BENCH_VERTEX=1 so it drops API keys and exports
+# GCP_VERTEX_LOCATION; GCP_PROJECT_ID is exported unconditionally, but without
+# BENCH_VERTEX the region falls back to CLOUD_ML_REGION=global):
 # export BENCH_AGENT_TYPE="claude-code"
 # export AGENT_TARGET="claude"
 # export AGENT_PROVIDER="anthropic-vertex"

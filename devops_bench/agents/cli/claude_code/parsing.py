@@ -99,7 +99,20 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
             continue
 
         etype = event.get("type")
-        if etype == "assistant":
+        if etype == "system":
+            # The init event lists each configured MCP server with a startup
+            # status. A server that fails to connect leaves the run tool-less
+            # but still exits 0, so surface it here instead of scoring a
+            # silently-degraded MCP arm like the baseline.
+            if event.get("subtype") == "init":
+                for server in event.get("mcp_servers") or []:
+                    if not isinstance(server, dict):
+                        continue
+                    status = str(server.get("status", "")).lower()
+                    if status and status not in ("connected", "ok", "ready"):
+                        name = server.get("name") or "<unknown>"
+                        errors.append(f"mcp server {name!r} not connected at init: {status}")
+        elif etype == "assistant":
             content = (event.get("message") or {}).get("content")
             if not isinstance(content, list):
                 continue

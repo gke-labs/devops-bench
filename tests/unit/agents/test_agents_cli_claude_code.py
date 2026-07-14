@@ -146,6 +146,35 @@ def test_parse_stream_json_empty_input_returns_empty():
     assert parse_stream_json("") == ("", [], {}, [])
 
 
+def test_parse_stream_json_flags_failed_mcp_server_at_init():
+    """A failed MCP server in the init event surfaces on ``errors`` — a
+    tool-less-but-exit-0 run must not look clean."""
+    blob = _stream(
+        {
+            "type": "system",
+            "subtype": "init",
+            "mcp_servers": [
+                {"name": "gke", "status": "connected"},
+                {"name": "broken", "status": "failed"},
+            ],
+        },
+        {"type": "result", "subtype": "success", "result": "ok"},
+    )
+    output, _trajectory, _tokens, errors = parse_stream_json(blob)
+    assert output == "ok"
+    assert any("broken" in e and "failed" in e for e in errors)
+    assert not any("gke" in e for e in errors)
+
+
+def test_parse_stream_json_keeps_pending_tool_use_as_called():
+    """A tool_use with no matching tool_result (timeout-truncated stream) stays
+    in the trajectory with status ``called`` and a ``None`` result."""
+    blob = _stream(_assistant({"type": "tool_use", "id": "c1", "name": "do", "input": {"k": "v"}}))
+    _output, trajectory, _tokens, errors = parse_stream_json(blob)
+    assert trajectory == [{"name": "do", "args": {"k": "v"}, "result": None, "status": "called"}]
+    assert errors == []
+
+
 def test_parse_stream_json_falls_back_to_assistant_text_without_result_event():
     """A truncated stream (no terminal ``result``) still yields the answer from
     the accumulated assistant ``text`` blocks."""
@@ -343,6 +372,40 @@ def test_execute_records_non_zero_exit(monkeypatch):
     assert result.has_errors()
     assert any("exited 2" in e for e in result.errors)
     assert result.metadata.get("returncode") == 2
+
+
+def test_execute_parses_stream_on_non_zero_exit(monkeypatch):
+    """An ``error_max_turns`` run exits non-zero *after* emitting a full stream;
+    output and trajectory must still be parsed, with the exit + subtype recorded."""
+    stream = _stream(
+        _assistant({"type": "tool_use", "id": "c1", "name": "do", "input": {}}),
+        {"type": "result", "subtype": "error_max_turns", "result": "hit the cap"},
+    )
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout=stream, stderr="turn limit reached", returncode=1)
+
+    monkeypatch.setattr(claude_mod, "run", fake_run)
+    result = ClaudeCodeAgent(AgentConfig(target="claude")).run("p")
+    assert result.output == "hit the cap"
+    assert len(result.trajectory) == 1
+    assert result.metadata["returncode"] == 1
+    assert result.metadata["stderr"] == "turn limit reached"
+    assert any("error_max_turns" in e for e in result.errors)
+    assert any("exited 1" in e for e in result.errors)
+
+
+def test_execute_captures_stderr_on_clean_exit(monkeypatch):
+    """stderr is kept for diagnosis even when the process exits 0."""
+
+    def fake_run(argv, **kwargs):
+        return SimpleNamespace(stdout=SAMPLE_STREAM, stderr="a warning", returncode=0)
+
+    monkeypatch.setattr(claude_mod, "run", fake_run)
+    result = ClaudeCodeAgent(AgentConfig(target="claude")).run("p")
+    assert result.metadata["stderr"] == "a warning"
+    assert "returncode" not in result.metadata
+    assert not any("exited" in e for e in result.errors)
 
 
 def test_execute_handles_subprocess_error(monkeypatch):

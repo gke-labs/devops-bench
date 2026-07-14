@@ -285,8 +285,12 @@ class ClaudeCodeAgent(AgentHarness):
         output, trajectory, tokens, parse_errors = parse_stream_json(completed.stdout or "")
         errors: list[str] = list(parse_errors)
         metadata: dict = {}
+        stderr = (completed.stderr or "").strip()
+        if stderr:
+            # Keep stderr for diagnosis even on a clean exit — e.g. MCP startup
+            # warnings that leave the process returncode at 0.
+            metadata["stderr"] = stderr[-2000:]
         if completed.returncode != 0:
-            stderr = (completed.stderr or "").strip()
             errors.append(f"claude exited {completed.returncode}: {stderr or '<no stderr>'}")
             if not output:
                 output = f"Error: claude exited {completed.returncode}"
