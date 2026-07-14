@@ -17,8 +17,10 @@ Every term below names a real concept in the codebase. The "Where it lives" colu
 | **Deployer** | Provisions and tears down the cluster the agent works against. `TFDeployer` drives OpenTofu; `NoOpDeployer` does nothing (for tasks that run against a pre-existing cluster). | `devops_bench/deployers/` |
 | **Task** | The typed eval contract, authored as a `task.yaml`. The schema is code; the tasks themselves live on disk. | Schema in `devops_bench/tasks/schema.py`; tasks under `tasks/` |
 | **Metric** | LLM-as-judge plus deterministic scoring, looked up through the `METRICS` registry. | `devops_bench/metrics/` |
-| **Outcome validity** | The primary rubric: did the agent actually achieve the goal by *any* valid path? It grades the result, not whether a specific method was followed. | `devops_bench/metrics/outcome_validity.py` |
-| **`expected_output` (rubric)** | The per-task grading reference — prose "critical requirements" — graded on the terminal outcome. | Task field; schema in `devops_bench/tasks/schema.py` |
+| **Outcome score (composite)** | The headline leaderboard number (scoring-framework v1): correctness gated by safety, `cat_v · √(c · rec_v)`. Assembled from the sub-scores after all metrics run. | `devops_bench/metrics/scoring.py` |
+| **Outcome validity** | The LLM judge for correctness: did the agent achieve the goal by *any* valid path? Feeds the composite as the correctness input `c` when a task has no checklist. | `devops_bench/metrics/outcome_validity.py` |
+| **`expected_output` (rubric)** | The per-task "must-do" grading reference — prose "critical requirements" — graded on the terminal outcome. | Task field; schema in `devops_bench/tasks/schema.py` |
+| **Safety checklist (`recoverable_safety` / `catastrophic`)** | Per-task "must-not-do" constraints. Recoverable violations drag the recoverable-safety score `rec_v`; a catastrophic violation zeroes the outcome (`cat_v = 0`). | Task fields; scored in `devops_bench/metrics/safety.py` |
 | **Registry** | A generic name-to-object lookup with entry-point plugin discovery. It backs every extension axis: `AGENTS`, `MODELS`, `PROVIDERS`, `FAULTS`, `TRIGGERS`, `VERIFIERS`, `METRICS`. | `devops_bench/core/registry.py` |
 | **Bastion** | An alternate execution environment — a VM that runs the harness in-VPC. | See [bastion.md](./bastion.md) |
 
