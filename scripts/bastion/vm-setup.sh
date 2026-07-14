@@ -68,6 +68,18 @@ else
     || echo "    WARN: gemini CLI install failed; gcli agent runs will not work until it's installed."
 fi
 
+# Claude Code CLI (the 'claude' agent target for claude-code runs). Same story as
+# gemini: Node's global prefix is root-owned, so install with sudo. Idempotent.
+echo "==> claude CLI check"
+if command -v claude >/dev/null 2>&1; then
+  echo "    claude present: $(claude --version 2>/dev/null | head -1)"
+else
+  echo "    installing @anthropic-ai/claude-code (sudo npm -g)..."
+  sudo npm install -g @anthropic-ai/claude-code \
+    && echo "    claude installed: $(claude --version 2>/dev/null | head -1)" \
+    || echo "    WARN: claude CLI install failed; claude-code agent runs will not work until it's installed."
+fi
+
 # fortio — the load generator the chaos agent shells out to for `generate_load`
 # faults (e.g. the optimize-scale load spike). The chaos system instruction tells
 # the agent to use the `fortio` binary; without it on PATH the spike is a silent
@@ -182,6 +194,21 @@ export AGENT_MODEL="gemini-3.1-pro-preview"
 # Agent model key: prefer 'openclaw onboard'. If your provider reads an env key,
 # set it here too (e.g. GEMINI_API_KEY / ANTHROPIC_API_KEY).
 # export GEMINI_API_KEY=""
+
+# --- Agent (Claude Code / claude) — uncomment one arm to use it ---
+# API key:
+# export BENCH_AGENT_TYPE="claude-code"
+# export AGENT_TARGET="claude"
+# export AGENT_PROVIDER="anthropic"
+# export AGENT_MODEL="claude-opus-4-8"
+# export ANTHROPIC_API_KEY=""
+# Keyless via Vertex AI (rides the VM metadata-server ADC; needs Model Garden
+# enablement for the Claude models + roles/aiplatform.user on the VM service
+# account; GCP_PROJECT_ID / GCP_VERTEX_LOCATION are exported by the matrix driver):
+# export BENCH_AGENT_TYPE="claude-code"
+# export AGENT_TARGET="claude"
+# export AGENT_PROVIDER="anthropic-vertex"
+# export AGENT_MODEL="claude-sonnet-4-5@20250929"
 
 # --- Judge ---
 export JUDGE_PROVIDER="google"

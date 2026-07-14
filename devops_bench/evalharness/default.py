@@ -64,6 +64,7 @@ _log = get_logger("evalharness.default")
 # registry, with no edit here.
 _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
     "devops_bench.agents.cli.gemini_cli",
+    "devops_bench.agents.cli.claude_code",
     "devops_bench.agents.cli.openclaw",
     "devops_bench.agents.cli.antigravity",
     "devops_bench.agents.api.agent",
@@ -72,6 +73,7 @@ _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
 # Aliases normalized to canonical agent keys before registry lookup.
 _AGENT_TYPE_ALIASES: dict[str, str] = {
     "gemini-cli": "gemini",
+    "claude-code": "claude",
 }
 
 # Default agent type when neither --agent-type nor BENCH_AGENT_TYPE is set.
