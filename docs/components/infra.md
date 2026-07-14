@@ -41,9 +41,11 @@ Both are listed in the `PROVIDERS` registry.
 
 **How the provider is picked** (precedence, highest first):
 
-1. An explicit `provider:` key in the task's `infrastructure:` block.
-2. The `INFRA_PROVIDER` environment variable.
+1. The `INFRA_PROVIDER` environment variable.
+2. An explicit `provider:` key in the task's `infrastructure:` block.
 3. Deduced from the stack name: if `kind` appears in the name it's the `kind` provider, otherwise `gcp`.
+
+The env var outranks the config key so a task can pin a default `provider:` while runs stay overridable from the environment (the same way `TARGET_DEPLOYMENT_NAME` and `NAMESPACE` resolve).
 
 > [!IMPORTANT]
 > Deduction only applies to in-repo (relative) stacks. An absolute or external stack path **must** name its provider explicitly (via `provider:` or `INFRA_PROVIDER`) — the harness will not guess. An unknown provider name is a configuration error.
@@ -104,7 +106,7 @@ The provider fills in sensible defaults for whatever you leave out. For GCP that
 | Variable | Effect |
 | --- | --- |
 | `BENCH_NO_INFRA` | `true` forces the `NoOpDeployer`, overriding the task's `deployer`. |
-| `INFRA_PROVIDER` | Selects the provider when the task doesn't name one. |
+| `INFRA_PROVIDER` | Selects the provider, overriding any `provider:` key the task names. |
 | `GCP_PROJECT_ID` | Default GCP project for credentials and variable defaults. |
 | `GCP_LOCATION` | Default region/zone (falls back to `us-central1-a`). |
 | `NAMESPACE` | Passed through to GCP stacks as the `namespace` variable. |

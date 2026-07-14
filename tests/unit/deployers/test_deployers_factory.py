@@ -173,6 +173,23 @@ def test_get_deployer_explicit_provider_overrides_deduction(mocker, base_config,
     assert "kubeconfig_path" not in deployer.variables
 
 
+def test_get_deployer_infra_provider_env_overrides_config(mocker, base_config):
+    # INFRA_PROVIDER outranks a pinned 'provider:' key so runs stay overridable.
+    mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
+    mocker.patch.dict(os.environ, {"INFRA_PROVIDER": "gcp"})
+    deployer = get_deployer(
+        {"deployer": "tofu", "stack": "prebuilt/kind", "provider": "kind"},
+        base_config["project_id"],
+        base_config["cluster_name"],
+        base_config["location"],
+    )
+    assert isinstance(deployer, TFDeployer)
+    # GCP variables win over the pinned kind provider.
+    assert deployer.variables["project_id"] == base_config["project_id"]
+    assert deployer.variables["location"] == base_config["location"]
+    assert "kubeconfig_path" not in deployer.variables
+
+
 def test_get_deployer_infra_provider_env(mocker, base_config):
     mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
     mocker.patch.dict(os.environ, {"INFRA_PROVIDER": "gcp"})

@@ -34,10 +34,12 @@ _DEFAULT_STACK = "prebuilt/kind"
 def _select_provider(infra_config: dict[str, Any], stack: str) -> str:
     """Determine the provider name for a tofu stack.
 
-    Precedence: explicit ``provider`` config key → ``INFRA_PROVIDER`` env →
-    substring deduction from the stack name. Deduction is only applied to
-    in-repo (relative) stacks; an out-of-repo (absolute or ``~``) stack must name
-    its provider explicitly rather than be guessed at.
+    Precedence: ``INFRA_PROVIDER`` env → explicit ``provider`` config key →
+    substring deduction from the stack name. The env var wins so a task can pin a
+    default ``provider`` in its config while runs stay overridable from the
+    environment (matching ``TARGET_DEPLOYMENT_NAME`` / ``NAMESPACE``). Deduction
+    is only applied to in-repo (relative) stacks; an out-of-repo (absolute or
+    ``~``) stack must name its provider explicitly rather than be guessed at.
 
     Args:
         infra_config: Task infrastructure config.
@@ -49,7 +51,7 @@ def _select_provider(infra_config: dict[str, Any], stack: str) -> str:
     Raises:
         ConfigError: If an absolute/external stack has no explicit provider.
     """
-    explicit = (infra_config.get("provider") or get_env("INFRA_PROVIDER", "") or "").strip().lower()
+    explicit = (get_env("INFRA_PROVIDER", "") or infra_config.get("provider") or "").strip().lower()
     if explicit:
         return explicit
     if get_env("CLOUD_PROVIDER", ""):
