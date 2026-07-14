@@ -42,22 +42,38 @@ from devops_bench.metrics.pipeline import (
     evaluate_metrics_batch,
     extract_checklist_items,
 )
+from devops_bench.metrics.safety import (
+    CATASTROPHIC_SCORE_KEY,
+    RECOVERABLE_SAFETY_SCORE_KEY,
+    SafetyMetric,
+)
+from devops_bench.metrics.scoring import (
+    SCORING_VERSION,
+    compute_outcome_score_v1,
+    rescale_recoverable_safety,
+)
 from devops_bench.metrics.tool_invocation import build_tool_invocation_metric
 
 __all__ = [
+    "CATASTROPHIC_SCORE_KEY",
     "CHECKLIST_THRESHOLD",
     "METRICS",
     "MetricContext",
     "MetricEvaluator",
     "MetricScore",
     "ModelLayerJudge",
+    "RECOVERABLE_SAFETY_SCORE_KEY",
+    "SCORING_VERSION",
+    "SafetyMetric",
     "build_outcome_validity_metric",
     "build_tool_invocation_metric",
     "calculate_doc_retrieval_rate",
+    "compute_outcome_score_v1",
     "evaluate_chaos_metrics",
     "evaluate_documentation_grounding",
     "evaluate_metrics_batch",
     "extract_checklist_items",
     "get_judge_model",
+    "rescale_recoverable_safety",
     "run_geval",
 ]
