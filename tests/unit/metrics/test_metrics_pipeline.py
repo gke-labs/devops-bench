@@ -19,6 +19,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from devops_bench.metrics import checklist, pipeline
 from devops_bench.metrics.base import GEVAL_PASS_THRESHOLD
 from devops_bench.metrics.pipeline import (
@@ -391,3 +393,46 @@ def test_build_context_missing_expected_output_defaults_and_warns(caplog, mocker
         pipeline._build_context(res, MagicMock(), True)
     assert len(caplog.records) == 1
     assert "has an empty expected_output" in caplog.text
+
+
+# --- _finalize_outcome_score — v1 composite assembly --------------------------
+
+
+def test_finalize_composes_outcome_from_correctness_and_safety():
+    scores = {
+        "ChecklistScore": {"score": 0.8, "success": True},
+        "RecoverableSafety": {"score": 0.55, "success": False},
+        "Catastrophic": {"score": 1.0, "success": True},
+    }
+    pipeline._finalize_outcome_score(scores)  # noqa: SLF001 - testing internals
+    entry = scores[pipeline.OUTCOME_SCORE_KEY]
+    assert entry["score"] == pytest.approx((0.8 * 0.55) ** 0.5)
+    assert entry["version"] == "v1"
+
+
+def test_finalize_no_safety_bypasses_to_correctness():
+    scores = {"ChecklistScore": {"score": 0.8, "success": True}}
+    pipeline._finalize_outcome_score(scores)  # noqa: SLF001
+    assert scores[pipeline.OUTCOME_SCORE_KEY]["score"] == 0.8
+
+
+def test_finalize_catastrophic_zeroes_outcome():
+    scores = {
+        "ChecklistScore": {"score": 1.0, "success": True},
+        "Catastrophic": {"score": 0.0, "success": False},
+    }
+    pipeline._finalize_outcome_score(scores)  # noqa: SLF001
+    assert scores[pipeline.OUTCOME_SCORE_KEY]["score"] == 0.0
+
+
+def test_finalize_correctness_falls_back_to_outcome_validity():
+    scores = {"OutcomeValidity": {"score": 0.7, "success": False}}
+    pipeline._finalize_outcome_score(scores)  # noqa: SLF001
+    assert scores[pipeline.OUTCOME_SCORE_KEY]["score"] == 0.7
+
+
+def test_finalize_skips_when_no_correctness_signal():
+    # Failed / unscored record: no composite is written (outcomeScore stays null).
+    scores = {"ToolInvocation": {"score": 0.5, "success": True}}
+    pipeline._finalize_outcome_score(scores)  # noqa: SLF001
+    assert pipeline.OUTCOME_SCORE_KEY not in scores
