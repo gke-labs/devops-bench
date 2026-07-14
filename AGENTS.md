@@ -10,7 +10,7 @@ provision infra → run the agent → optional chaos + verify → judge → tear
 | `devops_bench/` | The canonical pipeline. Subpackages: `core/`, `models/`, `providers/`, `deployers/`, `agents/`, `chaos/`, `verification/`, `metrics/`, `evalharness/`, `tasks/`, `results/`. |
 | `tasks/` | Task definitions on disk (`task.yaml` files). |
 | `tf/` | OpenTofu / Terraform infrastructure modules. |
-| `site_new/` | React + Vite leaderboard plus the Firestore `ingest/` pipeline. |
+| `site/` | React + Vite leaderboard plus the Firestore `ingest/` pipeline. |
 | `docs/` | Human documentation. |
 | `.agents/skills/` | Skills for coding agents. |
 

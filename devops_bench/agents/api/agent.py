@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import shlex
+from pathlib import Path
 from typing import Any
 
 from devops_bench.agents.api.mcp import MCPClient, extract_tool_text
@@ -388,11 +389,13 @@ class ApiAgent(AgentHarness):
         self.skills = caps.skills
         self.rules = caps.rules
 
-    def _execute(self, prompt: str) -> AgentResult:
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
         """Build the LLM client, drive the loop, and assemble an AgentResult.
 
         Args:
             prompt: Task prompt handed to the agent.
+            workspace_path: Unused — the API agent drives a remote tool-use
+                loop over MCP/skills with no local filesystem workspace.
 
         Returns:
             An :class:`AgentResult` whose ``trajectory`` is a list of canonical

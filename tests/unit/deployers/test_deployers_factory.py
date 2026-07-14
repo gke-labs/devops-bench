@@ -173,8 +173,9 @@ def test_get_deployer_explicit_provider_overrides_deduction(mocker, base_config,
     assert "kubeconfig_path" not in deployer.variables
 
 
-def test_get_deployer_infra_provider_env_overrides_config(mocker, base_config):
+def test_get_deployer_infra_provider_env_overrides_config(mocker, base_config, monkeypatch):
     # INFRA_PROVIDER outranks a pinned 'provider:' key so runs stay overridable.
+    monkeypatch.delenv("KUBECONFIG", raising=False)
     mocker.patch("devops_bench.deployers.tofu.Path.exists", return_value=True)
     mocker.patch.dict(os.environ, {"INFRA_PROVIDER": "gcp"})
     deployer = get_deployer(

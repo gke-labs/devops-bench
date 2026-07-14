@@ -78,7 +78,7 @@ devops-bench/
 │   └── __main__.py          # `python -m devops_bench` dispatch
 ├── tasks/                   # Task definitions on disk (task.yaml files)
 ├── tf/                      # Terraform / OpenTofu infrastructure modules
-├── site_new/                # Leaderboard / results site
+├── site/                    # Leaderboard / results site
 ├── .agents/skills/          # Skills for coding agents (run-eval, review, ...)
 ├── scripts/                 # Operational helper scripts
 ├── tests/                   # Test suite

@@ -145,7 +145,7 @@ the per-task `rows.json` into one batch run before ingest:
 python -m devops_bench.results.aggregate <results-root> -o <results-root>
 ```
 
-Then ingest the combined `rows.json` (see `site_new/ingest/`). For every
+Then ingest the combined `rows.json` (see `site/ingest/`). For every
 non-passing combo, give: the decisive log line (redact secrets), the **root
 cause** mapped to the router, whether it's **model vs harness** (clean trajectory
 + low score = model; early abort / auth error = harness/config), and the concrete

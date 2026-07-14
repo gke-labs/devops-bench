@@ -213,7 +213,7 @@ def test_build_rows_preserves_order_and_run_identity():
 def test_result_row_keys_match_typescript_interface():
     """``ResultRow.to_dict()`` keys mirror the dashboard ``ResultRow`` interface.
 
-    Pinned so the producer and the ``site_new/src/lib/schema.d.ts`` consumer
+    Pinned so the producer and the ``site/src/lib/schema.d.ts`` consumer
     cannot drift apart silently. The contract version lives on the manifest, not
     on each row, so ``schemaVersion`` is intentionally absent here.
     """

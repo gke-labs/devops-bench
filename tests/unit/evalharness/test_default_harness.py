@@ -30,6 +30,7 @@ from typing import Any
 
 import pytest
 
+from devops_bench.agents import AGENTS, AgentHarness
 from devops_bench.agents.result import AgentResult
 from devops_bench.core import MissingDependencyError
 from devops_bench.evalharness import default as harness_default
@@ -244,6 +245,45 @@ def test_run_one_returns_failed_record_when_get_deployer_raises(
     assert record["status"] == "failed"
     assert "unknown deployer type" in record["error"]
     assert record["name"] == "demo"
+
+
+class _WorkspaceWritingAgent(AgentHarness):
+    """Stand-in agent that writes a file into whatever workspace it is given."""
+
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
+        assert workspace_path is not None
+        (workspace_path / "output.txt").write_text("agent wrote this")
+        return AgentResult(output="wrote a file", trajectory=[])
+
+
+def test_run_one_collects_files_the_agent_writes_to_its_workspace(
+    isolated_env: None, tmp_path: Path
+) -> None:
+    """Generated-file collection diffs the agent's real workspace, not the launch cwd.
+
+    Regression test: the harness used to snapshot/diff ``Path(os.getcwd())`` while
+    each CLI agent wrote into its own private ``tempfile.TemporaryDirectory`` that
+    was gone by the time artifacts were collected, so ``generated_files`` came back
+    empty. The harness now owns a per-run workspace and threads it to the agent via
+    ``RunContext.workspace_path``, so a file the agent writes there is collected.
+    """
+    AGENTS.register("fake-workspace-writer")(_WorkspaceWritingAgent)
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p", cluster_name="c", agent_type="fake-workspace-writer", no_infra=True
+        )
+        task = Task.from_dict({"task_id": "t", "name": "demo", "prompt": "p"})
+        run_dir = tmp_path / "run_1"
+        run_dir.mkdir()
+
+        record = harness._run_one(task, run_dir)  # noqa: SLF001
+
+        assert record["status"] == "success"
+        generated = run_dir / "generated_files" / "output.txt"
+        assert generated.exists()
+        assert generated.read_text() == "agent wrote this"
+    finally:
+        AGENTS._items.pop("fake-workspace-writer", None)  # noqa: SLF001
 
 
 def test_ensure_builtin_agents_swallows_only_import_errors(

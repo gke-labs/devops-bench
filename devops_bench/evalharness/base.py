@@ -68,8 +68,8 @@ class Harness(ABC):
             task: The task being evaluated.
             cluster: Provisioned cluster details, if any.
             workspace_path: Working directory the agent operates in; ``None``
-                lets the caller leave the field unset (the harness defaults to
-                the current working directory when it needs a concrete path).
+                lets the caller leave the field unset until it builds a
+                concrete per-run workspace.
 
         Returns:
             A :class:`~devops_bench.core.RunContext` seeded with task metadata.

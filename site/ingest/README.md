@@ -1,4 +1,4 @@
-# Real-data ingest (`site_new/ingest`)
+# Real-data ingest (`site/ingest`)
 
 Turns real benchmark eval-results into the dashboard's Firestore collections.
 The real counterpart to `seed/` (which fabricates data): same data model, same
@@ -51,15 +51,15 @@ block from the directory shown in its comment.
 > `devops-bench-shared` in `.env`). So seed/derive with
 > `GCLOUD_PROJECT=devops-bench-shared` — otherwise the UI reads a different
 > namespace and shows nothing. (If you prefer another id, set a matching
-> `VITE_FIREBASE_PROJECT_ID` in `site_new/.env.local`.)
+> `VITE_FIREBASE_PROJECT_ID` in `site/.env.local`.)
 
 ```bash
-# 1. Run the emulator  (from site_new/ — leave running in its own terminal)
+# 1. Run the emulator  (from site/ — leave running in its own terminal)
 export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"     # emulator needs Java (brew install openjdk)
 npx -y firebase-tools emulators:start --only firestore --project devops-bench-shared
 #    Firestore on :8080, emulator UI on :4000
 
-# 2. Seed the data using the fixtures  (from site_new/ingest/)
+# 2. Seed the data using the fixtures  (from site/ingest/)
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
   node ingest.mjs fixtures/
 
@@ -67,7 +67,7 @@ FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
   node derive.mjs
 
-# 4. Run the UI that connects to the emulator  (from site_new/)
+# 4. Run the UI that connects to the emulator  (from site/)
 npm install        # first time only (app deps)
 npm run dev        # Vite on http://localhost:5173 — dev mode → emulator, DB leaderboard-test
 ```
@@ -87,11 +87,11 @@ must **start the emulator first** (it does not launch one).
 brew install openjdk
 export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"
 
-# 2. Start the emulator (from site_new/, leave it running in another terminal):
+# 2. Start the emulator (from site/, leave it running in another terminal):
 cd .. && npx -y firebase-tools emulators:start --only firestore --project devops-bench-demo
 # Firestore on :8080, emulator UI on :4000
 
-# 3. Ingest against it (from site_new/ingest/):
+# 3. Ingest against it (from site/ingest/):
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-demo \
   node ingest.mjs fixtures/
 ```
@@ -158,5 +158,5 @@ GCLOUD_PROJECT=devops-bench-shared FIRESTORE_DATABASE_ID=leaderboard \
 ## Tests
 
 ```bash
-npm test     # from site_new/ — vitest covers load/derive/catalog
+npm test     # from site/ — vitest covers load/derive/catalog
 ```

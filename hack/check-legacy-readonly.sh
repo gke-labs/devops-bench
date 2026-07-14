@@ -15,13 +15,12 @@ BASE_REF="${BASE_REF:-origin/main}"
 OVERRIDE_LABEL="${OVERRIDE_LABEL:-legacy-override}"
 
 # Frozen legacy path prefixes (top-level only; the canonical deployers/ and skills/ live under
-# devops_bench/, and the current site is site_new/). Adds/edits under these are blocked unless
-# overridden; deletions are always allowed.
+# devops_bench/). Adds/edits under these are blocked unless overridden; deletions are always
+# allowed.
 LEGACY_PATHS=(
   "pkg"
   "deployers"
   "skills"
-  "site"
 )
 
 # Bypass via LEGACY_OVERRIDE=1 or the 'legacy-override' PR label.
