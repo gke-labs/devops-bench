@@ -62,18 +62,28 @@ def _format_var(value: Any) -> str:
 def _get_declared_variables(tf_dir: str) -> set[str]:
     """Scan the stack directory for declared variable names.
 
-    Note: This is a fast, regex-based scanner. It has limitations:
-    - It only scans `.tf` files, missing variables declared in `.tf.json` files.
-    - It uses a simple line-based regex, which can falsely match variable
-      declarations that are commented out (e.g. inside multi-line comments).
+    Scans HCL ``.tf`` files with a fast line-based regex and ``.tf.json`` files
+    by parsing their top-level ``variable`` object. The HCL scan is a heuristic
+    and can be fooled by a ``variable`` block commented out inside a ``/* ... */``
+    span; such a false positive only downgrades a clean drop to a tofu-side
+    error, never the reverse.
     """
-    declared = set()
+    declared: set[str] = set()
     for path in Path(tf_dir).glob("*.tf"):
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 match = re.match(r'^\s*variable\s+"([^"]+)"', line)
                 if match:
                     declared.add(match.group(1))
+    for path in Path(tf_dir).glob("*.tf.json"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        variables = data.get("variable") if isinstance(data, dict) else None
+        if isinstance(variables, dict):
+            declared.update(variables)
     return declared
 
 
@@ -164,7 +174,9 @@ class TFDeployer(Deployer):
         self.custom_keys = custom_keys or set()
 
     def _var_flags(self) -> list[str]:
-        declared = _get_declared_variables(self.tf_dir)
+        # Scan the directory tofu actually runs in (the isolated per-run copy
+        # under parallel runs; the shared stack dir otherwise), not self.tf_dir.
+        declared = _get_declared_variables(self.work_dir)
         flags: list[str] = []
         for key, value in self.variables.items():
             if key in declared:

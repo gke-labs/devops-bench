@@ -269,12 +269,18 @@ variable "var3" { } # trailing comment
 // variable "commented_var2" {}
 /* variable "commented_var3" {} */
 """)
+    # Variables declared in .tf.json files are also discovered.
+    (tmp_path / "extra.tf.json").write_text('{"variable": {"json_var": {"type": "string"}}}')
+    # Malformed .tf.json is skipped, not fatal.
+    (tmp_path / "broken.tf.json").write_text("{ not json")
+
     from devops_bench.deployers.tofu import _get_declared_variables
 
     declared = _get_declared_variables(str(tmp_path))
     assert "var1" in declared
     assert "var2" in declared
     assert "var3" in declared
+    assert "json_var" in declared
     assert "commented_var" not in declared
     assert "commented_var2" not in declared
 

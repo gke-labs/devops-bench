@@ -17,7 +17,10 @@ variable "cluster_name" {
 variable "location" {
   description = "GCP zone/region or 'local'"
   type        = string
-  default     = "local"
+  # Empty by default so the cluster router picks the provider-appropriate value
+  # (us-central1-a for GKE, "local" for KinD), matching the minimum/gpu-stress-test
+  # stacks. A literal "local" here would be forwarded verbatim to the GKE module.
+  default = ""
 }
 
 variable "node_count" {
@@ -40,7 +43,7 @@ variable "node_image" {
 variable "kubeconfig_path" {
   description = "The path to the local kubeconfig file"
   type        = string
-  default     = ""
+  default     = "~/.kube/config"
 }
 
 variable "namespace" {
