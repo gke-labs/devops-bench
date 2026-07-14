@@ -29,7 +29,7 @@ locals {
   repo_path = var.repo_path != "" ? var.repo_path : "~/app-repo-${var.cluster_name}.git"
 
   # Region-prefixed cluster names. The discriminator must land in the FIRST 15
-  # chars: tf/modules/gke derives the node SA account_id from
+  # chars: tf/modules/cluster/gke derives the node SA account_id from
   # substr(cluster_name, 0, 15), so a "-east"/"-west" *suffix* (past char 15)
   # would give both clusters the SAME account_id and collide on a single apply.
   # A leading "e-"/"w-" keeps the run token in-window (cross-run unique) while
@@ -49,12 +49,13 @@ resource "random_id" "suffix" {
 # Two regional (zonal) GKE clusters: east = primary, west = standby.
 # ---------------------------------------------------------------------------
 module "east" {
-  source       = "../../modules/gke"
-  project_id   = var.project_id
-  cluster_name = local.east_cluster
-  location     = var.zone_primary
-  node_count   = var.node_count_primary
-  machine_type = var.machine_type
+  source                = "../../modules/cluster"
+  infra_provider        = "gcp"
+  project_id            = var.project_id
+  cluster_name          = local.east_cluster
+  location              = var.zone_primary
+  node_count            = var.node_count_primary
+  machine_type          = var.machine_type
   # BYO-credentials model (see docs/bastion.md): the agent runs as the operator's
   # broad bastion VM SA, which already holds container.admin out-of-band. This
   # stack grants NOTHING — a per-run stack must not manage a project IAM binding
@@ -64,7 +65,8 @@ module "east" {
 }
 
 module "west" {
-  source                = "../../modules/gke"
+  source                = "../../modules/cluster"
+  infra_provider        = "gcp"
   project_id            = var.project_id
   cluster_name          = local.west_cluster
   location              = var.zone_standby

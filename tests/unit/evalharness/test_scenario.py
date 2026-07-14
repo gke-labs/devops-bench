@@ -501,6 +501,58 @@ def test_scenario_skips_lb_resolution_in_smoke_path() -> None:
     assert captured["service_url"] == "http://example.svc.cluster.local"
 
 
+def test_scenario_skips_lb_resolution_for_local_cluster() -> None:
+    """When the cluster is local (location='local'), skip LB resolution but keep port-forward fallback.
+
+    This avoids the 180s LoadBalancer IP resolution timeout on KinD, where
+    the Service type is ClusterIP and will never get an external IP, while
+    still allowing the port-forward tunnel to be opened.
+    """
+    from devops_bench.chaos.faults.generate_load import (
+        _ENV_SKIP_PORT_FORWARD,
+        _ENV_TARGET_DEPLOYMENT,
+        _ENV_TARGET_NAMESPACE,
+    )
+    from devops_bench.core.context import ClusterInfo
+
+    spec = _build_spec(verify_key=None)
+    captured: dict[str, Any] = {}
+
+    def fake_inject(self: GenerateLoadFault, ctx: RunContext, event):
+        captured["env"] = dict(ctx.env)
+        captured["service_url"] = self.target.service_url
+        return ChaosResult(success=True, injected_fault=self.type, elapsed_time=0.0)
+
+    # Local cluster info
+    local_cluster = ClusterInfo(name="my-kind", location="local")
+    ctx = _build_ctx()
+    ctx.cluster = local_cluster
+
+    with (
+        patch.object(TimeTrigger, "wait", lambda self, ctx: None),
+        patch.object(GenerateLoadFault, "inject", fake_inject),
+        patch(
+            "devops_bench.evalharness.scenario.get_resource",
+            side_effect=AssertionError("local path must not query the cluster for LB"),
+        ),
+        patch(
+            "devops_bench.evalharness.scenario.poll_until",
+            side_effect=AssertionError("local path must not poll for LB"),
+        ),
+    ):
+        manager = ScenarioManager(
+            target_deployment="dep",
+            namespace="ns",
+            skip_port_forward=False,
+        )
+        manager.run_chaos_and_verification(spec, ctx)
+
+    assert captured["service_url"] == "http://example.svc.cluster.local"
+    assert _ENV_SKIP_PORT_FORWARD not in captured["env"]
+    assert captured["env"][_ENV_TARGET_DEPLOYMENT] == "dep"
+    assert captured["env"][_ENV_TARGET_NAMESPACE] == "ns"
+
+
 @pytest.fixture(autouse=True)
 def _no_real_kubectl(monkeypatch: pytest.MonkeyPatch) -> None:
     """Guard against this file accidentally shelling out to ``kubectl``.

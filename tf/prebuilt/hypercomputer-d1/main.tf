@@ -46,8 +46,9 @@ locals {
   seed_vllm_backend = var.seed_mode == "full"
 }
 
-module "gke" {
-  source                   = "../../modules/gke"
+module "cluster" {
+  source                   = "../../modules/cluster"
+  infra_provider           = "gcp"
   project_id               = var.project_id
   cluster_name             = var.cluster_name
   location                 = var.location
@@ -59,9 +60,9 @@ module "gke" {
 data "google_client_config" "default" {}
 
 provider "kubernetes" {
-  host                   = "https://${module.gke.endpoint}"
+  host                   = "https://${module.cluster.endpoint}"
   token                  = data.google_client_config.default.access_token
-  cluster_ca_certificate = base64decode(module.gke.cluster_ca_certificate)
+  cluster_ca_certificate = base64decode(module.cluster.cluster_ca_certificate)
 }
 
 # Shared infra: GCS bucket the vLLM Deployment's gcsfuse volume mounts read-only

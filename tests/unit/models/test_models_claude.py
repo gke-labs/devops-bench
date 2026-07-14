@@ -280,6 +280,7 @@ def test_generate_content_omits_system_when_empty(mocker):
     client = mocker.patch.object(claude, "AsyncAnthropicVertex").return_value
     create = AsyncMock(return_value="resp")
     client.messages.create = create
+    mocker.patch.dict(os.environ, {}, clear=True)
 
     adapter = ClaudeClientAdapter()
     asyncio.run(adapter.generate_content([{"role": "user", "content": "hi"}], [], None))
@@ -291,6 +292,7 @@ def test_generate_content_omits_tools_when_empty(mocker):
     client = mocker.patch.object(claude, "AsyncAnthropicVertex").return_value
     create = AsyncMock(return_value="resp")
     client.messages.create = create
+    mocker.patch.dict(os.environ, {}, clear=True)
 
     adapter = ClaudeClientAdapter()
     asyncio.run(adapter.generate_content([{"role": "user", "content": "hi"}], [], "sys"))

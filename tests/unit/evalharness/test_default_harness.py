@@ -318,3 +318,76 @@ def test_ensure_builtin_agents_swallows_only_import_errors(
 
     monkeypatch.setattr(importlib, "import_module", fake_missing_dep)
     harness_default._ensure_builtin_agents_registered()  # noqa: SLF001
+
+
+def test_resolve_deployment_and_namespace_precedence_and_types(
+    isolated_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 1. Default case (no env, no task variables)
+    harness = DefaultEvalHarness(
+        project_id="p",
+        cluster_name="c",
+        default_target_deployment="my-default-dep",
+        default_namespace="my-default-ns",
+    )
+    dep, ns = harness._resolve_deployment_and_namespace(None)  # noqa: SLF001
+    assert dep == "my-default-dep"
+    assert ns == "my-default-ns"
+
+    # 2. Task variables override defaults
+    task = Task.from_dict(
+        {
+            "task_id": "t",
+            "name": "demo",
+            "prompt": "p",
+            "infrastructure": {
+                "variables": {
+                    "target_deployment_name": "task-dep",
+                    "namespace": "task-ns",
+                }
+            },
+        }
+    )
+    dep, ns = harness._resolve_deployment_and_namespace(task)  # noqa: SLF001
+    assert dep == "task-dep"
+    assert ns == "task-ns"
+
+    # 3. Env variables override task variables and defaults
+    monkeypatch.setenv("TARGET_DEPLOYMENT_NAME", "env-dep")
+    monkeypatch.setenv("NAMESPACE", "env-ns")
+    dep, ns = harness._resolve_deployment_and_namespace(task)  # noqa: SLF001
+    assert dep == "env-dep"
+    assert ns == "env-ns"
+
+    # Clean up env for next assertions
+    monkeypatch.delenv("TARGET_DEPLOYMENT_NAME")
+    monkeypatch.delenv("NAMESPACE")
+
+    # 4. Crash cases: empty variables (None)
+    task_empty_vars = Task.from_dict(
+        {"task_id": "t", "name": "demo", "prompt": "p", "infrastructure": {"variables": None}}
+    )
+    # Should not raise AttributeError, should fallback to defaults
+    dep, ns = harness._resolve_deployment_and_namespace(task_empty_vars)  # noqa: SLF001
+    assert dep == "my-default-dep"
+    assert ns == "my-default-ns"
+
+    # 5. Crash cases: non-string values (converted to string)
+    task_non_str_vars = Task.from_dict(
+        {
+            "task_id": "t",
+            "name": "demo",
+            "prompt": "p",
+            "infrastructure": {
+                "variables": {
+                    "target_deployment_name": 123,
+                    "namespace": 456,
+                }
+            },
+        }
+    )
+    # Should not raise TypeError, should convert to string
+    dep, ns = harness._resolve_deployment_and_namespace(task_non_str_vars)  # noqa: SLF001
+    assert dep == "123"
+    assert ns == "456"

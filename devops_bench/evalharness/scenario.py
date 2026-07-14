@@ -241,12 +241,22 @@ class ScenarioManager:
             # skip the tunnel.
             ctx.env[_ENV_SKIP_PORT_FORWARD] = "1"
         else:
-            # Real-cluster path: resolve the external LB IP and rewrite the
-            # action's load URL to point at it directly. Fall back to the
-            # port-forward path if resolution fails or times out — that way a
-            # delayed LB still produces a load attempt instead of an aborted
-            # run.
-            lb_ip = self._resolve_lb_ip(self.target_deployment, self.namespace)
+            is_local = ctx.cluster is not None and ctx.cluster.location == "local"
+            if is_local:
+                _log.info(
+                    "local cluster (location=%r) detected; skipping LoadBalancer IP resolution "
+                    "to rely directly on port-forward fallback",
+                    ctx.cluster.location,
+                )
+                lb_ip = None
+            else:
+                # Real-cluster path (GKE): resolve the external LB IP and rewrite the
+                # action's load URL to point at it directly. Fall back to the
+                # port-forward path if resolution fails or times out — that way a
+                # delayed LB still produces a load attempt instead of an aborted
+                # run.
+                lb_ip = self._resolve_lb_ip(self.target_deployment, self.namespace)
+
             if lb_ip is not None and hasattr(spec.action, "target"):
                 target = spec.action.target
                 if hasattr(target, "service_url"):
@@ -257,7 +267,7 @@ class ScenarioManager:
                     )
                     target.service_url = lb_url
                     ctx.env[_ENV_SKIP_PORT_FORWARD] = "1"
-            # If lb_ip is None (timeout / kubectl error) the skip env is left
+            # If lb_ip is None (timeout / local skip / kubectl error) the skip env is left
             # unset; the fault then opens its own port-forward as the fallback.
 
         return spec.action.inject(ctx, self.chaos_active_event)

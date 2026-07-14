@@ -45,10 +45,9 @@ source .venv/bin/activate
 ## Run on kind (default)
 
 ```bash
-export GKE_CLUSTER_NAME="migration-kind"   # used as the kind cluster name
+export CLUSTER_NAME="migration-kind"   # used as the kind cluster name
 export NAMESPACE="migration"
 export GCP_PROJECT_ID="local-kind"          # placeholder; only used for prompt/Vertex judge
-export OPENCLAW_LOCAL="true"
 
 export BENCH_AGENT_TYPE="cli"
 export AGENT_TARGET="oc"
@@ -59,7 +58,7 @@ export JUDGE_PROVIDER="google"
 export JUDGE_MODEL="gemini-3.1-pro-preview"
 export JUDGE_API_KEY="<your-gemini-key>"
 
-python pkg/evaluator/evaluate.py tasks/common/migration-and-upgrade/task.yaml
+python -m devops_bench tasks/common/migration-and-upgrade/task.yaml
 ```
 
 On kind, "upgrade" is reframed: the agent validates the migrated manifests on a temporary kind
@@ -114,13 +113,12 @@ done
 #   stack: "prebuilt/migration-and-upgrade"
 
 export GCP_PROJECT_ID="<your-project-id>"
-export GKE_CLUSTER_NAME="migration-upgrade"
+export CLUSTER_NAME="migration-upgrade"
 export GCP_LOCATION="us-central1-a"
 export NAMESPACE="migration"
-export OPENCLAW_LOCAL="true"
 # ...same agent/judge vars as above...
 
-python pkg/evaluator/evaluate.py tasks/common/migration-and-upgrade/task.yaml
+python -m devops_bench tasks/common/migration-and-upgrade/task.yaml
 ```
 
 Notes:

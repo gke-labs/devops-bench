@@ -13,8 +13,8 @@
 set -e
 
 # Optional cloud auth (service-account key via env, mounted ADC, etc.).
-if [ -n "$CLOUD_PROVIDER" ]; then
-    AUTH_SCRIPT="./scripts/setup_auth_${CLOUD_PROVIDER}.sh"
+if [ -n "$INFRA_PROVIDER" ]; then
+    AUTH_SCRIPT="./scripts/setup_auth_${INFRA_PROVIDER}.sh"
     if [ -f "$AUTH_SCRIPT" ]; then
         # shellcheck source=/dev/null
         source "$AUTH_SCRIPT"

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from devops_bench.core import ClusterInfo, ConfigError, get_env, get_logger
+from devops_bench.core import ClusterInfo, ConfigError, get_bool, get_env, get_logger
 from devops_bench.core.subprocess import run
 from devops_bench.providers.base import PROVIDERS, Provider, ResolveContext
 
@@ -76,6 +76,28 @@ class GcpProvider(Provider):
             capture=False,
         )
 
+        context_name = f"gke_{project}_{location}_{cluster_name}"
+        if get_bool("GCP_USE_ADC", False):
+            _log.info(
+                "Enabling application default credentials for auth plugin in context %s",
+                context_name,
+            )
+            run(
+                [
+                    "kubectl",
+                    "config",
+                    "set-credentials",
+                    context_name,
+                    "--exec-arg=--use_application_default_credentials",
+                ],
+                capture=False,
+            )
+        else:
+            _log.info(
+                "Skipping GKE ADC credentials override (GCP_USE_ADC is false) for context %s",
+                context_name,
+            )
+
         return ClusterInfo.from_dict(
             {"name": cluster_name, "location": location, "project": project}
         )
@@ -91,10 +113,14 @@ class GcpProvider(Provider):
             ``NAMESPACE`` environment variable when present.
         """
         variables = custom_variables.copy()
+        variables.setdefault("infra_provider", "gcp")
         variables.setdefault("project_id", ctx.project_id)
         variables.setdefault("cluster_name", ctx.cluster_name)
         variables.setdefault("location", ctx.location)
         namespace = get_env("NAMESPACE")
         if namespace is not None:
             variables.setdefault("namespace", namespace)
+        kubeconfig_path = get_env("KUBECONFIG")
+        if kubeconfig_path:
+            variables.setdefault("kubeconfig_path", kubeconfig_path)
         return variables

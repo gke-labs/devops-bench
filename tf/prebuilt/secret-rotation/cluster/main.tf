@@ -21,8 +21,9 @@ resource "random_id" "run" {
 }
 
 # 1. GKE Cluster Provisioning
-module "gke" {
-  source                   = "../../../modules/gke"
+module "cluster" {
+  source                   = "../../../modules/cluster"
+  infra_provider           = "gcp"
   project_id               = var.project_id
   cluster_name             = var.cluster_name
   location                 = var.location

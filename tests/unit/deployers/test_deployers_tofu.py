@@ -62,6 +62,12 @@ class StubProvider(Provider):
 def stack_dir(tmp_path):
     path = tmp_path / "prebuilt" / "minimum"
     path.mkdir(parents=True)
+    (path / "variables.tf").write_text("""
+variable "project_id" {}
+variable "cluster_name" {}
+variable "location" {}
+variable "node_count" {}
+""")
     return path
 
 
@@ -249,3 +255,78 @@ def test_init_expands_user_path(tmp_path, monkeypatch, provider):
 def test_init_missing_dir_raises(provider):
     with pytest.raises(ConfigError, match="TF stack not found in repo"):
         TFDeployer(tf_dir="non-existent-stack-xyz", provider=provider)
+
+
+def test_get_declared_variables_robustness(tmp_path):
+    tf_file = tmp_path / "variables.tf"
+    tf_file.write_text("""
+variable "var1" {}
+  variable "var2" {
+    type = string
+  }
+variable "var3" { } # trailing comment
+# variable "commented_var" {}
+// variable "commented_var2" {}
+/* variable "commented_var3" {} */
+""")
+    # Variables declared in .tf.json files are also discovered.
+    (tmp_path / "extra.tf.json").write_text('{"variable": {"json_var": {"type": "string"}}}')
+    # Malformed .tf.json is skipped, not fatal.
+    (tmp_path / "broken.tf.json").write_text("{ not json")
+
+    from devops_bench.deployers.tofu import _get_declared_variables
+
+    declared = _get_declared_variables(str(tmp_path))
+    assert "var1" in declared
+    assert "var2" in declared
+    assert "var3" in declared
+    assert "json_var" in declared
+    assert "commented_var" not in declared
+    assert "commented_var2" not in declared
+
+
+def test_var_flags_drops_and_logs_undeclared_variables(stack_dir, provider, caplog):
+    import logging
+
+    variables = {
+        "project_id": "test-project",
+        "cluster_name": "test-cluster",
+        "location": "us-central1-a",
+        "node_count": 3,
+        "undeclared_var": "should-be-dropped",
+    }
+    deployer = TFDeployer(tf_dir=str(stack_dir), provider=provider, variables=variables)
+
+    with caplog.at_level(logging.WARNING):
+        flags = deployer._var_flags()
+
+    assert "undeclared_var" not in "".join(flags)
+    assert any(
+        "dropping variable 'undeclared_var'" in record.message
+        and "not declared in tf files" in record.message
+        for record in caplog.records
+    )
+    assert "project_id=test-project" in flags
+
+
+def test_var_flags_raises_on_undeclared_custom_variables(stack_dir, provider):
+    variables = {
+        "project_id": "test-project",
+        "cluster_name": "test-cluster",
+        "location": "us-central1-a",
+        "node_count": 3,
+        "undeclared_custom_var": "should-raise",
+    }
+    # Pass undeclared_custom_var as a custom key (simulating task config variables)
+    custom_keys = {"undeclared_custom_var"}
+    deployer = TFDeployer(
+        tf_dir=str(stack_dir),
+        provider=provider,
+        variables=variables,
+        custom_keys=custom_keys,
+    )
+
+    with pytest.raises(
+        ConfigError, match="Variable 'undeclared_custom_var' defined in task config is not declared"
+    ):
+        deployer._var_flags()

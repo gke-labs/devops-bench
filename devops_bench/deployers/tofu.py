@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -56,6 +57,34 @@ def _format_var(value: Any) -> str:
     if value is None:
         return "null"
     return str(value)
+
+
+def _get_declared_variables(tf_dir: str) -> set[str]:
+    """Scan the stack directory for declared variable names.
+
+    Scans HCL ``.tf`` files with a fast line-based regex and ``.tf.json`` files
+    by parsing their top-level ``variable`` object. The HCL scan is a heuristic
+    and can be fooled by a ``variable`` block commented out inside a ``/* ... */``
+    span; such a false positive only downgrades a clean drop to a tofu-side
+    error, never the reverse.
+    """
+    declared: set[str] = set()
+    for path in Path(tf_dir).glob("*.tf"):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                match = re.match(r'^\s*variable\s+"([^"]+)"', line)
+                if match:
+                    declared.add(match.group(1))
+    for path in Path(tf_dir).glob("*.tf.json"):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        variables = data.get("variable") if isinstance(data, dict) else None
+        if isinstance(variables, dict):
+            declared.update(variables)
+    return declared
 
 
 def _isolated_work_dir(stack_dir: str, tf_root: Path) -> str:
@@ -123,6 +152,7 @@ class TFDeployer(Deployer):
         tf_dir: str,
         provider: Provider,
         variables: dict[str, Any] | None = None,
+        custom_keys: set[str] | None = None,
     ) -> None:
         tf_path = Path(tf_dir).expanduser()
         if tf_path.is_absolute():
@@ -141,11 +171,26 @@ class TFDeployer(Deployer):
 
         self.provider = provider
         self.variables = variables or {}
+        self.custom_keys = custom_keys or set()
 
     def _var_flags(self) -> list[str]:
+        # Scan the directory tofu actually runs in (the isolated per-run copy
+        # under parallel runs; the shared stack dir otherwise), not self.tf_dir.
+        declared = _get_declared_variables(self.work_dir)
         flags: list[str] = []
         for key, value in self.variables.items():
-            flags.extend(["-var", f"{key}={_format_var(value)}"])
+            if key in declared:
+                flags.extend(["-var", f"{key}={_format_var(value)}"])
+            elif key in self.custom_keys:
+                raise ConfigError(
+                    f"Variable {key!r} defined in task config is not declared in TF stack {self.tf_dir!r}"
+                )
+            else:
+                _log.warning(
+                    "dropping variable %r passed to tofu stack %r: not declared in tf files",
+                    key,
+                    self.tf_dir,
+                )
         return flags
 
     @staticmethod

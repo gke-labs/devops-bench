@@ -74,7 +74,7 @@ docker run -it \
   -v ~/.config/gcloud:/root/.config/gcloud \
   -v ~/.ssh:/root/.ssh \
   -v $(pwd)/results:/app/results \
-  -e CLOUD_PROVIDER="gcp" \
+  -e INFRA_PROVIDER="gcp" \
   -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
   -e GKE_CLUSTER_NAME="${GKE_CLUSTER_NAME}" \
   -e GCP_LOCATION="${GCP_LOCATION}" \
