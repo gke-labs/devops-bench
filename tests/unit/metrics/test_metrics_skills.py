@@ -19,10 +19,29 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from deepeval.metrics.g_eval.utils import construct_test_case_string
+from deepeval.models import DeepEvalBaseLLM
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 
 from devops_bench.metrics import _skills, outcome_validity, tool_invocation
 from devops_bench.metrics.base import GEVAL_PASS_THRESHOLD
 from devops_bench.metrics.tool_invocation import TOOL_INVOCATION_THRESHOLD
+
+
+class _StubJudgeModel(DeepEvalBaseLLM):
+    """Minimal DeepEvalBaseLLM stub so GEval can be constructed without credentials."""
+
+    def load_model(self):
+        return self
+
+    def generate(self, prompt: str) -> str:
+        return ""
+
+    async def a_generate(self, prompt: str) -> str:
+        return ""
+
+    def get_model_name(self) -> str:
+        return "stub-judge"
 
 
 def _patch_resources(mocker, files_by_name):
@@ -95,3 +114,37 @@ def test_build_tool_invocation_metric_applies_threshold(mocker):
     assert kwargs["name"] == "ToolInvocation"
     assert kwargs["threshold"] == TOOL_INVOCATION_THRESHOLD
     assert kwargs["model"] is model
+
+
+def test_build_outcome_validity_metric_includes_expected_output(mocker):
+    mocker.patch.object(outcome_validity, "load_outcome_criteria", return_value="CRIT")
+
+    metric = outcome_validity.build_outcome_validity_metric(_StubJudgeModel())
+
+    assert SingleTurnParams.INPUT in metric.evaluation_params
+    assert SingleTurnParams.ACTUAL_OUTPUT in metric.evaluation_params
+    assert SingleTurnParams.EXPECTED_OUTPUT in metric.evaluation_params
+
+
+def test_build_tool_invocation_metric_includes_expected_output(mocker):
+    mocker.patch.object(tool_invocation, "load_tool_criteria", return_value="CRIT")
+
+    metric = tool_invocation.build_tool_invocation_metric(_StubJudgeModel())
+
+    assert SingleTurnParams.INPUT in metric.evaluation_params
+    assert SingleTurnParams.ACTUAL_OUTPUT in metric.evaluation_params
+    assert SingleTurnParams.EXPECTED_OUTPUT in metric.evaluation_params
+
+
+def test_outcome_validity_judge_text_includes_expected_output(mocker):
+    mocker.patch.object(outcome_validity, "load_outcome_criteria", return_value="CRIT")
+    metric = outcome_validity.build_outcome_validity_metric(_StubJudgeModel())
+    case = LLMTestCase(
+        input="do the task",
+        actual_output="did something",
+        expected_output="UNIQUE_EXPECTED_OUTPUT_MARKER",
+    )
+
+    judge_text = construct_test_case_string(metric.evaluation_params, case)
+
+    assert "UNIQUE_EXPECTED_OUTPUT_MARKER" in judge_text
