@@ -211,6 +211,8 @@ def test_to_dict_roundtrip_fields():
         "retrieval_context",
         "chaos_spec",
         "verification_spec",
+        "recoverable_safety",
+        "catastrophic",
         "infrastructure",
         "documentation",
         "validated",
