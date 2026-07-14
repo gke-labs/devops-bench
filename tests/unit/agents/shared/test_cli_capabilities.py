@@ -98,7 +98,7 @@ def test_build_mcp_servers_resolves_path_like_commands(tmp_path: Path, monkeypat
         in caplog.text
     )
 
-    
+
 def test_agent_workdir_yields_supplied_path_without_cleanup(tmp_path: Path):
     """A supplied ``workspace_path`` is yielded as-is and left in place afterward."""
     supplied = tmp_path / "workspace"
