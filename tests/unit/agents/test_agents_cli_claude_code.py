@@ -96,13 +96,13 @@ def test_parse_stream_json_emits_canonical_trajectory():
     assert tokens == {"input": 10, "output": 20, "total": 30, "cached": 5}
     assert trajectory == [
         {
-            "name": "mcp__gke__list_clusters",
+            "name": "gke__list_clusters",
             "args": {"project": "p1"},
             "result": "cluster-a, cluster-b",
             "status": "completed",
         },
         {
-            "name": "mcp__gke__get_cluster",
+            "name": "gke__get_cluster",
             "args": {"c": "a"},
             "result": "v1.30",
             "status": "completed",
@@ -164,6 +164,21 @@ def test_parse_stream_json_flags_failed_mcp_server_at_init():
     assert output == "ok"
     assert any("broken" in e and "failed" in e for e in errors)
     assert not any("gke" in e for e in errors)
+
+
+def test_parse_stream_json_strips_mcp_client_prefix_from_tool_names():
+    """Claude Code names MCP tools ``mcp__<server>__<tool>``; the parser drops the
+    literal ``mcp__`` prefix so names match the pipeline's ``<server>__<tool>``
+    convention (which the metrics canonicalizer reduces to the bare tool name).
+    Built-in tools keep their names."""
+    blob = _stream(
+        _assistant(
+            {"type": "tool_use", "id": "a", "name": "mcp__default__generate_manifest", "input": {}},
+            {"type": "tool_use", "id": "b", "name": "Bash", "input": {"command": "ls"}},
+        ),
+    )
+    _output, trajectory, _tokens, _errors = parse_stream_json(blob)
+    assert [t["name"] for t in trajectory] == ["default__generate_manifest", "Bash"]
 
 
 def test_parse_stream_json_keeps_pending_tool_use_as_called():

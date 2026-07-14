@@ -50,6 +50,21 @@ def _block_text(content: object) -> str | None:
     return json.dumps(content, default=str)
 
 
+# Claude Code namespaces MCP tools as ``mcp__<server>__<tool>``. The rest of the
+# pipeline uses the ``<server>__<tool>`` convention (the metrics canonicalizer
+# strips exactly one ``<server>__`` segment to recover the bare tool name), so
+# drop the literal ``mcp__`` client prefix to stay consistent with the other
+# harnesses. Built-in tools (``Bash``, ``Read``, ...) carry no prefix.
+_MCP_TOOL_PREFIX = "mcp__"
+
+
+def _normalize_tool_name(name: str) -> str:
+    """Strip Claude Code's ``mcp__`` client prefix from an MCP tool name."""
+    if name.startswith(_MCP_TOOL_PREFIX):
+        return name[len(_MCP_TOOL_PREFIX) :]
+    return name
+
+
 def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
     """Parse a Claude Code ``--output-format stream-json`` stdout stream.
 
@@ -131,7 +146,7 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
                 elif btype == "tool_use":
                     args = block.get("input")
                     call = ToolCall(
-                        name=block.get("name", ""),
+                        name=_normalize_tool_name(block.get("name", "")),
                         args=args if isinstance(args, dict) else {},
                         status="called",
                     )
