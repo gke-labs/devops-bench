@@ -183,7 +183,7 @@ replaces `generateRaw()` with an eval-results adapter and **reuses the same
 ```
 site/
 ├── index.html              # Vite entry: <div id="root"> + /src/main.jsx
-├── vite.config.js          # @vitejs/plugin-react, manualChunks, Vitest config
+├── vite.config.js          # @vitejs/plugin-react, codeSplitting, Vitest config
 ├── tailwind.config.js      # Tailwind (build-time, not CDN)
 ├── firebase.json           # Hosting (dist + SPA rewrite) + rules for BOTH named DBs
 ├── firestore.rules         # security rules (see §1)
@@ -239,7 +239,7 @@ Firebase Hosting.
 ### Tooling
 
 - **Vite** (`@vitejs/plugin-react`) — dev server; production build to `dist/`, split
-  into `react` / `firebase` / `charts` vendor chunks via `manualChunks`.
+  into `react` / `firebase` / `charts` vendor chunks via rolldown `codeSplitting` groups.
 - **Tailwind** via PostCSS (purged at build; no CDN).
 - **Firebase** modular SDK (tree-shaken) on the client; **firebase-admin** in `seed/`.
 - **Chart.js** via `react-chartjs-2`.

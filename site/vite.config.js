@@ -9,15 +9,28 @@ export default defineConfig({
     base: process.env.VITE_BASE_PATH || "/",
     plugins: [react()],
     build: {
-        rollupOptions: {
+        rolldownOptions: {
             output: {
                 // Split the heavy third-party deps into their own chunks so a code
                 // change doesn't bust the vendor cache and the app loads them in
                 // parallel. (Avoids the single >500 kB bundle warning.)
-                manualChunks: {
-                    react: ["react", "react-dom", "react-router-dom"],
-                    firebase: ["firebase/app", "firebase/firestore"],
-                    charts: ["chart.js", "react-chartjs-2"]
+                // Vite 8's rolldown bundler dropped the manualChunks object form;
+                // codeSplitting groups are its replacement.
+                codeSplitting: {
+                    groups: [
+                        {
+                            name: "react",
+                            test: /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler|@remix-run)[\\/]/
+                        },
+                        {
+                            name: "firebase",
+                            test: /[\\/]node_modules[\\/](firebase|@firebase|idb)[\\/]/
+                        },
+                        {
+                            name: "charts",
+                            test: /[\\/]node_modules[\\/](chart\.js|react-chartjs-2|@kurkle)[\\/]/
+                        }
+                    ]
                 }
             }
         }
