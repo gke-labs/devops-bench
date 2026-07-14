@@ -126,6 +126,29 @@ supply an operator brief. Setting `BENCH_USE_MCP=false` drops the MCP binding
 entirely, so the agent sees no tools and the scorer agrees that none ran — skills
 and rules are unaffected.
 
+## Token accounting
+
+Each harness reports token usage in its own provider's terms, and
+`results/normalize.py` flattens whatever it hands back to `input` / `output` on
+the row. One asymmetry is worth knowing when you compare token counts or cost
+**across** harnesses:
+
+- The `claude` harness surfaces Anthropic usage, where `input_tokens` counts only
+  the *uncached* prompt; cache reads and cache writes are reported separately
+  (folded into a `cached` field the harness preserves but the row currently
+  drops). With Claude Code's default prompt caching, most of a multi-turn run's
+  prompt lands in `cached`, so the row's `input` is a small fraction of the true
+  prompt size.
+- The `gemini` harness reports `stats.input_tokens` as the *full* prompt count,
+  cached or not.
+
+So a raw `input`-token or derived-cost comparison between the two harnesses
+under-reports Claude. Treat per-harness token columns as within-harness
+measures, not cross-harness ones, until the row schema carries `cached`
+explicitly. (When the terminal `result` event is missing — e.g. a truncated pipe
+on older `claude` builds — the `claude` parser falls back to summing the
+per-turn assistant usage, so token counts survive even then.)
+
 ## Adding your own harness
 
 Want to wrap a different agent? See

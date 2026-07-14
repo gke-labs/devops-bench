@@ -82,6 +82,7 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
     text_parts: list[str] = []
     result_output: str | None = None
     tokens: dict = {}
+    acc_usage: dict = {}
     errors: list[str] = []
     pending: dict[str, ToolCall] = {}
     trajectory: list[ToolCall] = []
@@ -113,7 +114,11 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
                         name = server.get("name") or "<unknown>"
                         errors.append(f"mcp server {name!r} not connected at init: {status}")
         elif etype == "assistant":
-            content = (event.get("message") or {}).get("content")
+            message = event.get("message") or {}
+            # Accumulate per-turn usage so a truncated stream (no terminal
+            # ``result`` event) still yields token counts, not ``{}``.
+            _add_usage(acc_usage, message.get("usage"))
+            content = message.get("content")
             if not isinstance(content, list):
                 continue
             for block in content:
@@ -165,7 +170,34 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
                 errors.append(f"stream-json result error: {subtype}")
 
     output = result_output if result_output is not None else "".join(text_parts)
+    # The terminal ``result`` usage is authoritative; fall back to the summed
+    # per-turn usage only when the stream was truncated before it arrived.
+    if not tokens and acc_usage:
+        tokens = _usage_tokens(acc_usage)
     return output, [call.to_dict() for call in trajectory], tokens, errors
+
+
+_USAGE_KEYS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
+
+
+def _add_usage(acc: dict, usage: object) -> None:
+    """Fold an Anthropic per-turn ``usage`` block into a running accumulator.
+
+    Summing each turn's counts matches the cumulative accounting Claude Code
+    reports in the terminal ``result`` event (every API call bills its full
+    input), so the accumulator is a faithful stand-in when that event is lost.
+    """
+    if not isinstance(usage, dict):
+        return
+    for key in _USAGE_KEYS:
+        val = usage.get(key)
+        if isinstance(val, int):
+            acc[key] = acc.get(key, 0) + val
 
 
 def _usage_tokens(usage: dict) -> dict:
@@ -173,6 +205,16 @@ def _usage_tokens(usage: dict) -> dict:
 
     ``total`` is the sum of input/output when both are present; ``cached`` folds
     the cache-read and cache-creation counts together (either may be absent).
+
+    Note the cross-harness asymmetry: Anthropic's ``input_tokens`` counts only
+    the *uncached* prompt, with cache-read/-creation reported separately, so
+    with Claude Code's default prompt caching ``input`` can be a small fraction
+    of the true prompt size (the bulk lands in ``cached``). The Gemini CLI's
+    ``stats.input_tokens``, by contrast, is the full prompt count. ``cached`` is
+    preserved here, but ``results/normalize.py`` currently flattens rows to
+    ``input``/``output`` only — so token/cost comparisons across the ``claude``
+    and ``gemini`` harnesses under-report Claude's prompt size. See
+    ``docs/components/agents.md`` (Token accounting).
     """
     inp = usage.get("input_tokens")
     out = usage.get("output_tokens")

@@ -188,6 +188,57 @@ def test_parse_stream_json_falls_back_to_assistant_text_without_result_event():
     assert errors == []
 
 
+def test_parse_stream_json_falls_back_to_accumulated_usage_without_result_event():
+    """A truncated stream (no terminal ``result``) still yields token counts,
+    summed from the per-turn assistant ``usage``."""
+    blob = _stream(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "a"}],
+                "usage": {"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 2},
+            },
+        },
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "b"}],
+                "usage": {
+                    "input_tokens": 20,
+                    "output_tokens": 7,
+                    "cache_creation_input_tokens": 3,
+                },
+            },
+        },
+    )
+    output, _trajectory, tokens, errors = parse_stream_json(blob)
+    assert output == "ab"
+    assert tokens == {"input": 30, "output": 12, "total": 42, "cached": 5}
+    assert errors == []
+
+
+def test_parse_stream_json_result_usage_wins_over_accumulated():
+    """When the terminal ``result`` carries usage it is authoritative — the
+    accumulated per-turn usage is not added on top."""
+    blob = _stream(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "x"}],
+                "usage": {"input_tokens": 999, "output_tokens": 999},
+            },
+        },
+        {
+            "type": "result",
+            "subtype": "success",
+            "result": "x",
+            "usage": {"input_tokens": 10, "output_tokens": 20},
+        },
+    )
+    _output, _trajectory, tokens, _errors = parse_stream_json(blob)
+    assert tokens == {"input": 10, "output": 20, "total": 30, "cached": None}
+
+
 def test_parse_stream_json_result_string_is_authoritative_over_text():
     """When a ``result`` event is present its string wins over assistant text
     (which merely duplicates it) — no double-counting."""
