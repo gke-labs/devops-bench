@@ -5,10 +5,12 @@
 #
 # Ordered by wave (pr-plan.md §3.2 code, §3.4 docs/skills). Entries are per-PR: one concrete plus
 # its co-located unit tests, matching the "smallest reviewable unit" rule (pr-plan.md §1.6). That
-# granularity is deliberate — suggest-flips uncomments a line as soon as its path exists upstream, so
-# a per-family glob would lock not-yet-migrated siblings early; a per-PR entry flips exactly when its
-# PR lands. Wave 1 (toolchain: pyproject.toml, uv.lock, .python-version, CI) is human-managed in both
-# repos and is intentionally NOT listed here.
+# granularity is deliberate — suggest-flips uncomments a line only once every file it covers exists
+# upstream with IDENTICAL content (blob parity), so an upstream placeholder or a same-named-but-
+# different file never flips ownership; a per-PR entry flips exactly when its PR lands. Entries
+# tagged `# flip-group: <name>` flip atomically — none until all members are content-ready — which
+# couples each benchmark task with the tf stack it provisions. Wave 1 (toolchain: pyproject.toml,
+# uv.lock, .python-version, CI) is human-managed in both repos and is intentionally NOT listed here.
 #
 # gke-labs-only tooling — the migration-prep skill, docs/migration/**, and the leaderboard assets
 # (site/**, docs/how-to/leaderboard.md) — never migrates: it stays NEVER_SYNC and is not listed.
@@ -58,8 +60,8 @@ MIGRATED = [
     # cloud providers (base, gcp, kind)
     # "devops_bench/providers/**",
     # "tests/unit/providers/**",
-    # Terraform modules (tf/modules -> infra/modules)
-    # "infra/modules/**",
+    # Terraform modules (path kept as tf/modules — no infra/ rename)
+    # "tf/modules/**",
     # result model (row, aggregate, normalize)
     # "devops_bench/results/**",
     # "tests/unit/results/**",
@@ -121,8 +123,8 @@ MIGRATED = [
     # "devops_bench/deployers/factory.py",
     # "devops_bench/deployers/__init__.py",
     # "tests/unit/deployers/test_deployers_factory.py",
-    # Terraform stacks (tf/prebuilt -> infra/stacks)
-    # "infra/stacks/**",
+    # harness default kind stack (task-specific stacks travel with their task — wave 9)
+    # "tf/prebuilt/kind/**",
     # evalharness reporter (consumes results/)
     # "devops_bench/evalharness/reporter.py",
     # "tests/unit/evalharness/test_reporter.py",
@@ -157,8 +159,6 @@ MIGRATED = [
     # "devops_bench/metrics/outcome_validity.py",
     # "devops_bench/metrics/chaos_metrics.py",
     # "tests/unit/metrics/test_metrics_chaos.py",
-    # benchmark task data (batched across owners)
-    # "tasks/**",
 
     # --- Wave 6: harness base + scenario, and module docs/skills (each after its module lands) ---
     # "devops_bench/evalharness/base.py",
@@ -174,8 +174,6 @@ MIGRATED = [
     # "docs/how-to/add-an-agent-harness.md",
     # ".agents/references/harness-capabilities.md",
     # "docs/components/metrics.md",
-    # "docs/how-to/add-a-task.md",
-    # "tasks/AGENTS.md",
     # ".agents/skills/task-review/**",
     # ".claude/skills/task-review",
     # ".agents/skills/devops-bench-review/**",
@@ -204,7 +202,41 @@ MIGRATED = [
     # "tests/unit/verification/test_optimize_scale_regression.py",
     # "tests/integration/**",
 
-    # --- Wave 9: eval-lifecycle skills, onboarding + repo-overview docs (need cli/ + evalharness) ---
+    # --- Wave 9: benchmark tasks, each coupled with the tf stack it provisions (flip-group entries
+    # --- flip together). Ships after wave 8 so every task can be validated on the full upstream
+    # --- pipeline before ownership moves. A shared stack carries all the tasks that use it. ---
+    # noop tasks (no stack; need only the pipeline to validate)
+    # "tasks/noop/**",
+    # "tasks/common/cve-remediation/**",  # flip-group: cve-remediation
+    # "tf/prebuilt/cve-remediation-kind/**",  # flip-group: cve-remediation
+    # "tasks/common/migration-and-upgrade/**",  # flip-group: migration-and-upgrade
+    # "tf/prebuilt/migration-and-upgrade-kind/**",  # flip-group: migration-and-upgrade
+    # "tf/prebuilt/migration-and-upgrade/**",  # flip-group: migration-and-upgrade
+    # "tasks/common/opa-remediation/**",  # flip-group: opa-remediation
+    # "tf/prebuilt/opa-remediation-kind/**",  # flip-group: opa-remediation
+    # "tasks/common/optimize-scale/**",  # flip-group: optimize-scale
+    # "tf/prebuilt/optimize-scale/**",  # flip-group: optimize-scale
+    # "tasks/common/spot-rebalancing/**",  # flip-group: spot-rebalancing
+    # "tf/prebuilt/spot-rebalancing-kind/**",  # flip-group: spot-rebalancing
+    # "tasks/gcp/deploy-hello-app/**",  # flip-group: minimum
+    # "tf/prebuilt/minimum/**",  # flip-group: minimum
+    # "tasks/gcp/deploy-config/**",  # flip-group: hypercomputer-d1
+    # "tasks/gcp/fix-config/**",  # flip-group: hypercomputer-d1
+    # "tasks/gcp/get-app-architecture/**",  # flip-group: hypercomputer-d1
+    # "tf/prebuilt/hypercomputer-d1/**",  # flip-group: hypercomputer-d1
+    # "tasks/gcp/gpu-stress-test-diagnosis/**",  # flip-group: gpu-stress-test
+    # "tf/prebuilt/gpu-stress-test/**",  # flip-group: gpu-stress-test
+    # "tasks/gcp/lustre-csi-deployment/**",  # flip-group: lustre-csi
+    # "tf/prebuilt/lustre-csi/**",  # flip-group: lustre-csi
+    # "tasks/gcp/multi-region-failover/**",  # flip-group: multi-region-failover
+    # "tf/prebuilt/multi-region-failover/**",  # flip-group: multi-region-failover
+    # "tasks/gcp/secret-rotation/**",  # flip-group: secret-rotation
+    # "tf/prebuilt/secret-rotation/**",  # flip-group: secret-rotation
+    # "tasks/kind/cp-recovery/**",  # flip-group: cp-recovery
+    # "tf/prebuilt/cp-recovery-kind/**",  # flip-group: cp-recovery
+
+    # --- Wave 10: eval-lifecycle skills, onboarding + repo-overview docs (need cli/ + evalharness,
+    # --- and task data from wave 9 for the run/validate skills to exercise) ---
     # ".agents/skills/run-eval/**",
     # ".claude/skills/run-eval",
     # ".agents/skills/run-parallel-evals/**",
@@ -221,6 +253,10 @@ MIGRATED = [
     # ".agents/references/permission-configs/README.md",
     # "docs/how-to/run-evals.md",
     # "docs/components/bastion.md",
+    # "tf/prebuilt/bastion/**",
+    # tasks docs (need the wave-9 task data they document)
+    # "docs/how-to/add-a-task.md",
+    # "tasks/AGENTS.md",
     # "docs/getting-started.md",
     # "docs/README.md",
     # "docs/components/architecture.md",

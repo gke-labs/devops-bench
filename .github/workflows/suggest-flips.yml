@@ -25,15 +25,15 @@ jobs:
           # Use bot PAT so git operations attribute to the migration bot.
           token: ${{ secrets.SYNC_BOT_TOKEN }}
 
-      - name: List upstream files (public, anonymous)
+      - name: List upstream tree with blob hashes (public, anonymous)
         run: |
           set -euo pipefail
           git fetch --quiet --depth=1 https://github.com/kubernetes-sigs/devops-bench.git main
-          git ls-tree -r --name-only FETCH_HEAD > /tmp/upstream-files.txt
-          echo "upstream files: $(wc -l < /tmp/upstream-files.txt)"
+          git ls-tree -r FETCH_HEAD > /tmp/upstream-tree.txt
+          echo "upstream files: $(wc -l < /tmp/upstream-tree.txt)"
 
-      - name: Uncomment entries now present upstream
-        run: ./hack/migration-status.sh --suggest-flips --apply --upstream-files /tmp/upstream-files.txt
+      - name: Uncomment entries whose content has landed upstream
+        run: ./hack/migration-status.sh --suggest-flips --apply --upstream-tree /tmp/upstream-tree.txt
 
       - name: Open / update the flip PR
         env:
@@ -49,7 +49,7 @@ jobs:
           git config user.email "devops-bench-sync-bot@google.com"
           git checkout -B "$BRANCH"
           git add migrated.bara.sky
-          git commit -m "chore(migration): flip modules now present upstream"
+          git commit -m "chore(migration): flip modules whose content landed upstream"
           git push --force origin "$BRANCH"
           # Check if a PR already exists from this branch to prevent swallowing real token/policy failures
           PR_EXISTS=$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number')
@@ -57,8 +57,8 @@ jobs:
             # Keep the body self-contained: do NOT reference the forward/upstream PR
             # (owner/repo#NN or #NN) — GitHub would cross-link gke-labs <-> kubernetes-sigs.
             gh pr create --base main --head "$BRANCH" \
-              --title "Migration: flip modules now present upstream" \
-              --body $'Auto-suggested flips. These entries were uncommented in `migrated.bara.sky` because their paths now exist in kubernetes-sigs. Review and merge to complete the flip: ownership moves upstream, the back-sync turns on, and the path becomes read-only here.'
+              --title "Migration: flip modules whose content landed upstream" \
+              --body $'Auto-suggested flips. These entries were uncommented in `migrated.bara.sky` because every file they cover now exists in kubernetes-sigs with identical content (blob parity), and their flip-group (if any) is complete. Review and merge to complete the flip: ownership moves upstream, the back-sync turns on, and the path becomes read-only here.'
           else
             echo "PR #${PR_EXISTS} is already open; force-push has updated it."
           fi

@@ -36,7 +36,7 @@ graph TD
     S1["Stage 1: Leaf Modules (Parallel)<br/>(tasks/, providers/, deployers/, k8s/, models/, skills/, results/)"]:::stage
     S2["Stage 2: Main Components (Parallel)<br/>(agents/ base+CLI+API, verification/, chaos/, metrics/)"]:::stage
     S3["Stage 3: Orchestrator Engine<br/>(evalharness/ pipeline + reporter)"]:::stage
-    S4["Stage 4: Data & Integration<br/>(infra/ stacks, tasks/ data, cli/ + integration tests)"]:::stage
+    S4["Stage 4: Data & Integration<br/>(cli/ + integration tests, then tasks/ data coupled with tf/ stacks)"]:::stage
     S5["Stage 5: Developer Experience<br/>(docs, .agents/ skills, references — each after its module)"]:::stage
 
     S0 --> S1
@@ -75,7 +75,7 @@ Built on the leaves: `agents/` (base + CLI + API), `verification/` (needs `k8s/`
 ---
 
 ### Stage 4: Data and entrypoints
-`tf/` → `infra/` (modules + stacks), the benchmark `tasks/` data, and the entrypoints (`cli.py`, `__main__.py`, `run.py`) plus integration tests.
+The entrypoints (`cli.py`, `__main__.py`, `run.py`) plus integration tests, then the benchmark `tasks/` data. `tf/` keeps its path upstream (no `infra/` rename — a rename would churn every stack reference for no benefit). Each task ships **coupled with the `tf/prebuilt/` stack it provisions** — one PR, one `flip-group` in `migrated.bara.sky` — and only after the full pipeline runs upstream, so every task can be validated there before ownership moves. A shared stack (`minimum`, `hypercomputer-d1`) travels with all the tasks that use it.
 
 ---
 
@@ -98,7 +98,7 @@ Every owner completes the [README.md](./README.md) §2 prerequisites independent
 
 ### 3.2 PRs by wave
 
-Every PR carries a **wave number**. **All PRs in a wave are mutually independent and ship in parallel**; a wave opens only once *every* PR in the prior wave is merged upstream **and flipped** in `migrated.bara.sky` (so later PRs can import them via the back-sync). The waves are **derived from the real import edges in `devops_bench/`** (verified against the tree), so nothing in a wave imports anything else in the same wave. Load is balanced at **8–9 PRs per owner**. Waves **1–2** are the unavoidable serial bootstrap (toolchain, then `core/`, imported everywhere); **3–5** are the parallel bulk; **6–8** are the serial orchestrator tail + entrypoints.
+Every PR carries a **wave number**. **All PRs in a wave are mutually independent and ship in parallel**; a wave opens only once *every* PR in the prior wave is merged upstream **and flipped** in `migrated.bara.sky` (so later PRs can import them via the back-sync). The waves are **derived from the real import edges in `devops_bench/`** (verified against the tree), so nothing in a wave imports anything else in the same wave. Load is balanced at **8–9 PRs per owner**. Waves **1–2** are the unavoidable serial bootstrap (toolchain, then `core/`, imported everywhere); **3–5** are the parallel bulk; **6–8** are the serial orchestrator tail + entrypoints; **9** is the benchmark data — each task coupled with the `tf/prebuilt/` stack it provisions (one PR + one `flip-group` per pair) — gated on the full pipeline so tasks are validated upstream before flipping.
 
 | Wave | PR | Paths | Imports (basis) | Owner |
 |:--:|---|---|---|---|
@@ -124,7 +124,7 @@ Every PR carries a **wave number**. **All PRs in a wave are mutually independent
 | **4** | verification base | `verification/base.py`, `spec.py`, `runner.py` | core, k8s | **Jessie** |
 | **4** | metrics judge | `metrics/geval.py`, `pipeline.py`, `_skills.py` | core, models base, skills, metrics base | **Jessie** |
 | **4** | deployers base | `deployers/base.py`, `factory.py` | core, providers | **Eugene** |
-| **4** | Terraform stacks | `tf/prebuilt/` → `infra/stacks/` (split per stack if large) | tf modules | **Eugene** |
+| **4** | default kind stack | `tf/prebuilt/kind/` (the harness's default stack; task-specific stacks ship with their task in wave 9) | tf modules | **Eugene** |
 | **4** | `evalharness/reporter` | `evalharness/reporter.py` | core, results | **Simran** |
 | **5** | deployers: tofu engine | `deployers/tofu.py` | deployers base | **Eugene** |
 | **5** | deployers: noop engine | `deployers/noop.py` | deployers base | **Eugene** |
@@ -138,13 +138,13 @@ Every PR carries a **wave number**. **All PRs in a wave are mutually independent
 | **5** | metric: checklist | `metrics/checklist.py` | metrics judge | **Pradeep** |
 | **5** | metric: outcome-validity | `metrics/outcome_validity.py` | metrics judge | **Jessie** |
 | **5** | metric: chaos-metrics | `metrics/chaos_metrics.py` | metrics judge | **Jessie** |
-| **5** | task data (batch 1) | a slice of `tasks/<group>/<task>/` (YAML + co-located infra) | tasks contracts, stacks | **Eugene** |
-| **5** | task data (batch 2) | a slice of `tasks/…` | tasks contracts, stacks | **Richard** |
-| **5** | task data (batch 3) | a slice of `tasks/…` | tasks contracts, stacks | **Pradeep** |
 | **6** | harness base + scenario | `evalharness/base.py`, `artifacts.py`, `scenario.py` | agents, chaos, verification, deployers | **Simran** |
 | **7** | default eval harness | `evalharness/default.py` | harness base, metrics, results, tasks | **Simran** |
 | **8** | CLI entrypoint | `cli.py`, `__main__.py`, `run.py` | evalharness, metrics, tasks | **Pradeep** |
 | **8** | integration tests | `tests/integration/` | everything | **Pradeep** |
+| **9** | task + stack pairs (common) | each `tasks/common/<task>/` in one PR with the `tf/prebuilt/` stack it provisions; the pair shares a `flip-group` and flips together | tasks contracts + full pipeline (wave 8) | **Eugene** |
+| **9** | task + stack pairs (gcp) | each `tasks/gcp/<task>/` with its stack; shared stacks (`minimum`, `hypercomputer-d1`) carry all their tasks in one flip-group | tasks contracts + full pipeline (wave 8) | **Richard** |
+| **9** | kind + noop tasks | `tasks/kind/cp-recovery/` + its stack; `tasks/noop/` (no stacks) | tasks contracts + full pipeline (wave 8) | **Pradeep** |
 
 > [!NOTE]
 > The **Imports (basis)** column is the verified dependency that fixes each PR's wave: a PR sits in the earliest wave after *all* its imports.
@@ -164,16 +164,16 @@ Docs, `.agents/` skills, and shared references sit *on top of* the code, so each
 
 | Wave | Unit | Paths | Gated on (module fully landed) | Owner |
 |:--:|---|---|---|---|
-| **6** | infra docs | `docs/components/infra.md` | providers + deployers + infra stacks | **Eugene** |
+| **6** | infra docs | `docs/components/infra.md` | providers + deployers + tf modules + default kind stack | **Eugene** |
 | **6** | models docs | `docs/components/model_providers.md`, `docs/how-to/add-a-model-provider.md` | models | **Richard** |
 | **6** | agents docs | `docs/components/agents.md`, `docs/how-to/add-an-agent-harness.md`, `.agents/references/harness-capabilities.md` | agents (base + CLI + API + shared) | **Simran** |
 | **6** | metrics docs | `docs/components/metrics.md` | metrics (base + judge + families) | **Jessie** |
-| **6** | tasks docs | `docs/how-to/add-a-task.md`, `tasks/AGENTS.md` | tasks contracts + task data | **Eugene** |
+| **10** | tasks docs | `docs/how-to/add-a-task.md`, `tasks/AGENTS.md` | tasks contracts + task data (wave 9) | **Eugene** |
 | **6** | review skills | `.agents/skills/task-review/`, `.agents/skills/devops-bench-review/`, `.agents/references/permission-configs/review-readonly.*` | tasks + review targets (tasks, docs conventions) | **Jessie** |
 | **6** | cleanup skill | `.agents/skills/cleanup-orphaned-resources/` | providers + deployers + infra | **Eugene** |
-| **9** | eval-run skills + refs | `.agents/skills/{run-eval,run-parallel-evals,validate-eval,diagnose-eval-failure}/`, `.agents/references/{running-evals,monitoring-and-recovery,unlimited-mode}.md`, `.agents/references/permission-configs/{eval-infra.*,README.md}` | `cli/` + default eval harness | **Pradeep** |
-| **9** | run + onboarding docs | `docs/how-to/run-evals.md`, `docs/components/bastion.md`, `docs/getting-started.md` | `cli/` + evalharness + infra | **Pradeep** |
-| **9** | repo overview + routers + docs-sync skill | `docs/README.md`, `docs/components/architecture.md`, `docs/components/glossary.md`, `docs/contributing.md`, `docs/appendix/known_issues.md`, `AGENTS.md`, `CLAUDE.md`, `devops_bench/AGENTS.md`, `.agents/skills/docs-sync/` | everything (ships last) | **Pradeep** |
+| **10** | eval-run skills + refs | `.agents/skills/{run-eval,run-parallel-evals,validate-eval,diagnose-eval-failure}/`, `.agents/references/{running-evals,monitoring-and-recovery,unlimited-mode}.md`, `.agents/references/permission-configs/{eval-infra.*,README.md}` | `cli/` + default eval harness + task data (wave 9) | **Pradeep** |
+| **10** | run + onboarding docs | `docs/how-to/run-evals.md`, `docs/components/bastion.md`, `tf/prebuilt/bastion/`, `docs/getting-started.md` | `cli/` + evalharness + infra | **Pradeep** |
+| **10** | repo overview + routers + docs-sync skill | `docs/README.md`, `docs/components/architecture.md`, `docs/components/glossary.md`, `docs/contributing.md`, `docs/appendix/known_issues.md`, `AGENTS.md`, `CLAUDE.md`, `devops_bench/AGENTS.md`, `.agents/skills/docs-sync/` | everything (ships last) | **Pradeep** |
 
 > [!NOTE]
 > **Never migrated (retires with `gke-labs`):** the `migration-prep` skill and `docs/migration/**` (they exist only to run this migration), plus the leaderboard assets — `site/**` (incl. `site/AGENTS.md`) and `docs/how-to/leaderboard.md`. These are kept out of the frontier and marked `NEVER_SYNC`.
