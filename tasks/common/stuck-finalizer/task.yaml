@@ -1,0 +1,32 @@
+task_id: 23
+name: "stuck-finalizer"
+category: Platform
+difficulty: Hard
+task_class: live-action
+source: complex-tasks.md#Troubleshoot Stuck Finalizers
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/stuck-finalizer-kind"
+  teardown: true
+  variables:
+    namespace: "payments-legacy"
+prompt: |
+  You are the platform engineer on call for the Kubernetes cluster '{{CLUSTER_NAME}}'
+  (project '{{PROJECT_ID}}', location 'local'). The namespace 'payments-legacy' was
+  deleted a while ago but is still stuck in "Terminating" status and never fully
+  disappears.
+
+  Investigate why the namespace won't finish terminating, and take action to force
+  it to fully terminate.
+expected_output: |
+  critical requirements:
+
+  GRADING NOTE: Grade on outcome and method soundness. Any way of clearing the
+  blocking finalizer (patching the specific resource, editing it, etc.) is
+  acceptable - do not require one exact command.
+
+  - Expected Tool Call: get_k8s_resource or describe_k8s_resource to inspect the 'payments-legacy' namespace's status/conditions.
+  - Identifies from the namespace status that a custom resource (a 'slowresources.example.com' object named 'legacy-billing-job') is still present in the namespace and is blocking full deletion.
+  - Identifies the specific finalizer name ('example.com/cleanup-never-runs') on that resource as the reason it can never finish deleting on its own.
+  - Takes corrective action by removing the finalizer from the 'legacy-billing-job' SlowResource (e.g. via a patch/edit tool call) rather than just describing what should be done.
+  - After the fix, the 'payments-legacy' namespace and the 'legacy-billing-job' resource are both actually gone (namespace no longer exists / no longer stuck in Terminating).
