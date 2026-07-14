@@ -358,3 +358,36 @@ def test_outcome_validity_override_only_when_generation_only(mocker):
     assert outcome_validity._GENERATION_ONLY_OVERRIDE not in captured["criteria"]
     outcome_validity.build_outcome_validity_metric(MagicMock(), generation_only=True)
     assert outcome_validity._GENERATION_ONLY_OVERRIDE in captured["criteria"]
+
+
+def test_build_context_warns_on_empty_expected_output(caplog, mocker):
+    mocker.patch.object(pipeline, "LLMTestCase", side_effect=lambda **kw: SimpleNamespace(**kw))
+    import logging
+
+    res = _base_result(expected_output="")
+    with caplog.at_level(logging.WARNING):
+        pipeline._build_context(res, MagicMock(), True)
+    assert len(caplog.records) == 1
+    assert "has an empty expected_output" in caplog.text
+
+
+def test_build_context_no_warning_when_expected_output_set(caplog, mocker):
+    mocker.patch.object(pipeline, "LLMTestCase", side_effect=lambda **kw: SimpleNamespace(**kw))
+    import logging
+
+    res = _base_result(expected_output="App deployed")
+    with caplog.at_level(logging.WARNING):
+        pipeline._build_context(res, MagicMock(), True)
+    assert len(caplog.records) == 0
+
+
+def test_build_context_missing_expected_output_defaults_and_warns(caplog, mocker):
+    mocker.patch.object(pipeline, "LLMTestCase", side_effect=lambda **kw: SimpleNamespace(**kw))
+    import logging
+
+    res = _base_result()
+    del res["expected_output"]
+    with caplog.at_level(logging.WARNING):
+        pipeline._build_context(res, MagicMock(), True)
+    assert len(caplog.records) == 1
+    assert "has an empty expected_output" in caplog.text

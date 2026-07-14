@@ -43,8 +43,8 @@ OUTCOME_SKILL_FILENAME = "outcome-validity-checklist.md"
 # Appended to the criteria for generation-only tasks (``deployer: noop``), which
 # provision no cluster. Without it the checklist's "Deployment Intent" /
 # "Execution Confirmation" clauses wrongly fail a correct manifest for not being
-# applied. The judge sees only INPUT + ACTUAL_OUTPUT, so it has no other signal
-# that this task is generation-only.
+# applied. None of the judge-visible test-case fields signal that this task is
+# generation-only.
 _GENERATION_ONLY_OVERRIDE = (
     "\n\n## Generation-Only Task Override\n"
     "This task is manifest-generation only: no live cluster is provisioned. "
@@ -93,6 +93,7 @@ def build_outcome_validity_metric(model, *, generation_only: bool = False) -> GE
         evaluation_params=[
             SingleTurnParams.INPUT,
             SingleTurnParams.ACTUAL_OUTPUT,
+            SingleTurnParams.EXPECTED_OUTPUT,
         ],
         model=model,
     )

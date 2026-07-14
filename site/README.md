@@ -1,4 +1,4 @@
-# devops-bench Leaderboard (`site_new`)
+# devops-bench Leaderboard (`site`)
 
 A React + Vite dashboard for the devops-bench benchmark. It shows **model ×
 harness** pairings scored across DevOps tasks, with faceted filtering, per-task
@@ -181,7 +181,7 @@ replaces `generateRaw()` with an eval-results adapter and **reuses the same
 ### Directory layout
 
 ```
-site_new/
+site/
 ├── index.html              # Vite entry: <div id="root"> + /src/main.jsx
 ├── vite.config.js          # @vitejs/plugin-react, manualChunks, Vitest config
 ├── tailwind.config.js      # Tailwind (build-time, not CDN)

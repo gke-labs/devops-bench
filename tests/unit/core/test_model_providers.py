@@ -50,6 +50,7 @@ _ROWS = [
     ("anthropic-vertex", "anthropic-vertex", "claude", "anthropic-vertex", (), True, "vertex"),
     ("anthropic_vertex", "anthropic-vertex", "claude", "anthropic-vertex", (), True, "vertex"),
     ("anthropic-bedrock", "anthropic-bedrock", "claude", "anthropic-bedrock", (), True, "bedrock"),
+    ("anthropic_bedrock", "anthropic-bedrock", "claude", "anthropic-bedrock", (), True, "bedrock"),
     ("openai", "openai", "openai", "openai", ("OPENAI_API_KEY",), False, None),
     ("ollama", "ollama", "ollama", "ollama", (), True, None),
 ]
@@ -95,6 +96,7 @@ def test_only_vertex_bedrock_ollama_are_keyless():
         "anthropic-vertex",
         "anthropic_vertex",
         "anthropic-bedrock",
+        "anthropic_bedrock",
         "ollama",
     }
 

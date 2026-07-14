@@ -43,7 +43,9 @@ class _DummyAgent(AgentHarness):
         super().__init__(config)
         _DummyAgent.last_config = self.config
 
-    def _execute(self, prompt: str) -> AgentResult:  # pragma: no cover - never run
+    def _execute(  # pragma: no cover - never run
+        self, prompt: str, workspace_path=None
+    ) -> AgentResult:
         return AgentResult(output=f"echo: {prompt}", trajectory=[])
 
 

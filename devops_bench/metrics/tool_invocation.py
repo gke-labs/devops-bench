@@ -73,6 +73,7 @@ def build_tool_invocation_metric(model) -> GEval:
         evaluation_params=[
             SingleTurnParams.INPUT,
             SingleTurnParams.ACTUAL_OUTPUT,
+            SingleTurnParams.EXPECTED_OUTPUT,
         ],
         model=model,
     )

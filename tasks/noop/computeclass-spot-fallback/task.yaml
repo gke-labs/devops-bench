@@ -27,3 +27,22 @@ expected_output: |
       machineFamily: c3
     - spot: false
       machineFamily: n2
+
+documentation:
+  - doc_name: "Control autoscaled node attributes with custom ComputeClasses"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/node-attributes-compute-classes"
+    constraints:
+      - text: "apiVersion: cloud.google.com/v1"
+        critical: false
+      - text: "kind: ComputeClass"
+        critical: true
+      - text: "priorities hierarchy list"
+        critical: true
+      - text: "machineFamily: c3"
+        critical: false
+      - text: "spot: true"
+        critical: true
+      - text: "machineFamily: n2"
+        critical: false
+      - text: "spot: false"
+        critical: true

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from devops_bench.agents.capabilities import McpBinding
 from devops_bench.agents.shared.cli_capabilities import (
+    agent_workdir,
     build_mcp_servers,
     materialize_skills,
 )
@@ -96,3 +97,26 @@ def test_build_mcp_servers_resolves_path_like_commands(tmp_path: Path, monkeypat
         "Path-like MCP command './missing-mcp' not found relative to harness; passing unchanged"
         in caplog.text
     )
+
+    
+def test_agent_workdir_yields_supplied_path_without_cleanup(tmp_path: Path):
+    """A supplied ``workspace_path`` is yielded as-is and left in place afterward."""
+    supplied = tmp_path / "workspace"
+    supplied.mkdir()
+
+    with agent_workdir(supplied, prefix="ignored-") as workdir:
+        assert workdir == supplied
+        (workdir / "marker.txt").write_text("artifact", encoding="utf-8")
+
+    assert supplied.exists()
+    assert (supplied / "marker.txt").read_text(encoding="utf-8") == "artifact"
+
+
+def test_agent_workdir_creates_and_cleans_up_temp_dir_when_no_path_supplied():
+    """``None`` falls back to a prefixed temp dir that is removed on exit."""
+    with agent_workdir(None, prefix="agent-workdir-test-") as workdir:
+        created = workdir
+        assert workdir.is_dir()
+        assert workdir.name.startswith("agent-workdir-test-")
+
+    assert not created.exists()

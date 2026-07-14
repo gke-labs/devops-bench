@@ -793,10 +793,12 @@ def test_api_package_does_not_expose_legacy_context_or_system_instruction():
     import inspect
 
     sig = inspect.signature(ApiAgent.run)
-    assert list(sig.parameters) == ["self", "prompt"], (
-        "ApiAgent.run must take only (self, prompt); the legacy context/"
-        "system_instruction kwargs are gone."
+    assert list(sig.parameters) == ["self", "prompt", "workspace_path"], (
+        "ApiAgent.run must take only (self, prompt, workspace_path); the legacy "
+        "context/system_instruction kwargs are gone."
     )
+    assert "context" not in sig.parameters
+    assert "system_instruction" not in sig.parameters
     init_sig = inspect.signature(ApiAgent.__init__)
     # Inherited from AgentHarness — accepts config only.
     assert list(init_sig.parameters) == ["self", "config"]

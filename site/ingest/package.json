@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Ingests real benchmark eval-results into the site_new Firestore collections.",
+  "description": "Ingests real benchmark eval-results into the site Firestore collections.",
   "scripts": {
     "ingest": "node ingest.mjs",
     "ingest:test": "FIRESTORE_DATABASE_ID=leaderboard-test node ingest.mjs",

@@ -21,3 +21,10 @@ expected_output: |
   spec:
     activeMigration:
       optimizeRulePriority: true
+
+documentation:
+  - doc_name: "Control autoscaled node attributes with custom ComputeClasses"
+    url: "https://cloud.google.com/kubernetes-engine/docs/how-to/node-attributes-compute-classes"
+    constraints:
+      - text: "spec.activeMigration.optimizeRulePriority: true"
+        critical: true

@@ -1,4 +1,4 @@
-# Build the site_new React/Vite dashboard and deploy it to GitHub Pages.
+# Build the site React/Vite dashboard and deploy it to GitHub Pages.
 #
 # Served from a project-repo subpath (https://<owner>.github.io/devops-bench/), so
 # the build is prefixed with VITE_BASE_PATH. Routed to the leaderboard-test
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./site_new
+        working-directory: ./site
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: site_new/package-lock.json
+          cache-dependency-path: site/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -72,7 +72,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./site_new/dist
+          path: ./site/dist
 
       - name: Deploy to GitHub Pages
         id: deployment

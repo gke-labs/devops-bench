@@ -232,3 +232,24 @@ def test_validated_empty_block_coalesces_false():
 
 def test_validated_roundtrips_in_to_dict():
     assert Task.from_dict({"name": "n", "validated": True}).to_dict()["validated"] is True
+
+
+def test_empty_expected_output_logs_warning(caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        Task.from_dict({"task_id": 1, "name": "my-task"}, name_default="d")
+
+    assert len(caplog.records) == 1
+    assert "has an empty expected_output" in caplog.text
+
+
+def test_set_expected_output_no_warning(caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        Task.from_dict(
+            {"task_id": 1, "name": "my-task", "expected_output": "some output"}, name_default="d"
+        )
+
+    assert len(caplog.records) == 0

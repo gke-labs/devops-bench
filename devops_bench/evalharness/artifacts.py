@@ -61,10 +61,11 @@ def collect_generated_files(
         run_dir: The run output directory; artifacts land under its
             ``generated_files`` subdirectory.
         source_dir: Directory the agent wrote into; defaults to the current
-            working directory. The harness threads
-            :attr:`~devops_bench.core.RunContext.workspace_path` here so the
-            artifact diff is bound to the per-task workspace, not the process
-            cwd.
+            working directory. The harness threads its harness-owned, per-run
+            :attr:`~devops_bench.core.RunContext.workspace_path` here — the
+            same directory the CLI agent wrapper executes in — so the
+            artifact diff is bound to the per-task workspace, not the
+            harness process's cwd.
 
     Returns:
         The names of the entries that were copied.

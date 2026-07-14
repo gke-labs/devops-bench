@@ -18,6 +18,10 @@ and [glossary](./components/glossary.md).
 - [Metrics](./components/metrics.md) — the scoring framework and how to read results.
 - [Bastion](./components/bastion.md) — the VM that runs the harness in-VPC.
 
+## Designs — proposals under discussion
+
+- [vCluster provider](./designs/vcluster-provider.md) — virtual clusters as a cheap, fast backend for parallel evals.
+
 ## How-to guides — get things done
 
 - [Run evals](./how-to/run-evals.md) — single runs and parallel matrices.

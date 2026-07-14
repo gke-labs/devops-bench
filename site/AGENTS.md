@@ -1,4 +1,4 @@
-# site_new/
+# site/
 
 The leaderboard: a React + Vite app plus a Firestore ingest pipeline in `ingest/`.
 
