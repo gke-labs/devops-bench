@@ -18,7 +18,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from devops_bench.core import get_logger
+
 __all__ = ["Task", "DocumentationEntry", "Constraint"]
+
+_log = get_logger("tasks.schema")
 
 # Strict validation: reject implicit type coercion (e.g. the string ``"yes"``
 # is not a bool), and ignore unknown keys in source specs.
@@ -179,13 +183,22 @@ class Task(BaseModel):
         documentation = raw.get("documentation", [])
         validated = raw.get("validated", False)
 
+        expected_output = _text(raw.get("expected_output", ""))
+        if not expected_output:
+            task_name = name or name_default or str(raw_id or "")
+            _log.warning(
+                "Task %r has an empty expected_output. If this is a judged task, "
+                "this may skew the evaluation scores.",
+                task_name,
+            )
+
         return cls.model_validate(
             {
                 "id": "" if raw_id is None else str(raw_id),
                 "name": name_default if name is None else name,
                 "folder": folder,
                 "prompt": _text(prompt),
-                "expected_output": _text(raw.get("expected_output", "")),
+                "expected_output": expected_output,
                 # An empty YAML block (``key:`` with no value) parses to None;
                 # treat it as the field's empty default rather than rejecting it.
                 "retrieval_context": [] if retrieval is None else retrieval,

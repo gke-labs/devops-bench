@@ -96,7 +96,13 @@ def _build_context(res: dict[str, Any], judge_model: Any, use_mcp: bool) -> Metr
     # here (before the per-metric ``try`` in the batch loop).
     prompt = res["input"]
     actual_output = res["output"]
-    expected_output = res["expected_output"]
+    expected_output = res.get("expected_output", "")
+    if not expected_output:
+        _log.warning(
+            "Result %r has an empty expected_output. If this task is scored by "
+            "the LLM judge, this may skew evaluation scores.",
+            res.get("name"),
+        )
     trajectory = res.get("trajectory", [])
     latency = res.get("latency")
     retrieval_context = res.get("retrieval_context")
