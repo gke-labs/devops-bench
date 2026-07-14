@@ -31,6 +31,9 @@ MIGRATED = [
     # "devops_bench/skills/**",
     # metrics registry base
     # "devops_bench/metrics/base.py",
+    # __init__.py lags its PR by design: it ships trimmed to the base surface and only reaches
+    # blob parity once the wave-5 family PRs re-add their imports upstream. Do not flip it by
+    # hand before then — gke-labs imports the full package root (also NEVER_SYNC'd until parity).
     # "devops_bench/metrics/__init__.py",
     # "tests/unit/metrics/test_metrics_base.py",
     # "tests/unit/metrics/test_metrics_extension_axis.py",

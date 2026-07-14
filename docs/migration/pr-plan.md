@@ -106,7 +106,7 @@ Every PR carries a **wave number**. **All PRs in a wave are mutually independent
 | **2** | foundation `core/` | `core/*` (registry, context, results, logging, subprocess, errors, config, run_env) | toolchain | **Pradeep** |
 | **3** | `tasks/` contracts | `tasks/schema.py`, `tasks/loader.py` | core | **Jessie** |
 | **3** | `skills/` guides | `skills/` (packaged `*.md` guides) | — | **Jessie** |
-| **3** | metrics base | `metrics/base.py` (METRICS registry) | core | **Jessie** |
+| **3** | metrics base | `metrics/base.py` (METRICS registry), plus `__init__.py` trimmed to the base surface — each family PR re-adds its imports, so the init reaches parity (and flips) only after wave 5 | core | **Jessie** |
 | **3** | models base | `models/base.py`, `models/utils/loop.py` (`run_tool_loop`) | core | **Richard** |
 | **3** | agents base | `agents/base.py`, `config.py`, `result.py`, `capabilities/*` | core | **Simran** |
 | **3** | `k8s/` wrappers | `k8s/kubectl.py`, `k8s/conditions.py` | core | **Eugene** |
