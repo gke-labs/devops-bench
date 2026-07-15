@@ -16,7 +16,9 @@
 
 Folds the ``tool_use`` / ``tool_result`` content blocks into the canonical
 :class:`ToolCall` list and pulls the final answer and token usage from the
-terminal ``result`` event.
+terminal ``result`` event. ``thinking`` / ``redacted_thinking`` blocks are
+dropped so the trajectory matches the tool-calls-only shape the other CLI
+harnesses (Gemini, OpenClaw, Antigravity) emit.
 """
 
 from __future__ import annotations
@@ -65,6 +67,16 @@ def _normalize_tool_name(name: str) -> str:
     return name
 
 
+# MCP server statuses in the ``init`` event that signal a genuine connection
+# failure. A stdio server (e.g. gke-mcp) commonly reports a transient
+# ``pending`` / ``connecting`` in the init snapshot yet connects moments later
+# and serves tools normally, so only these terminal-failure states are surfaced.
+# Flagging any non-``connected`` status would false-positive on that transient
+# and wrongly mark a fully working MCP run as errored (populating ``errors`` and
+# flipping the run-level ``validated`` gate to ``False``).
+_MCP_FAILED_STATUSES = frozenset({"failed", "error", "disconnected", "needs-auth", "needs_auth"})
+
+
 def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
     """Parse a Claude Code ``--output-format stream-json`` stdout stream.
 
@@ -78,9 +90,15 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
     | Event type    | Handling                                                  |
     |---------------|-----------------------------------------------------------|
     | ``system``    | ``init`` metadata, ignored                                |
-    | ``assistant`` | ``tool_use`` blocks → pending ToolCalls; ``text`` → output|
+    | ``assistant`` | ``tool_use`` → pending ToolCalls; ``text`` → output;      |
+    |               | ``thinking`` / ``redacted_thinking`` dropped              |
     | ``user``      | ``tool_result`` blocks matched to pending ToolCalls       |
     | ``result``    | terminal: authoritative answer, token usage, error subtype|
+
+    ``trajectory`` is a list of tool calls (``ToolCall.to_dict()``) in emission
+    order, matching the tool-calls-only shape the other CLI harnesses emit;
+    ``thinking`` / ``redacted_thinking`` blocks are dropped rather than recorded
+    as steps.
 
     The accumulated assistant ``text`` doubles as a fallback answer for the rare
     case where no terminal ``result`` event arrives (e.g. a truncated pipe on
@@ -117,17 +135,20 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
         etype = event.get("type")
         if etype == "system":
             # The init event lists each configured MCP server with a startup
-            # status. A server that fails to connect leaves the run tool-less
-            # but still exits 0, so surface it here instead of scoring a
-            # silently-degraded MCP arm like the baseline.
+            # status. A server that *fails* to connect leaves the run tool-less
+            # but still exits 0, so surface only terminal-failure statuses here
+            # (see ``_MCP_FAILED_STATUSES``) instead of scoring a silently-
+            # degraded MCP arm like the baseline. Transient states (``pending`` /
+            # ``connecting``) are ignored: the server often connects moments
+            # later and serves tools normally.
             if event.get("subtype") == "init":
                 for server in event.get("mcp_servers") or []:
                     if not isinstance(server, dict):
                         continue
                     status = str(server.get("status", "")).lower()
-                    if status and status not in ("connected", "ok", "ready"):
+                    if status in _MCP_FAILED_STATUSES:
                         name = server.get("name") or "<unknown>"
-                        errors.append(f"mcp server {name!r} not connected at init: {status}")
+                        errors.append(f"mcp server {name!r} failed to connect at init: {status}")
         elif etype == "assistant":
             message = event.get("message") or {}
             # Accumulate per-turn usage so a truncated stream (no terminal
@@ -143,6 +164,10 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
                 if btype == "text":
                     if isinstance(block.get("text"), str):
                         text_parts.append(block["text"])
+                elif btype in ("thinking", "redacted_thinking"):
+                    # Dropped so the trajectory matches the tool-calls-only shape
+                    # the other CLI harnesses emit.
+                    continue
                 elif btype == "tool_use":
                     args = block.get("input")
                     call = ToolCall(
@@ -186,8 +211,10 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
 
     output = result_output if result_output is not None else "".join(text_parts)
     # The terminal ``result`` usage is authoritative; fall back to the summed
-    # per-turn usage only when the stream was truncated before it arrived.
-    if not tokens and acc_usage:
+    # per-turn usage when it was absent (truncated stream) or degenerate. Note
+    # ``_usage_tokens`` always returns a 4-key dict, so it is truthy even when
+    # every value is None — test the values, not the dict.
+    if not any(tokens.values()) and acc_usage:
         tokens = _usage_tokens(acc_usage)
     return output, [call.to_dict() for call in trajectory], tokens, errors
 

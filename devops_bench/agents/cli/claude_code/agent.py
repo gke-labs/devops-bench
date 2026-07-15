@@ -277,6 +277,23 @@ class ClaudeCodeAgent(AgentHarness):
                         timeout=self.config.timeout_sec,
                     )
                 except SubprocessError as exc:
+                    # A timeout (or non-zero exit) still yields the partial
+                    # stream-json captured before the kill; recover the
+                    # trajectory/tokens rather than discarding the run's work.
+                    # parse_stream_json tolerates a truncated pipe.
+                    if exc.stdout:
+                        output, trajectory, tokens, parse_errors = parse_stream_json(exc.stdout)
+                        metadata = {}
+                        stderr = (exc.stderr or "").strip()
+                        if stderr:
+                            metadata["stderr"] = stderr[-2000:]
+                        return AgentResult(
+                            output=output or f"claude subprocess error: {exc}",
+                            trajectory=trajectory,
+                            tokens=tokens,
+                            errors=[*parse_errors, f"claude subprocess error: {exc}"],
+                            metadata=metadata,
+                        )
                     return AgentResult.errored(f"claude subprocess error: {exc}")
                 except OSError as exc:
                     # Missing / non-executable binary; core.subprocess.run does not wrap.

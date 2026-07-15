@@ -149,6 +149,14 @@ explicitly. (When the terminal `result` event is missing — e.g. a truncated pi
 on older `claude` builds — the `claude` parser falls back to summing the
 per-turn assistant usage, so token counts survive even then.)
 
+## Trajectory contents
+
+The trajectory is an ordered list of tool calls (`{name, args, result, status}`)
+in emission order — the same tool-calls-only shape across every CLI harness. The
+`claude` stream carries `thinking` / `redacted_thinking` blocks; these are
+**dropped** by the parser rather than recorded as steps, so a Claude trajectory
+looks the same as a Gemini, OpenClaw, or Antigravity one.
+
 ## Adding your own harness
 
 Want to wrap a different agent? See

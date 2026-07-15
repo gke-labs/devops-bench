@@ -166,6 +166,29 @@ def test_parse_stream_json_flags_failed_mcp_server_at_init():
     assert not any("gke" in e for e in errors)
 
 
+def test_parse_stream_json_ignores_transient_pending_mcp_status_at_init():
+    """A ``pending`` MCP status at the init snapshot is transient — the server
+    (e.g. gke-mcp) connects moments later and serves tools normally — so it must
+    NOT surface an error, which would otherwise flip the run-level ``validated``
+    gate to ``False`` on a fully working MCP run."""
+    blob = _stream(
+        {
+            "type": "system",
+            "subtype": "init",
+            "mcp_servers": [{"name": "gke", "status": "pending"}],
+        },
+        _assistant(
+            {"type": "tool_use", "id": "t1", "name": "mcp__gke__list_clusters", "input": {}}
+        ),
+        _user({"type": "tool_result", "tool_use_id": "t1", "content": "cluster-a"}),
+        {"type": "result", "subtype": "success", "result": "ok"},
+    )
+    output, trajectory, _tokens, errors = parse_stream_json(blob)
+    assert output == "ok"
+    assert errors == []
+    assert trajectory[0]["status"] == "completed"
+
+
 def test_parse_stream_json_strips_mcp_client_prefix_from_tool_names():
     """Claude Code names MCP tools ``mcp__<server>__<tool>``; the parser drops the
     literal ``mcp__`` prefix so names match the pipeline's ``<server>__<tool>``
@@ -179,6 +202,25 @@ def test_parse_stream_json_strips_mcp_client_prefix_from_tool_names():
     )
     _output, trajectory, _tokens, _errors = parse_stream_json(blob)
     assert [t["name"] for t in trajectory] == ["default__generate_manifest", "Bash"]
+
+
+def test_parse_stream_json_drops_thinking_blocks():
+    """``thinking`` / ``redacted_thinking`` blocks are dropped so the trajectory
+    is tool-calls-only, matching the shape the other CLI harnesses emit. Only the
+    tool call survives; the surrounding reasoning leaves no trajectory step."""
+    blob = _stream(
+        _assistant(
+            {"type": "thinking", "thinking": "let me plan", "signature": "sig"},
+            {"type": "tool_use", "id": "c1", "name": "Bash", "input": {"command": "ls"}},
+            {"type": "redacted_thinking", "data": "enc"},
+        ),
+        _user({"type": "tool_result", "tool_use_id": "c1", "content": "ok"}),
+    )
+    _output, trajectory, _tokens, errors = parse_stream_json(blob)
+    assert errors == []
+    assert trajectory == [
+        {"name": "Bash", "args": {"command": "ls"}, "result": "ok", "status": "completed"},
+    ]
 
 
 def test_parse_stream_json_keeps_pending_tool_use_as_called():
@@ -252,6 +294,24 @@ def test_parse_stream_json_result_usage_wins_over_accumulated():
     )
     _output, _trajectory, tokens, _errors = parse_stream_json(blob)
     assert tokens == {"input": 10, "output": 20, "total": 30, "cached": None}
+
+
+def test_parse_stream_json_falls_back_when_result_usage_degenerate():
+    """A terminal ``result`` whose ``usage`` carries no recognized counts must
+    not shadow the accumulated per-turn usage — the all-None result is treated
+    as absent so the summed per-turn counts survive."""
+    blob = _stream(
+        {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "x"}],
+                "usage": {"input_tokens": 15, "output_tokens": 4},
+            },
+        },
+        {"type": "result", "subtype": "success", "result": "x", "usage": {}},
+    )
+    _output, _trajectory, tokens, _errors = parse_stream_json(blob)
+    assert tokens == {"input": 15, "output": 4, "total": 19, "cached": None}
 
 
 def test_parse_stream_json_result_string_is_authoritative_over_text():
@@ -483,6 +543,28 @@ def test_execute_handles_subprocess_error(monkeypatch):
     assert result.has_errors()
     assert "subprocess error" in result.errors[0]
     assert result.trajectory == []
+
+
+def test_execute_recovers_partial_trajectory_on_timeout(monkeypatch):
+    """A timeout carries the partial stream-json captured before the kill; the
+    harness recovers the trajectory instead of discarding the run's work, while
+    still surfacing the error."""
+    partial = _stream(
+        _assistant(
+            {"type": "tool_use", "id": "c1", "name": "mcp__gke__list_clusters", "input": {}}
+        ),
+        _user({"type": "tool_result", "tool_use_id": "c1", "content": "ok"}),
+    )
+
+    def fake_run(argv, **kwargs):
+        raise SubprocessError(argv, returncode=-1, stdout=partial, stderr="killed after timeout")
+
+    monkeypatch.setattr(claude_mod, "run", fake_run)
+    result = ClaudeCodeAgent(AgentConfig(target="claude")).run("p")
+    assert result.has_errors()
+    assert any("subprocess error" in e for e in result.errors)
+    assert [step["name"] for step in result.trajectory] == ["gke__list_clusters"]
+    assert result.metadata["stderr"] == "killed after timeout"
 
 
 def test_execute_handles_missing_binary(monkeypatch):
