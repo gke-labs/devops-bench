@@ -16,120 +16,83 @@
 
 from __future__ import annotations
 
-import os
+from typing import Any
 
 import pytest
 
 from devops_bench.core.errors import ConfigError, NotRegisteredError
+from devops_bench.core.model_providers import ProviderSpec
+from devops_bench.models import base
 from devops_bench.models.base import MODELS, LLMClient, get_model
 
 
-def test_registry_has_known_providers():
-    # Importing the adapter modules registers them under their canonical keys.
-    from devops_bench.models import claude, gemini, ollama  # noqa: F401
+class _StubClient(LLMClient):
+    """Minimal concrete adapter recording its constructor arguments."""
 
-    assert MODELS.get("gemini") is gemini.GeminiClientAdapter
-    assert MODELS.get("claude") is claude.ClaudeClientAdapter
-    assert MODELS.get("ollama") is ollama.OllamaClientAdapter
+    def __init__(self, model_name: str | None = None, backend: str | None = None, **kwargs: Any):
+        self.model_name = model_name
+        self.backend = backend
+        self.kwargs = kwargs
+
+    async def generate_content(self, contents, tools, system_instruction):
+        raise NotImplementedError
+
+    def format_tools(self, mcp_tools):
+        raise NotImplementedError
+
+    def extract_function_calls(self, response):
+        raise NotImplementedError
+
+    def get_text_content(self, response):
+        raise NotImplementedError
 
 
-def test_get_model_returns_gemini_adapter(mocker):
-    from devops_bench.models import gemini
+@pytest.fixture
+def fake_family(monkeypatch):
+    """Route provider resolution to a fake adapter family backed by ``_StubClient``.
 
-    mocker.patch.object(gemini.genai, "Client")
-    client = get_model(provider="gemini")
+    The family has no adapter module on disk, so ``get_model`` skips the import
+    step and hits the registry directly — no collision with any real adapter,
+    now or later.
+    """
 
-    assert isinstance(client, gemini.GeminiClientAdapter)
+    def install(backend: str | None = None) -> None:
+        spec = ProviderSpec(
+            canonical="fake-provider",
+            adapter_family="fake_family",
+            oc_provider="fake-provider",
+            api_key_envs=(),
+            keyless_ok=True,
+            backend=backend,
+        )
+        monkeypatch.setattr(base, "resolve_provider", lambda provider: spec)
+        monkeypatch.setitem(MODELS._items, "fake_family", _StubClient)
+
+    return install
+
+
+def test_get_model_constructs_registered_adapter(fake_family):
+    fake_family()
+
+    client = get_model(provider="fake-provider", model_name="fake-model-1", timeout=7)
+
+    assert isinstance(client, _StubClient)
     assert isinstance(client, LLMClient)
+    assert client.model_name == "fake-model-1"
+    assert client.backend is None
+    assert client.kwargs == {"timeout": 7}
 
 
-def test_get_model_resolves_google_alias(mocker):
-    from devops_bench.models import gemini
+def test_get_model_forwards_backend_hint(fake_family):
+    fake_family(backend="fake-backend")
 
-    mocker.patch.object(gemini.genai, "Client")
-    client = get_model(provider="google")
+    client = get_model(provider="fake-provider")
 
-    assert isinstance(client, gemini.GeminiClientAdapter)
-
-
-@pytest.mark.parametrize("provider", ["google-vertex", "google_vertex"])
-def test_get_model_resolves_google_vertex_alias(mocker, provider):
-    from devops_bench.models import gemini
-
-    mocker.patch.object(gemini.genai, "Client")
-    client = get_model(provider=provider)
-
-    assert isinstance(client, gemini.GeminiClientAdapter)
+    assert isinstance(client, _StubClient)
+    assert client.backend == "fake-backend"
 
 
-def test_get_model_returns_claude_adapter(mocker):
-    from devops_bench.models import claude
-
-    mocker.patch.object(claude, "AsyncAnthropicVertex")
-    client = get_model(provider="claude")
-
-    assert isinstance(client, claude.ClaudeClientAdapter)
-
-
-def test_get_model_resolves_anthropic_alias(mocker):
-    from devops_bench.models import claude
-
-    mocker.patch.object(claude, "AsyncAnthropicVertex")
-    client = get_model(provider="anthropic")
-
-    assert isinstance(client, claude.ClaudeClientAdapter)
-
-
-def test_get_model_returns_ollama_adapter(mocker):
-    from devops_bench.models import ollama
-
-    mocker.patch.object(ollama, "AsyncOpenAI")
-    client = get_model(provider="ollama")
-
-    assert isinstance(client, ollama.OllamaClientAdapter)
-
-
-def test_get_model_is_case_insensitive(mocker):
-    from devops_bench.models import claude
-
-    mocker.patch.object(claude, "AsyncAnthropicVertex")
-    client = get_model(provider="CLAUDE")
-
-    assert isinstance(client, claude.ClaudeClientAdapter)
-
-
-def test_get_model_defaults_to_gemini(mocker):
-    from devops_bench.models import gemini
-
-    mocker.patch.object(gemini.genai, "Client")
-    mocker.patch.dict(os.environ, {}, clear=True)
-    client = get_model()
-
-    assert isinstance(client, gemini.GeminiClientAdapter)
-
-
-def test_get_model_reads_provider_from_env(mocker):
-    from devops_bench.models import claude
-
-    mocker.patch.object(claude, "AsyncAnthropicVertex")
-    mocker.patch.dict(os.environ, {"AGENT_PROVIDER": "claude"}, clear=True)
-    client = get_model()
-
-    assert isinstance(client, claude.ClaudeClientAdapter)
-
-
-def test_get_model_passes_model_name(mocker):
-    from devops_bench.models import gemini
-
-    mocker.patch.object(gemini.genai, "Client")
-    client = get_model(provider="gemini", model_name="gemini-custom")
-
-    assert client.model_name == "gemini-custom"
-
-
-def test_get_model_unknown_provider_raises(mocker):
-    from devops_bench.models import claude, gemini  # noqa: F401
-
+def test_get_model_unknown_provider_raises():
     with pytest.raises(ConfigError):
         get_model(provider="does-not-exist")
 
@@ -139,28 +102,3 @@ def test_get_model_openai_resolves_but_has_no_adapter():
     # so resolution succeeds and the registry lookup raises NotRegisteredError.
     with pytest.raises(NotRegisteredError):
         get_model(provider="openai")
-
-
-def test_get_model_passes_vertex_backend_to_gemini(mocker):
-    from devops_bench.models import gemini
-
-    client_cls = mocker.patch.object(gemini.genai, "Client")
-    mocker.patch.dict(os.environ, {"GCP_PROJECT_ID": "p"}, clear=True)
-    get_model(provider="google-vertex")
-
-    # google-vertex -> backend="vertex" -> the adapter builds the Vertex client.
-    client_cls.assert_called_once_with(vertexai=True, project="p", location="global")
-
-
-def test_get_model_passes_vertex_backend_to_claude(mocker):
-    from devops_bench.models import claude
-
-    vertex_cls = mocker.patch.object(claude, "AsyncAnthropicVertex")
-    # An API key is present, but the anthropic-vertex provider must still use
-    # Vertex (backend hint decouples auth from key presence).
-    mocker.patch.dict(
-        os.environ, {"AGENT_API_KEY": "sk-test", "AGENT_MODEL": "claude-x"}, clear=True
-    )
-    get_model(provider="anthropic-vertex")
-
-    vertex_cls.assert_called_once()

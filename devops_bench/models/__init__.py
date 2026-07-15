@@ -14,10 +14,10 @@
 
 """LLM provider clients and the provider-selection factory.
 
-Each provider has an adapter module named by model family (``gemini``,
-``claude``; ``ollama`` is the runtime exception). A provider's SDK is imported
-only when its adapter is constructed, so a missing SDK surfaces as
-:class:`MissingDependencyError` at construction time, not on import.
+Adapter modules are named by model family and register themselves in
+``MODELS`` on import. A provider's SDK is imported only when its adapter is
+constructed, so a missing SDK surfaces as :class:`MissingDependencyError` at
+construction time, not on import.
 """
 
 from __future__ import annotations
