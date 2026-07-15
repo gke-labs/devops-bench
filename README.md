@@ -23,6 +23,7 @@ A single run, end to end:
 | Key | What it runs |
 | :-- | :-- |
 | `gemini` | The Google Gemini CLI. |
+| `claude` | The Claude Code CLI. |
 | `openclaw` | The Openclaw Agent CLI. |
 | `api` | In-process: drives a provider SDK directly through a model-agnostic MCP tool loop. |
 
