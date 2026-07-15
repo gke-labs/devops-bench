@@ -39,11 +39,11 @@ MIGRATED = [
     # "tests/unit/metrics/test_metrics_extension_axis.py",
     # "tests/unit/metrics/test_package_import.py",
     # models base + tool loop (run_tool_loop)
-    # "devops_bench/models/base.py",
-    # "devops_bench/models/utils/**",
-    # "devops_bench/models/__init__.py",
-    # "tests/unit/models/test_models_base.py",
-    # "tests/unit/models/test_loop.py",
+    "devops_bench/models/base.py",
+    "devops_bench/models/utils/**",
+    "devops_bench/models/__init__.py",
+    "tests/unit/models/test_models_base.py",
+    "tests/unit/models/test_loop.py",
     # agents base + capabilities
     # "devops_bench/agents/base.py",
     # "devops_bench/agents/config.py",
