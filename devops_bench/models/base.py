@@ -67,7 +67,7 @@ class LLMClient(ABC):
         """
 
     @abstractmethod
-    def extract_function_calls(self, response: Any) -> list[dict]:
+    def extract_function_calls(self, response: Any) -> list[dict[str, Any]]:
         """Extract function calls from the model's response.
 
         Args:
