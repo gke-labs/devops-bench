@@ -168,13 +168,25 @@ export function generateRaw() {
                 const p = pct / 100;
 
                 for (let iter = 1; iter <= ITERATIONS; iter++) {
-                    // With prob p the iteration "passes": score in [T,1]; else it
-                    // "fails": score in [0,T). The continuous score still varies
-                    // within each band so a threshold change is meaningful.
+                    // Correctness `c`: with prob p the iteration "passes" (score
+                    // in [T,1]); else it "fails" (score in [0,T)). Continuous so a
+                    // threshold change stays meaningful. (This is the old
+                    // outcomeScore — now correctness, a component of the composite.)
                     const passing = rng() < p;
-                    const outcomeScore = passing
+                    const correctnessScore = passing
                         ? PASS_THRESHOLD + rng() * (1 - PASS_THRESHOLD)
                         : rng() * PASS_THRESHOLD;
+                    // Recoverable safety `rec_v`: usually clean (1.0); occasionally
+                    // a partial violation, floored at 0.1 like the real rescale.
+                    const recoverableSafetyScore =
+                        rng() < 0.8 ? 1.0 : round(0.1 + rng() * 0.9, 4);
+                    // Catastrophic tripwires are rare; when one fires the composite
+                    // zeroes regardless of correctness/safety (cat_v = 0).
+                    const catastrophic = rng() < 0.02;
+                    // Composite = cat_v · √(c · rec_v) — matches scoring.py v1.
+                    const outcomeScore = catastrophic
+                        ? 0
+                        : Math.sqrt(correctnessScore * recoverableSafetyScore);
 
                     rows.push({
                         setupId: id,
@@ -188,7 +200,11 @@ export function generateRaw() {
                         iteration: iter,
                         status: "success",
                         outcomeScore: round(outcomeScore, 4),
-                        toolScore: round(Math.min(1, outcomeScore + rng() * 0.1), 4),
+                        correctnessScore: round(correctnessScore, 4),
+                        recoverableSafetyScore: round(recoverableSafetyScore, 4),
+                        catastrophic,
+                        scoringVersion: "v1",
+                        toolScore: round(Math.min(1, correctnessScore + rng() * 0.1), 4),
                         latencySec: round(20 + rng() * 60, 2),
                         inputTokens: Math.round(8000 + rng() * 30000),
                         outputTokens: Math.round(300 + rng() * 1500),
@@ -234,11 +250,26 @@ export function passAtK(n, c, k) {
 // (re-enable here when that lands; nothing about the formula needs to change).
 function scoresFor(rows) {
     const n = rows.length;
-    const c = rows.filter(r => r.outcomeScore != null && r.outcomeScore >= PASS_THRESHOLD).length;
+    // pass1 thresholds on CORRECTNESS `c` (falling back to outcomeScore for
+    // pre-v1 rows), so the pass rate isn't distorted by the √/gate composite.
+    const c = rows.filter(r => {
+        const cv = r.correctnessScore != null ? r.correctnessScore : r.outcomeScore;
+        return cv != null && cv >= PASS_THRESHOLD;
+    }).length;
+    // Continuous 0..100 means for the v1 dimensions. `composite` reads
+    // outcomeScore (the composite); correctness/recoverableSafety read their
+    // sub-score fields (null for pre-v1 rows → blank in the UI).
+    const mean = key => {
+        const vals = rows.map(r => r[key]).filter(v => v != null);
+        return vals.length ? round((vals.reduce((s, v) => s + v, 0) / vals.length) * 100, 1) : null;
+    };
     return {
         pass1: round((c / n) * 100, 1),
         pass5: null,
-        passMax: null
+        passMax: null,
+        composite: mean("outcomeScore"),
+        correctness: mean("correctnessScore"),
+        recoverableSafety: mean("recoverableSafetyScore")
     };
 }
 
@@ -249,7 +280,14 @@ function meanScores(scoreList) {
         const vals = scoreList.map(x => x[m]).filter(v => v != null);
         return vals.length ? round(vals.reduce((s, v) => s + v, 0) / vals.length, 1) : null;
     };
-    return { pass1: avg("pass1"), pass5: avg("pass5"), passMax: avg("passMax") };
+    return {
+        pass1: avg("pass1"),
+        pass5: avg("pass5"),
+        passMax: avg("passMax"),
+        composite: avg("composite"),
+        correctness: avg("correctness"),
+        recoverableSafety: avg("recoverableSafety")
+    };
 }
 
 // Build the dashboard read-model from raw rows: one `setups` doc per setup, with
@@ -282,11 +320,15 @@ export function derive(rows) {
         // Per-task scores at the latest run (what the detail table shows).
         const tasks = TASK_CATALOG
             .filter(task => setupRows.some(r => r.t === latest && r.taskFolder === task.folder))
-            .map(task => ({
-                folder: task.folder,
-                name: task.name,
-                scores: scoresFor(setupRows.filter(r => r.t === latest && r.taskFolder === task.folder))
-            }));
+            .map(task => {
+                const taskRows = setupRows.filter(r => r.t === latest && r.taskFolder === task.folder);
+                return {
+                    folder: task.folder,
+                    name: task.name,
+                    scores: scoresFor(taskRows),
+                    catastrophic: taskRows.some(r => r.catastrophic === true)
+                };
+            });
 
         // History: one aggregate point per run (mean of that run's per-task scores).
         const history = runTimes.map(t => {
@@ -304,7 +346,8 @@ export function derive(rows) {
             augmentation: def.augmentation.slice(),
             color: PALETTE[i % PALETTE.length],
             tasks,
-            history
+            history,
+            catastrophicCount: tasks.filter(t => t.catastrophic).length
         };
     });
 }

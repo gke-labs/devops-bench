@@ -22,8 +22,18 @@
 
 // --- metrics -----------------------------------------------------------------
 
-/** The scoring metrics, in display order. */
-export type MetricKey = "pass1" | "pass5" | "passMax";
+/**
+ * The scoring metrics, in display order. `composite` is the scoring-framework v1
+ * headline (cat_v · √(c · rec_v)); `correctness` / `recoverableSafety` are its
+ * sub-scores. All are 0..100 means. `pass1/5/Max` are pass rates.
+ */
+export type MetricKey =
+    | "composite"
+    | "correctness"
+    | "recoverableSafety"
+    | "pass1"
+    | "pass5"
+    | "passMax";
 
 /**
  * Per-metric scores as percentages (0..100). `null` where a metric has no
@@ -57,6 +67,8 @@ export interface Task {
     folder: string;
     name: string;
     scores: Scores;
+    /** True when a catastrophic tripwire fired for this task (cat_v = 0). */
+    catastrophic?: boolean;
 }
 
 /** One aggregate point per run (mean across tasks), time-ordered. */
@@ -84,6 +96,8 @@ export interface Setup {
     color: string;
     tasks: Task[];
     history: HistoryPoint[];
+    /** Count of latest-run tasks with a catastrophic violation (cat_v = 0). */
+    catastrophicCount: number;
 }
 
 /** The two metadata collections, keyed by doc id, as the dashboard holds them. */
@@ -120,8 +134,19 @@ export interface ResultRow {
     iteration: number;
     /** Terminal outcome of the run (the harness flags crashes/timeouts). */
     status: "success" | "failed";
-    /** Judge score in [0,1]; an iteration passes when `>= PASS_THRESHOLD`. Null when unscored. */
+    /**
+     * Composite outcome score in [0,1] — scoring-framework v1 (cat_v · √(c · rec_v)).
+     * Null when unscored. (Was the OutcomeValidity judge score before v1.)
+     */
     outcomeScore: number | null;
+    /** Correctness sub-score `c` in [0,1] (checklist / OutcomeValidity fallback); null when unscored. */
+    correctnessScore?: number | null;
+    /** Recoverable-safety sub-score `rec_v` in [0.1,1.0]; null when the task defined no safety checks. */
+    recoverableSafetyScore?: number | null;
+    /** True when a catastrophic tripwire fired (cat_v = 0), zeroing the outcome. */
+    catastrophic?: boolean;
+    /** Scoring-framework version that produced `outcomeScore` (e.g. "v1"). */
+    scoringVersion?: string;
     /** Tool-use score in [0,1]; null when unscored. */
     toolScore: number | null;
     latencySec: number;

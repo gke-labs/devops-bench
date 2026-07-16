@@ -15,7 +15,7 @@ import { EmptyState, LoadError, Loading } from "../components/States.jsx";
 
 export function Leaderboard() {
     const { models, harnesses, setups, loading, error } = useBenchmark();
-    const [metric, setMetric] = useState("pass1");
+    const [metric, setMetric] = useState("composite");
     const [filterState, setFilterState] = useState(emptyFilterState);
 
     const groups = useMemo(() => buildFilterGroups(models, harnesses, setups), [models, harnesses, setups]);
