@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { useBenchmark } from "../context/BenchmarkContext.jsx";
 import { buildFilterGroups, getFilteredSetups, emptyFilterState } from "../lib/filters.js";
 import { setupScore } from "../lib/accessors.js";
-import { availableMetrics } from "../lib/vocab.js";
+import { availableMetrics, metricDescription } from "../lib/vocab.js";
 import { FilterBar } from "../components/FilterBar.jsx";
 import { LeaderboardRow } from "../components/LeaderboardRow.jsx";
 import { MetricToggle } from "../components/MetricToggle.jsx";
@@ -90,7 +90,7 @@ export function Leaderboard() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                                 <div role="tooltip" className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2.5 bg-slate-900 text-white text-[11px] font-normal tracking-normal rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shadow-lg z-20 leading-relaxed">
-                                    Calculated dynamically based on success rate metrics across all core task suites.
+                                    {metricDescription(metric)}
                                 </div>
                             </div>
                         </div>
