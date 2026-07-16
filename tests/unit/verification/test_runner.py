@@ -32,6 +32,7 @@ from devops_bench.verification import (
     VerificationSpec,
     VerifierAgent,
 )
+from devops_bench.verification.entry import VerificationEntry
 from devops_bench.verification.verifiers import (
     PodHealthyVerifier,
     ScalingCompleteVerifier,
@@ -420,6 +421,81 @@ def test_parallel_with_exhausted_deadline_times_out_all_children_using_real_veri
         assert "deadline" in child.reason
     # Names propagate from the leaf nodes onto the timed-out child results.
     assert {c.name for c in result.children} == {"pods", "scale"}
+
+
+def test_hold_zero_interval_samples_multiple_times():
+    # hold_interval_sec=0.0 must keep sampling until the window elapses, not
+    # break after one sample due to sleep_time=0.0 being treated as a stop signal.
+    call_count = 0
+
+    def fake_verify(self: Any, timeout_sec: float) -> VerificationResult:
+        nonlocal call_count
+        call_count += 1
+        return _stub_result(success=True)
+
+    # Monotonic call sequence:
+    # 1. run_entry: deadline = t[0] + 60
+    # 2. _run_leaf: remaining = 60 - t[1]
+    # 3. _hold: start = t[2], window_end = t[2] + 5.0
+    # iter 1: verify(); now = t[3] (< window_end) -> no sleep (interval=0.0)
+    # iter 2: verify(); now = t[4] (< window_end) -> no sleep (interval=0.0)
+    # iter 3: verify(); now = t[5] (>= window_end) -> break
+    # elapsed = t[6] - t[2]
+    times = iter([0.0, 0.0, 0.0, 0.01, 0.02, 5.0, 5.0])
+
+    def fake_monotonic() -> float:
+        return next(times)
+
+    with (
+        patch.object(ScalingCompleteVerifier, "verify", fake_verify),
+        patch("devops_bench.verification.runner.time.sleep") as mock_sleep,
+        patch("devops_bench.verification.runner.time.monotonic", fake_monotonic),
+    ):
+        entry = VerificationEntry(
+            name="check",
+            role="correctness",
+            spec={
+                "type": "scaling_complete",
+                "deployment": "web",
+                "mode": "hold",
+                "hold_window_sec": 5.0,
+                "hold_interval_sec": 0.0,
+            },
+        )
+        pair = VerifierAgent().run_entry(entry, timeout_sec=60)
+
+    assert pair.result.success is True
+    assert call_count >= 2
+    mock_sleep.assert_not_called()
+
+
+def test_hold_zero_window_gives_single_sample():
+    # hold_window_sec=0.0 must be honored as zero, not silently fall back to the
+    # 30-second default. With window=0.0, window_end == start, so the first
+    # post-sample monotonic check exits immediately after one sample.
+    call_count = 0
+
+    def fake_verify(self: Any, timeout_sec: float) -> VerificationResult:
+        nonlocal call_count
+        call_count += 1
+        return _stub_result(success=True)
+
+    with patch.object(ScalingCompleteVerifier, "verify", fake_verify):
+        entry = VerificationEntry(
+            name="check",
+            role="correctness",
+            spec={
+                "type": "scaling_complete",
+                "deployment": "web",
+                "mode": "hold",
+                "hold_window_sec": 0.0,
+                "hold_interval_sec": 5.0,
+            },
+        )
+        pair = VerifierAgent().run_entry(entry, timeout_sec=60)
+
+    assert pair.result.success is True
+    assert call_count == 1
 
 
 def test_parallel_leaf_unhandled_exception_becomes_failed_child_not_group_abort():

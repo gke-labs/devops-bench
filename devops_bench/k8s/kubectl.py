@@ -32,6 +32,7 @@ __all__ = [
     "get_resource",
     "port_forward",
     "rollout_status",
+    "run_pod",
     "wait",
 ]
 
@@ -221,6 +222,58 @@ def rollout_status(
         *_namespace_args(namespace),
     ]
     return _run_kubectl(argv, kubeconfig)
+
+
+def run_pod(
+    name: str,
+    image: str,
+    command: list[str],
+    *,
+    namespace: str | None = None,
+    kubeconfig: KubeconfigSource = None,
+    timeout: float | None = None,
+    env: dict[str, str] | None = None,
+) -> str:
+    """Run a one-shot ephemeral pod and return its captured stdout.
+
+    Launches the pod with ``--rm -i --restart=Never`` so the pod is
+    auto-deleted after completion and ``kubectl`` attaches stdin, which is
+    required to capture output from the container.
+
+    Args:
+        name: Pod name.
+        image: Container image to run.
+        command: Command and arguments passed after ``--`` to the container.
+        namespace: Optional namespace (``-n``).
+        kubeconfig: Kubeconfig path or context-like object.
+        timeout: Optional timeout in seconds forwarded to ``core.subprocess.run``.
+        env: Optional env vars injected into the container via ``--env=K=V``.
+
+    Returns:
+        The pod's captured stdout.
+
+    Raises:
+        SubprocessError: If kubectl exits non-zero or times out.
+    """
+    env_args = [f"--env={k}={v}" for k, v in (env or {}).items()]
+    argv = [
+        "kubectl",
+        "run",
+        name,
+        "--rm",
+        "-i",
+        "--restart=Never",
+        f"--image={image}",
+        *env_args,
+        *_namespace_args(namespace),
+        "--",
+        *command,
+    ]
+    extra_kwargs: dict[str, Any] = {}
+    if timeout is not None:
+        extra_kwargs["timeout"] = timeout
+    completed = _run_kubectl(argv, kubeconfig, **extra_kwargs)
+    return completed.stdout
 
 
 @contextlib.contextmanager
