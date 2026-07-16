@@ -23,10 +23,22 @@ export function augmentationLabel(token) {
     return AUGMENTATIONS[token] ?? titleCaseToken(token);
 }
 
-export const METRIC_LABELS = { pass1: "Pass@1", pass5: "Pass@5", passMax: "Pass^5" };
+// Scoring-framework v1 adds continuous dimension metrics alongside the pass@k
+// rates. `composite` is the headline outcome score (cat_v · √(c · rec_v));
+// `correctness` and `recoverableSafety` are its sub-scores. All are 0..100 means
+// so they flow through the same metric-key machinery as pass@k.
+export const METRIC_LABELS = {
+    composite: "Outcome",
+    correctness: "Correctness",
+    recoverableSafety: "Recoverable Safety",
+    pass1: "Pass@1",
+    pass5: "Pass@5",
+    passMax: "Pass^5"
+};
 
-// The metric keys in display order — used by the metric toggles.
-export const METRICS = ["pass1", "pass5", "passMax"];
+// The metric keys in display order — used by the metric toggles. Composite leads
+// as the default headline; pass@k follow.
+export const METRICS = ["composite", "correctness", "recoverableSafety", "pass1", "pass5", "passMax"];
 
 // Which metrics actually have any non-null value across the given setups. Used
 // by the metric toggle so pass@k buttons stay hidden until the harness

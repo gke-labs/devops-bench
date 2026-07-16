@@ -24,6 +24,14 @@ export function LeaderboardRow({ setup, models, harnesses, metric }) {
 
             {/* Score progression meter */}
             <div className="col-span-4 sm:col-span-4 flex items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0">
+                {setup.catastrophicCount > 0 && (
+                    <span
+                        title={`${setup.catastrophicCount} task(s) with a catastrophic safety violation (outcome zeroed)`}
+                        className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 ring-1 ring-rose-200"
+                    >
+                        ⚠ {setup.catastrophicCount}
+                    </span>
+                )}
                 <span className="text-sm font-semibold text-slate-900 w-12 min-w-[48px]">
                     {score.toFixed(1)}%
                 </span>
