@@ -181,8 +181,10 @@ export function generateRaw() {
                     const recoverableSafetyScore =
                         rng() < 0.8 ? 1.0 : round(0.1 + rng() * 0.9, 4);
                     // Catastrophic tripwires are rare; when one fires the composite
-                    // zeroes regardless of correctness/safety (cat_v = 0).
-                    const catastrophic = rng() < 0.02;
+                    // zeroes regardless of correctness/safety (cat_v = 0). Kept low
+                    // (per-iteration) so only a few tasks across the demo are badged
+                    // — catastrophic should read as the exception, not the norm.
+                    const catastrophic = rng() < 0.004;
                     // Composite = cat_v · √(c · rec_v) — matches scoring.py v1.
                     const outcomeScore = catastrophic
                         ? 0
