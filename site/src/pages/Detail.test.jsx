@@ -27,13 +27,13 @@ function makeBenchmark(overrides = {}) {
                 id: SETUP_ID, order: 0, model: "alpha-pro", harness: "gemini-cli",
                 augmentation: [], color: "#3b82f6",
                 tasks: [
-                    { folder: "a", name: "Apple", scores: { pass1: 60, pass5: 65, passMax: 70 } },
-                    { folder: "b", name: "Banana", scores: { pass1: 90, pass5: 95, passMax: 100 } },
-                    { folder: "c", name: "Cherry", scores: { pass1: 80, pass5: 85, passMax: 90 } }
+                    { folder: "a", name: "Apple", scores: { composite: 60, pass1: 60, pass5: 65, passMax: 70 } },
+                    { folder: "b", name: "Banana", scores: { composite: 90, pass1: 90, pass5: 95, passMax: 100 } },
+                    { folder: "c", name: "Cherry", scores: { composite: 80, pass1: 80, pass5: 85, passMax: 90 } }
                 ],
                 history: [
-                    { t: "2026-01-15T00:00:00Z", scores: { pass1: 70, pass5: 75, passMax: 80 } },
-                    { t: "2026-02-15T00:00:00Z", scores: { pass1: 80, pass5: 85, passMax: 90 } }
+                    { t: "2026-01-15T00:00:00Z", scores: { composite: 70, pass1: 70, pass5: 75, passMax: 80 } },
+                    { t: "2026-02-15T00:00:00Z", scores: { composite: 80, pass1: 80, pass5: 85, passMax: 90 } }
                 ]
             }
         ],
@@ -86,11 +86,11 @@ describe("Detail", () => {
                 id: SETUP_ID, order: 0, model: "alpha-pro", harness: "gemini-cli",
                 augmentation: [], color: "#3b82f6",
                 tasks: [
-                    { folder: "a", name: "Apple", scores: { pass1: 80, pass5: 1, passMax: 1 } },
-                    { folder: "b", name: "Banana", scores: { pass1: 60, pass5: 1, passMax: 1 } },
-                    { folder: "c", name: "Cherry", scores: { pass1: null, pass5: 1, passMax: 1 } }
+                    { folder: "a", name: "Apple", scores: { composite: 80, pass1: 80, pass5: 1, passMax: 1 } },
+                    { folder: "b", name: "Banana", scores: { composite: 60, pass1: 60, pass5: 1, passMax: 1 } },
+                    { folder: "c", name: "Cherry", scores: { composite: null, pass1: null, pass5: 1, passMax: 1 } }
                 ],
-                history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: 70, pass5: 1, passMax: 1 } }]
+                history: [{ t: "2026-01-15T00:00:00Z", scores: { composite: 70, pass1: 70, pass5: 1, passMax: 1 } }]
             }]
         });
         renderAt(`/setup/${SETUP_ID}`);
@@ -127,9 +127,9 @@ describe("Detail", () => {
         expect(screen.getByRole("button", { name: "Pass@1" })).toHaveAttribute("aria-pressed", "false");
     });
 
-    it("falls back to Pass@1 for an unknown metric param", () => {
+    it("falls back to the composite Outcome metric for an unknown metric param", () => {
         renderAt(`/setup/${SETUP_ID}?metric=bogus`);
-        expect(screen.getByRole("button", { name: "Pass@1" })).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByRole("button", { name: "Outcome" })).toHaveAttribute("aria-pressed", "true");
     });
 
     it("sorts the task table by score desc by default", () => {

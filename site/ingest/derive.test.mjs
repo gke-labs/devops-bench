@@ -29,7 +29,9 @@ describe("derive — data-driven", () => {
         // Latest run (June 15): both iterations >= 0.7 -> pass1 = 100. pass5/passMax
         // stay null (pass1-only until the harness emits multi-iteration runs).
         const arch = alpha.tasks.find(t => t.folder === "get-app-architecture");
-        expect(arch.scores).toEqual({ pass1: 100, pass5: null, passMax: null });
+        // toMatchObject: v1 adds composite/correctness/recoverableSafety keys;
+        // assert the pass@k intent without pinning the full shape.
+        expect(arch.scores).toMatchObject({ pass1: 100, pass5: null, passMax: null });
 
         // The second setup is discovered too (no hardcoded catalog).
         expect(byId["gamma-coder-api-loop"]).toBeTruthy();
@@ -72,6 +74,14 @@ describe("derive — data-driven", () => {
             { ...base, iteration: 1, outcomeScore: null }
         ]);
         const task = setups[0].tasks.find(t => t.folder === "task-a");
-        expect(task.scores).toEqual({ pass1: null, pass5: null, passMax: null });
+        // Null-safe across all metrics (v1 composite/correctness/safety included).
+        expect(task.scores).toEqual({
+            pass1: null,
+            pass5: null,
+            passMax: null,
+            composite: null,
+            correctness: null,
+            recoverableSafety: null
+        });
     });
 });
