@@ -28,7 +28,9 @@ def test_from_dict_full():
         "expected_output": "  done  ",
         "retrieval_context": ["ctx"],
         "chaos_spec": {"kind": "kill"},
-        "verification_spec": {"check": "ok"},
+        "verification_spec": [
+            {"name": "check-pods", "spec": {"type": "pod_healthy", "selector": "app=web"}}
+        ],
         "infrastructure": {"deployer": "tofu"},
     }
     task = Task.from_dict(raw, name_default="dir-name")
@@ -39,7 +41,9 @@ def test_from_dict_full():
     assert task.expected_output == "done"
     assert task.retrieval_context == ["ctx"]
     assert task.chaos_spec == {"kind": "kill"}
-    assert task.verification_spec == {"check": "ok"}
+    assert task.verification_spec is not None
+    assert len(task.verification_spec) == 1
+    assert task.verification_spec[0].name == "check-pods"
     assert task.infrastructure == {"deployer": "tofu"}
 
 
@@ -183,13 +187,32 @@ def test_constraint_empty_text_coalesces():
     assert constraint.critical is False
 
 
-def test_chaos_and_verification_specs_are_opaque():
-    # These specs are parsed downstream, so the schema accepts any shape
-    # (e.g. a raw JSON string from a YAML literal block, a list, or a mapping).
-    raw = {"chaos_spec": '[{"name": "spike"}]', "verification_spec": [{"name": "v"}]}
+def test_chaos_spec_is_opaque():
+    # chaos_spec is still Any; accepts JSON strings, lists, mappings.
+    raw = {"chaos_spec": '[{"name": "spike"}]'}
     task = Task.from_dict(raw, name_default="d")
     assert task.chaos_spec == '[{"name": "spike"}]'
-    assert task.verification_spec == [{"name": "v"}]
+
+
+def test_verification_spec_parses_typed_entries():
+    # verification_spec is now list[VerificationEntry]; the spec field inside
+    # each entry is kept raw (unparsed) so placeholder substitution can run later.
+    from devops_bench.verification.entry import VerificationEntry
+
+    raw = {
+        "verification_spec": [
+            {
+                "name": "check",
+                "role": "safety",
+                "spec": {"type": "pod_healthy", "selector": "app=web"},
+            },
+        ]
+    }
+    task = Task.from_dict(raw, name_default="d")
+    assert task.verification_spec is not None
+    assert isinstance(task.verification_spec[0], VerificationEntry)
+    assert task.verification_spec[0].name == "check"
+    assert task.verification_spec[0].role == "safety"
 
 
 def test_to_dict_roundtrip_fields():

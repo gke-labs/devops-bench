@@ -22,8 +22,12 @@ at its own boundary.
 
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 import yaml
 
 from devops_bench.chaos import ChaosSpec
@@ -35,6 +39,7 @@ from devops_bench.verification import (
     ParallelSpec,
     VerificationSpec,
 )
+from devops_bench.verification.entry import VerificationEntry
 from devops_bench.verification.verifiers import (
     PodHealthyVerifier,
     ScalingCompleteVerifier,
@@ -184,3 +189,79 @@ def test_task_loader_reads_native_yaml_specs_as_python_values() -> None:
     # Opaque ``Any``: a list-of-mappings flows through verbatim, not as a string.
     assert isinstance(task.chaos_spec, list)
     assert isinstance(task.verification_spec, list)
+
+
+def test_verification_mapping_captures_placeholder_resolution_error_as_parse_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A placeholder-resolution failure is recorded as a parse error, not a crash.
+
+    The typed path (``VerificationEntry`` objects) moves ``_resolve_spec_placeholders``
+    inside the per-entry try/except, so any exception it raises is appended to the
+    errors list rather than propagating out of ``_build_verification_mapping``.
+    """
+    good_entry = VerificationEntry(
+        name="good",
+        spec={"type": "pod_healthy", "selector": "app=x", "namespace": "default"},
+    )
+    bad_entry = VerificationEntry(
+        name="bad",
+        spec={"type": "pod_healthy", "selector": "app=y", "namespace": "default"},
+    )
+
+    harness = _harness()
+
+    def _boom(spec, cluster_name, target_deployment=None, namespace=None):
+        if spec.get("selector") == "app=y":
+            raise ValueError("placeholder boom")
+        return spec
+
+    with (
+        caplog.at_level(logging.WARNING, logger="devops_bench.evalharness.default"),
+        patch.object(harness, "_resolve_spec_placeholders", side_effect=_boom),
+    ):
+        mapping, errors = harness._build_verification_mapping(  # noqa: SLF001
+            [good_entry, bad_entry], cluster_name="c"
+        )
+
+    assert "good" in mapping
+    assert "bad" not in mapping
+    assert len(errors) == 1
+    assert errors[0]["name"] == "bad"
+    assert "placeholder boom" in errors[0]["reason"]
+
+
+def test_verification_mapping_warns_on_duplicate_entry_names(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Two entries sharing a name emit a warning and the last one wins.
+
+    The typed path must not silently overwrite without any operator signal.
+    ``caplog`` pins that a WARNING-level log line naming the duplicate is
+    emitted, and the final mapping carries the second entry's spec.
+    """
+    entry_first = VerificationEntry(
+        name="same",
+        spec={"type": "pod_healthy", "selector": "app=first", "namespace": "default"},
+    )
+    entry_second = VerificationEntry(
+        name="same",
+        spec={"type": "pod_healthy", "selector": "app=second", "namespace": "default"},
+    )
+
+    harness = _harness()
+    with caplog.at_level(logging.WARNING, logger="devops_bench.evalharness.default"):
+        mapping, errors = harness._build_verification_mapping(  # noqa: SLF001
+            [entry_first, entry_second], cluster_name="c"
+        )
+
+    assert errors == []
+    assert "same" in mapping
+    # Warning was emitted
+    assert any(
+        "duplicate" in record.message and "same" in record.message for record in caplog.records
+    )
+    # Last entry wins: the resolved spec carries the second selector
+    spec = mapping["same"]
+    raw_repr = json.dumps(spec.model_dump())
+    assert "app=second" in raw_repr

@@ -54,6 +54,7 @@ from devops_bench.evalharness.scenario import (
 )
 from devops_bench.tasks import Task
 from devops_bench.verification import VerificationSpec
+from devops_bench.verification.entry import VerificationEntry
 
 __all__ = ["DefaultEvalHarness"]
 
@@ -470,6 +471,32 @@ class DefaultEvalHarness(Harness):
             return {}, []
 
         errors: list[dict[str, str]] = []
+        mapping: dict[str, Any] = {}
+
+        # Typed path: task.verification_spec has been parsed into VerificationEntry
+        # objects at load time. Placeholders live inside entry.spec (still raw dicts).
+        if isinstance(raw, list) and raw and isinstance(raw[0], VerificationEntry):
+            for entry in raw:
+                try:
+                    spec_resolved = self._resolve_spec_placeholders(
+                        entry.spec, cluster_name, target_deployment, namespace
+                    )
+                    if entry.name in mapping:
+                        _log.warning(
+                            "duplicate verification entry name %r; overwriting", entry.name
+                        )
+                    mapping[entry.name] = VerificationSpec(spec_resolved)
+                except Exception as exc:  # noqa: BLE001 - surface every failure
+                    _log.warning(
+                        "verification entry %r failed to validate; skipping: %s",
+                        entry.name,
+                        exc,
+                    )
+                    errors.append({"name": entry.name, "reason": str(exc)})
+            return mapping, errors
+
+        # Legacy path: raw dict / list / JSON-string (pre-migration or direct calls
+        # that bypass the typed schema).
         resolved = self._resolve_spec_placeholders(raw, cluster_name, target_deployment, namespace)
         if isinstance(resolved, str):
             try:
@@ -480,7 +507,6 @@ class DefaultEvalHarness(Harness):
                 return {}, errors
         entries = resolved if isinstance(resolved, list) else [resolved]
 
-        mapping: dict[str, Any] = {}
         for index, entry in enumerate(entries):
             if not isinstance(entry, dict):
                 msg = (
@@ -500,6 +526,8 @@ class DefaultEvalHarness(Harness):
             # a ``spec`` key is itself treated as the typed node.
             node = entry.get("spec") if "spec" in entry else entry
             try:
+                if name in mapping:
+                    _log.warning("duplicate verification entry name %r; overwriting", name)
                 mapping[name] = VerificationSpec(node)
             except Exception as exc:  # noqa: BLE001 - surface every failure
                 _log.warning(
@@ -944,7 +972,11 @@ class DefaultEvalHarness(Harness):
             "expected_output_raw": task.expected_output,
             "retrieval_context": list(task.retrieval_context),
             "chaos_spec": task.chaos_spec,
-            "verification_spec": task.verification_spec,
+            "verification_spec": (
+                [e.model_dump() if hasattr(e, "model_dump") else e for e in task.verification_spec]
+                if task.verification_spec is not None
+                else None
+            ),
             "chaos_report": {},
             "perf_report": {},
             "documentation": [doc.model_dump() for doc in task.documentation],
