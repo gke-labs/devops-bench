@@ -21,6 +21,7 @@ and [glossary](./components/glossary.md).
 ## Designs — proposals under discussion
 
 - [vCluster provider](./designs/vcluster-provider.md) — virtual clusters as a cheap, fast backend for parallel evals.
+- [Unified token accounting](./designs/token-accounting.md) — one canonical input/cached/reasoning/output token schema across all harnesses, carried through to the leaderboard row.
 
 ## How-to guides — get things done
 
