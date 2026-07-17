@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import sqlite3
 from types import SimpleNamespace
 from unittest import mock
 
@@ -367,15 +368,27 @@ def test_agy_cli_agent_execute_flow(mock_run, mock_home, tmp_path):
     assert any(a.startswith("--gemini_dir=") for a in args)
 
 
-def _write_sample_transcript(cwd: pathlib.Path) -> None:
+def _write_sample_transcript(
+    cwd: pathlib.Path, *, db_turns: list[bytes] | None = None, transcript: str | None = None
+) -> None:
+    """Lay down agy's on-disk session layout: transcript + conversation DB.
+
+    ``db_turns`` populates a conversation DB with usage records; ``None`` writes
+    an empty file (no usage). ``transcript`` defaults to ``SAMPLE_SESSION``.
+    """
     root_dir = cwd / ".gemini" / "antigravity-cli"
     conv_dir = root_dir / "conversations"
     conv_dir.mkdir(parents=True, exist_ok=True)
     uuid = "test-uuid-123"
-    (conv_dir / f"{uuid}.db").write_text("", encoding="utf-8")
+    if db_turns is None:
+        (conv_dir / f"{uuid}.db").write_text("", encoding="utf-8")
+    else:
+        _make_conv_db(conv_dir / f"{uuid}.db", db_turns)
     transcript_dir = root_dir / "brain" / uuid / ".system_generated" / "logs"
     transcript_dir.mkdir(parents=True, exist_ok=True)
-    (transcript_dir / "transcript.jsonl").write_text(SAMPLE_SESSION, encoding="utf-8")
+    (transcript_dir / "transcript.jsonl").write_text(
+        SAMPLE_SESSION if transcript is None else transcript, encoding="utf-8"
+    )
 
 
 @mock.patch.object(pathlib.Path, "home")
@@ -400,7 +413,7 @@ def test_agy_cli_agent_execute_flow_nonzero_exit_records_error_and_metadata(
     result = agy_mod.AgyCliAgent(config)._execute("run task")
 
     assert result.errors == ["agy exited 1: boom"]
-    assert result.metadata == {"returncode": 1}
+    assert result.metadata["returncode"] == 1
     # The transcript was still recovered even though the run failed.
     assert "Cluster-a is running v1.30" in result.output
 
@@ -426,6 +439,158 @@ def test_agy_cli_agent_execute_flow_missing_transcript_falls_back_to_stdout(
     assert result.output == "raw agy stdout"
     assert result.trajectory == []
     assert "Empty session log" in result.errors
+
+
+def test_empty_tokens_all_none():
+    assert parsing.empty_tokens() == {
+        "input": None,
+        "cached": None,
+        "cache_write": None,
+        "reasoning": None,
+        "output": None,
+        "total": None,
+    }
+
+
+# --- token usage from the conversation DB ----------------------------------
+
+
+def _pb_varint(n: int) -> bytes:
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        out.append(b | 0x80 if n else b)
+        if not n:
+            return bytes(out)
+
+
+def _pb_vfield(field_num: int, val: int) -> bytes:
+    return _pb_varint(field_num << 3) + _pb_varint(val)  # wire type 0
+
+
+def _pb_lfield(field_num: int, payload: bytes) -> bytes:
+    return _pb_varint(field_num << 3 | 2) + _pb_varint(len(payload)) + payload  # wire type 2
+
+
+def _usage_blob(inp, cached, reasoning, output, *, f3=None):
+    """Build a gen_metadata blob with a usage record at wire path .1.4.
+
+    Fields: f2=input, f5=cached, f9=reasoning, f10=output, f3=f9+f10.
+    Zero-valued scalars are omitted, mirroring proto3 wire encoding.
+    """
+    stats = b""
+    if inp:
+        stats += _pb_vfield(2, inp)
+    if cached:
+        stats += _pb_vfield(5, cached)
+    if reasoning:
+        stats += _pb_vfield(9, reasoning)
+    if output:
+        stats += _pb_vfield(10, output)
+    stats += _pb_vfield(3, reasoning + output if f3 is None else f3)
+    return _pb_lfield(1, _pb_lfield(4, stats))  # outer{1: mid{4: stats}} -> .1.4
+
+
+def _make_conv_db(path, turns, *, with_gen_metadata=True):
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE trajectory_meta (trajectory_id text)")
+    con.execute("INSERT INTO trajectory_meta VALUES ('t')")
+    if with_gen_metadata:
+        con.execute("CREATE TABLE gen_metadata (idx integer, data blob, size integer)")
+        for i, blob in enumerate(turns):
+            con.execute("INSERT INTO gen_metadata VALUES (?, ?, ?)", (i, blob, len(blob)))
+    con.commit()
+    con.close()
+
+
+def test_db_token_state_ready_single_turn(tmp_path):
+    db = tmp_path / "conv.db"
+    _make_conv_db(db, [_usage_blob(14882, 0, 0, 7)])
+    state, tokens = parsing.db_token_state(db)
+    assert state == "ready"
+    assert tokens == {
+        "input": 14882,
+        "cached": 0,
+        "cache_write": None,
+        "reasoning": 0,
+        "output": 7,
+        "total": 14889,
+    }
+
+
+def test_db_token_state_sums_turns_with_cache_read(tmp_path):
+    db = tmp_path / "conv.db"
+    _make_conv_db(db, [_usage_blob(16592, 0, 234, 51), _usage_blob(4752, 12200, 352, 50)])
+    state, tokens = parsing.db_token_state(db)
+    assert state == "ready"
+    assert tokens["input"] == 16592 + 4752
+    assert tokens["cached"] == 12200  # f5
+    assert tokens["reasoning"] == 234 + 352
+    assert tokens["output"] == 51 + 50
+    assert tokens["cache_write"] is None
+    assert (
+        tokens["total"]
+        == tokens["input"] + tokens["cached"] + tokens["reasoning"] + tokens["output"]
+    )
+
+
+def test_db_token_state_counts_fully_cached_turn(tmp_path):
+    # A turn served entirely from cache omits input_tokens (proto3 drops zero
+    # fields); it must still be counted, not dropped.
+    db = tmp_path / "conv.db"
+    _make_conv_db(db, [_usage_blob(0, 12000, 30, 20)])
+    state, tokens = parsing.db_token_state(db)
+    assert state == "ready"
+    assert tokens["input"] == 0
+    assert tokens["cached"] == 12000
+    assert tokens["reasoning"] == 30
+    assert tokens["output"] == 20
+    assert tokens["total"] == 12050
+
+
+def test_db_token_state_counts_thinking_only_turn(tmp_path):
+    # A turn with zero response tokens omits f10 (proto3); it must still be
+    # counted via f3 == f9.
+    db = tmp_path / "conv.db"
+    _make_conv_db(db, [_usage_blob(8000, 0, 500, 0)])
+    state, tokens = parsing.db_token_state(db)
+    assert state == "ready"
+    assert tokens["input"] == 8000
+    assert tokens["reasoning"] == 500
+    assert tokens["output"] == 0
+
+
+def test_db_token_state_rejects_noise_record_with_zero_f3(tmp_path):
+    # Config-shaped noise (f3 present but 0, no f9/f10) must not match.
+    noise = _pb_lfield(1, _pb_lfield(4, _pb_vfield(1, 50) + _pb_vfield(3, 0) + _pb_vfield(5, 1)))
+    db = tmp_path / "conv.db"
+    _make_conv_db(db, [noise])
+    assert parsing.db_token_state(db) == ("undecodable", None)
+
+
+def test_db_token_state_undecodable_when_invariant_fails(tmp_path):
+    # f3 != f9 + f10 -> schema drift, terminal.
+    db = tmp_path / "conv.db"
+    _make_conv_db(db, [_usage_blob(100, 0, 9, 5, f3=999)])
+    assert parsing.db_token_state(db) == ("undecodable", None)
+
+
+def test_db_token_state_pending_when_usage_not_flushed(tmp_path):
+    # No gen_metadata table yet, or table exists with zero rows: flush pending.
+    db1 = tmp_path / "conv1.db"
+    _make_conv_db(db1, [], with_gen_metadata=False)
+    assert parsing.db_token_state(db1) == ("pending", None)
+    db2 = tmp_path / "conv2.db"
+    _make_conv_db(db2, [])
+    assert parsing.db_token_state(db2) == ("pending", None)
+
+
+def test_db_token_state_absent_for_missing_or_nonconversation_db(tmp_path):
+    assert parsing.db_token_state(tmp_path / "nope.db") == ("absent", None)
+    empty = tmp_path / "empty.db"
+    empty.write_bytes(b"")  # 0-byte file -> valid empty sqlite, no agy tables
+    assert parsing.db_token_state(empty) == ("absent", None)
 
 
 @mock.patch.object(pathlib.Path, "home")
@@ -457,3 +622,104 @@ def test_agy_cli_agent_execute_flow_timeout_recovers_partial_transcript(
 
     assert len(result.trajectory) == 2
     assert any("subprocess error" in e for e in result.errors)
+
+
+@mock.patch.object(pathlib.Path, "home")
+@mock.patch.object(devops_subprocess, "run")
+def test_agy_cli_agent_execute_reads_tokens_from_db(mock_run, mock_home, tmp_path):
+    # Tokens (incl. cached) come from the conversation DB; output + trajectory
+    # from the transcript.
+    mock_home.return_value = tmp_path
+    result_ns = SimpleNamespace(args=["agy"], returncode=0, stdout="done", stderr="")
+
+    def side_effect(*args, **kwargs):
+        cwd = kwargs.get("cwd")
+        if cwd is None:
+            return SimpleNamespace(args=["gcloud"], returncode=1, stdout="", stderr="")
+        _write_sample_transcript(cwd, db_turns=[_usage_blob(4752, 12200, 30, 20)])
+        return result_ns
+
+    mock_run.side_effect = side_effect
+
+    config = agents_config.AgentConfig(
+        target="/bin/agy",
+        model="gemini-3.5-flash",
+        capabilities=capabilities.AllCapabilities(),
+    )
+    result = agy_mod.AgyCliAgent(config)._execute("run task")
+
+    assert result.tokens == {
+        "input": 4752,
+        "cached": 12200,
+        "cache_write": None,
+        "reasoning": 30,
+        "output": 20,
+        "total": 4752 + 12200 + 30 + 20,
+    }
+    assert result.metadata["token_source"] == "db"
+    assert len(result.trajectory) == 2
+
+
+@mock.patch.object(pathlib.Path, "home")
+@mock.patch.object(devops_subprocess, "run")
+def test_agy_cli_agent_execute_falls_back_to_transcript_tokens(mock_run, mock_home, tmp_path):
+    # DB has no usage but the (old-format) transcript carries per-record tokens:
+    # fall back to those instead of reporting all-None.
+    mock_home.return_value = tmp_path
+    plain = SimpleNamespace(args=["agy"], returncode=0, stdout="plain text output", stderr="")
+
+    def side_effect(*args, **kwargs):
+        cwd = kwargs.get("cwd")
+        if cwd is None:
+            return SimpleNamespace(args=["gcloud"], returncode=1, stdout="", stderr="")
+        _write_sample_transcript(cwd)  # empty .db; SAMPLE_SESSION has tokens
+        return plain
+
+    mock_run.side_effect = side_effect
+
+    config = agents_config.AgentConfig(
+        target="/bin/agy",
+        model="gemini-3.5-flash",
+        capabilities=capabilities.AllCapabilities(),
+    )
+    result = agy_mod.AgyCliAgent(config)._execute("run task")
+
+    # SAMPLE_SESSION sums: input 45, output 23, total 68, cached 0; reasoning and
+    # cache_write are unknowable from the old shape.
+    assert result.tokens == {
+        "input": 45,
+        "cached": 0,
+        "cache_write": None,
+        "reasoning": None,
+        "output": 23,
+        "total": 68,
+    }
+    assert result.metadata["token_source"] == "transcript"
+
+
+@mock.patch.object(pathlib.Path, "home")
+@mock.patch.object(devops_subprocess, "run")
+def test_agy_cli_agent_execute_emits_none_tokens_when_no_source(mock_run, mock_home, tmp_path):
+    # No usage in the DB and a token-less (new-format) transcript -> all-None
+    # (never a fabricated zero), flagged as unavailable.
+    mock_home.return_value = tmp_path
+    plain = SimpleNamespace(args=["agy"], returncode=0, stdout="plain text output", stderr="")
+
+    def side_effect(*args, **kwargs):
+        cwd = kwargs.get("cwd")
+        if cwd is None:
+            return SimpleNamespace(args=["gcloud"], returncode=1, stdout="", stderr="")
+        _write_sample_transcript(cwd, transcript=SAMPLE_TRANSCRIPT)  # no tokens anywhere
+        return plain
+
+    mock_run.side_effect = side_effect
+
+    config = agents_config.AgentConfig(
+        target="/bin/agy",
+        model="gemini-3.5-flash",
+        capabilities=capabilities.AllCapabilities(),
+    )
+    result = agy_mod.AgyCliAgent(config)._execute("run task")
+
+    assert result.tokens == parsing.empty_tokens()
+    assert result.metadata["token_source"] == "unavailable"

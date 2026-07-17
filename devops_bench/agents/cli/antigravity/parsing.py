@@ -22,11 +22,13 @@ and aggregated token usage.
 from __future__ import annotations
 
 import json
+import os
+import sqlite3
 
 from devops_bench import core
 from devops_bench.agents import result as agents_result
 
-__all__ = ["parse_session_jsonl"]
+__all__ = ["parse_session_jsonl", "empty_tokens", "db_token_state"]
 
 _log = core.get_logger("agents.cli.antigravity.parsing")
 
@@ -278,3 +280,185 @@ def _parse_old_session_jsonl(jsonl_text: str) -> tuple[str, list[dict], dict, li
 
     output = "".join(output_parts)
     return output, [call.to_dict() for call in trajectory], aggregated_tokens, errors
+
+
+# Harness-local until the unified token schema lands: input = non-cached prompt,
+# cached = cache reads, output excludes reasoning, total = sum of all buckets.
+_TOKEN_BUCKETS = ("input", "cached", "cache_write", "reasoning", "output", "total")
+
+
+def empty_tokens() -> dict:
+    """Return the canonical token dict with every bucket ``None`` (unavailable)."""
+    return dict.fromkeys(_TOKEN_BUCKETS, None)
+
+
+# --- Token usage from the conversation DB ----------------------------------
+#
+# agy persists a per-turn usage record in the conversation DB
+# (``gen_metadata.data`` blob) at protobuf wire path ``.1.4``:
+#
+#   f2 -> input (non-cached), f5 -> cached, f9 -> reasoning, f10 -> output,
+#   f3 == f9 + f10 (integrity guard; there is no cache-write field).
+#
+# The format is private and version-sensitive: reads are guarded by the f3
+# invariant and yield all-``None`` on mismatch (never a fake 0). Side-call usage
+# (e.g. title generation) is not stored here, so totals cover the main
+# trajectory only (~0.2% low observed).
+
+# Tables agy creates before the usage flush lands; their presence distinguishes
+# "flush pending, retry" from "not an agy DB / nothing to wait for".
+_AGY_DB_TABLES = frozenset({"trajectory_meta", "steps"})
+
+
+def _read_varint(buf: bytes, i: int) -> tuple[int, int]:
+    """Decode a base-128 varint at ``buf[i:]``; return ``(value, next_index)``."""
+    shift = 0
+    result = 0
+    while i < len(buf):
+        byte = buf[i]
+        result |= (byte & 0x7F) << shift
+        i += 1
+        if not byte & 0x80:
+            return result, i
+        shift += 7
+        if shift >= 64:
+            raise ValueError("varint too long")
+    raise ValueError("truncated varint")
+
+
+def _parse_message(buf: bytes) -> list[tuple[int, int, object]] | None:
+    """Parse protobuf wire bytes into ``(field_num, wire_type, value)`` triples.
+
+    Returns ``None`` when ``buf`` is not a clean protobuf message (e.g. it is a
+    UTF-8 string rather than a sub-message), so callers can safely probe any
+    length-delimited field without misparsing text.
+    """
+    fields: list[tuple[int, int, object]] = []
+    i, n = 0, len(buf)
+    try:
+        while i < n:
+            key, i = _read_varint(buf, i)
+            field_num, wire = key >> 3, key & 7
+            if wire == 0:  # varint
+                val, i = _read_varint(buf, i)
+                fields.append((field_num, 0, val))
+            elif wire == 2:  # length-delimited
+                ln, i = _read_varint(buf, i)
+                if i + ln > n:
+                    return None
+                fields.append((field_num, 2, buf[i : i + ln]))
+                i += ln
+            elif wire == 5:  # 32-bit: bounds-check and skip (no consumer)
+                if i + 4 > n:
+                    return None
+                i += 4
+            elif wire == 1:  # 64-bit: bounds-check and skip (no consumer)
+                if i + 8 > n:
+                    return None
+                i += 8
+            else:  # groups (3/4) / unknown: not a message we understand
+                return None
+    except ValueError:
+        return None
+    return fields
+
+
+def _collect_usage(buf: bytes, out: list[dict], depth: int = 0) -> None:
+    """Recursively collect usage records (``f3 == f9 + f10``)."""
+    if depth > 12:
+        return
+    fields = _parse_message(buf)
+    if fields is None:
+        return
+    v = {fn: val for fn, wt, val in fields if wt == 0}
+    # proto3 omits zero-valued scalars: a fully-cached turn omits f2 and a
+    # thinking-only turn omits f10, so require f3 plus at least one of f9/f10.
+    # f3 > 0 keeps config-shaped noise records (f3=0, no f9/f10) from matching.
+    if 3 in v and v[3] > 0 and (9 in v or 10 in v) and v[3] == v.get(9, 0) + v.get(10, 0):
+        out.append(
+            {
+                "input": v.get(2, 0),
+                "cached": v.get(5, 0),
+                "reasoning": v.get(9, 0),
+                "output": v.get(10, 0),
+            }
+        )
+    for _fn, wire, val in fields:
+        if wire == 2 and isinstance(val, bytes | bytearray) and len(val) >= 2:
+            _collect_usage(val, out, depth + 1)
+
+
+def _turn_usage(blob: bytes) -> dict | None:
+    """Return the main-generation usage record for one blob.
+
+    The record is mirrored at two wire paths with identical values; picking the
+    largest-total record dedups the mirrors and keeps any smaller side-call
+    record from shadowing the real turn.
+    """
+    records: list[dict] = []
+    _collect_usage(bytes(blob), records)
+    if not records:
+        return None
+    return max(records, key=lambda r: r["input"] + r["cached"] + r["reasoning"] + r["output"])
+
+
+def db_token_state(db_path: str | os.PathLike[str]) -> tuple[str, dict | None]:
+    """Read canonical token usage from an ``agy`` conversation DB.
+
+    Returns:
+        A ``(state, tokens)`` tuple so the caller can handle the async flush:
+
+        * ``("ready", tokens)`` — usage decoded; ``tokens`` is the canonical dict.
+        * ``("pending", None)`` — an ``agy`` DB whose usage rows have not flushed
+          yet (retry after a short wait).
+        * ``("undecodable", None)`` — usage rows exist but none matches the
+          expected layout (schema drift; retrying will not help).
+        * ``("absent", None)`` — no DB, not an ``agy`` DB, or unreadable.
+
+    Buckets are summed per-turn across ``gen_metadata``. ``cached`` is a genuine
+    ``0`` when no turn hit the cache (protobuf omits the field when zero);
+    ``cache_write`` is always ``None``. ``total`` is the full footprint
+    (input + cached + reasoning + output), the same quantity as Gemini's
+    provider ``total_tokens``.
+    """
+    if not db_path or not os.path.exists(db_path):
+        return "absent", None
+    try:
+        con = sqlite3.connect(f"file:{os.fspath(db_path)}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return "absent", None
+    try:
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "gen_metadata" not in tables:
+            return ("pending", None) if tables & _AGY_DB_TABLES else ("absent", None)
+        blobs = [row[0] for row in con.execute("SELECT data FROM gen_metadata ORDER BY idx")]
+    except sqlite3.Error:
+        return "absent", None
+    finally:
+        con.close()
+
+    if not blobs:
+        return "pending", None  # table created but rows not flushed yet
+
+    totals = {"input": 0, "cached": 0, "reasoning": 0, "output": 0}
+    seen_turn = False
+    for blob in blobs:
+        if not isinstance(blob, bytes | bytearray):
+            continue
+        usage = _turn_usage(blob)
+        if usage is None:
+            continue
+        seen_turn = True
+        for key in totals:
+            totals[key] += usage[key]
+    if not seen_turn:
+        return "undecodable", None  # rows flushed, but no usage record matched
+    tokens = empty_tokens()
+    tokens.update(
+        input=totals["input"],
+        cached=totals["cached"],
+        reasoning=totals["reasoning"],
+        output=totals["output"],
+        total=totals["input"] + totals["cached"] + totals["reasoning"] + totals["output"],
+    )
+    return "ready", tokens
