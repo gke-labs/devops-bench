@@ -48,7 +48,7 @@ done
 if [[ "$MODE" == "suggest" ]]; then
   [[ -n "$UPSTREAM_TREE" && -f "$UPSTREAM_TREE" ]] \
     || { echo "error: --suggest-flips needs --upstream-tree <file> (git ls-tree -r <upstream-ref>)" >&2; exit 2; }
-  grep -qE '^[0-9]+ blob [0-9a-f]{40,64}\t' "$UPSTREAM_TREE" \
+  grep -qE $'^[0-9]+ blob [0-9a-f]{40,64}\t' "$UPSTREAM_TREE" \
     || { echo "error: $UPSTREAM_TREE has no blob hashes; generate it with 'git ls-tree -r <ref>' (not --name-only)" >&2; exit 2; }
 
   LOCAL_TREE="$(mktemp)"
