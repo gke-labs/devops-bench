@@ -1,3 +1,17 @@
+# Copyright 2026 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Reusable, harness-agnostic GCE bastion for running the eval harness.
 #
 # The bastion is a plain Compute Engine VM (NOT Cloud Workstations). It runs as a
@@ -80,6 +94,12 @@ resource "google_compute_instance" "bastion" {
   service_account {
     email  = google_service_account.bastion.email
     scopes = ["cloud-platform"]
+  }
+
+  # Block project-wide SSH keys so access relies solely on instance-level keys
+  # injected via IAP/OS Login, limiting blast radius if project keys leak.
+  metadata = {
+    block-project-ssh-keys = "true"
   }
 
   metadata_startup_script = file("${path.module}/startup.sh")

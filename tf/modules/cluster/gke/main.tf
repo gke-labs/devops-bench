@@ -1,10 +1,41 @@
+# Copyright 2026 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+terraform {
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = ">= 5.0.0"
+    }
+  }
+}
+
 # account_id is capped at 30 chars, so we can't fit a long cluster name. Truncating
 # the name alone is unsafe: names that share a prefix but differ only in a suffix past
 # the cutoff (e.g. "<base>-east" vs "<base>-west" when <base> is long) would collapse to
 # the same account_id and collide. Append a short hash of the *full* cluster name so the
 # id stays unique per cluster regardless of where the readable part is truncated.
+locals {
+  # A GCP IAM account_id must be lowercase letters, digits, and hyphens. Lowercase
+  # the cluster name and collapse any other characters (uppercase, underscores,
+  # dots) into hyphens before slicing so the readable part is always valid. The
+  # md5 hash below is over the *original* name, so distinct names still differ.
+  gke_nodes_name_slug = trim(substr(replace(lower(var.cluster_name), "/[^a-z0-9]+/", "-"), 0, 9), "-")
+}
+
 resource "google_service_account" "gke_nodes" {
-  account_id   = "gke-nodes-${trim(substr(var.cluster_name, 0, 9), "-")}-${substr(md5(var.cluster_name), 0, 6)}"
+  account_id   = "gke-nodes-${local.gke_nodes_name_slug}-${substr(md5(var.cluster_name), 0, 6)}"
   display_name = "GKE Node Service Account for ${var.cluster_name}"
 }
 
@@ -56,7 +87,8 @@ resource "google_compute_firewall" "allow_iap_ssh" {
     ports    = ["22"]
   }
 
-  source_ranges = ["35.235.240.0/20"]
+  source_ranges           = ["35.235.240.0/20"]
+  target_service_accounts = [google_service_account.gke_nodes.email]
 }
 
 resource "google_container_cluster" "primary" {
@@ -90,8 +122,8 @@ locals {
     "a2" = "nvidia-tesla-a100"
   }
 
-  is_g2 = length(regexall("^g2-", var.machine_type)) > 0
-  is_a2 = length(regexall("^a2-", var.machine_type)) > 0
+  is_g2 = startswith(var.machine_type, "g2-")
+  is_a2 = startswith(var.machine_type, "a2-")
 
   # Determine final GPU attachment parameters
   enable_gpu = var.gpu_type != "" || local.is_g2 || local.is_a2
