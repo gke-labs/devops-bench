@@ -62,10 +62,10 @@ MIGRATED = [
     # "devops_bench/k8s/**",
     # "tests/unit/k8s/**",
     # cloud providers (base, gcp, kind)
-    # "devops_bench/providers/**",
-    # "tests/unit/providers/**",
+    "devops_bench/providers/**",
+    "tests/unit/providers/**",
     # Terraform modules (path kept as tf/modules — no infra/ rename)
-    # "tf/modules/**",
+    "tf/modules/**",
     # result model (row, aggregate, normalize)
     # "devops_bench/results/**",
     # "tests/unit/results/**",
