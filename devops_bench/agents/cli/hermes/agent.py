@@ -25,7 +25,11 @@ from typing import TYPE_CHECKING
 import yaml
 
 from devops_bench.agents.base import AGENTS, AgentHarness
-from devops_bench.agents.cli.hermes.parsing import extract_trajectory_from_db
+from devops_bench.agents.cli.hermes.parsing import (
+    empty_tokens,
+    extract_tokens_from_db,
+    extract_trajectory_from_db,
+)
 from devops_bench.agents.config import AgentConfig
 from devops_bench.agents.result import AgentResult
 from devops_bench.agents.shared.cli_capabilities import (
@@ -170,10 +174,12 @@ class HermesAgent(AgentHarness):
                 stderr_text = exc.stderr or ""
                 trajectory = []
                 export_errors = []
+                tokens = empty_tokens()
                 db_path = run_path / _HERMES_STATE_DB
                 if db_path.exists():
                     try:
                         trajectory, export_errors = extract_trajectory_from_db(db_path)
+                        tokens = extract_tokens_from_db(db_path)
                     except Exception as db_exc:
                         _log.warning("Failed to extract trajectory on timeout: %s", db_exc)
                         export_errors.append(f"Failed to extract trajectory on timeout: {db_exc}")
@@ -181,6 +187,7 @@ class HermesAgent(AgentHarness):
                 return AgentResult(
                     output=f"Timeout expired.\n\n=== STDOUT ===\n{stdout_text}\n\n=== STDERR ===\n{stderr_text}",
                     trajectory=trajectory,
+                    tokens=tokens,
                     errors=[f"hermes agent timed out after {self.config.timeout_sec}s"]
                     + export_errors,
                     metadata={"timeout": True},
@@ -202,10 +209,12 @@ class HermesAgent(AgentHarness):
             db_path = run_path / _HERMES_STATE_DB
             trajectory, export_errors = extract_trajectory_from_db(db_path)
             errors.extend(export_errors)
+            tokens = extract_tokens_from_db(db_path)
 
         return AgentResult(
             output=stdout_text,
             trajectory=trajectory,
+            tokens=tokens,
             errors=errors,
             metadata=metadata,
         )

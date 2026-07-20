@@ -22,7 +22,11 @@ from pathlib import Path
 
 import pytest
 
-from devops_bench.agents.cli.hermes.parsing import extract_trajectory_from_db
+from devops_bench.agents.cli.hermes.parsing import (
+    empty_tokens,
+    extract_tokens_from_db,
+    extract_trajectory_from_db,
+)
 
 
 @pytest.fixture
@@ -215,3 +219,96 @@ def test_parsing_missing_tool_name(test_db_path: Path):
     assert errors == []
     assert len(trajectory) == 1
     assert trajectory[0]["name"] == "unknown"
+
+
+# -- extract_tokens_from_db ---------------------------------------------------
+
+
+def init_db_schema_with_tokens(db_path: Path) -> None:
+    """Schema matching current Hermes: sessions carries per-session token counts."""
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY,
+            started_at TIMESTAMP,
+            input_tokens INTEGER,
+            output_tokens INTEGER,
+            reasoning_tokens INTEGER,
+            cache_read_tokens INTEGER,
+            cache_write_tokens INTEGER
+        )
+    """
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_empty_tokens_all_none():
+    assert empty_tokens() == {
+        "input": None,
+        "cached": None,
+        "cache_write": None,
+        "reasoning": None,
+        "output": None,
+        "total": None,
+    }
+
+
+def test_extract_tokens_reads_session_counts(test_db_path: Path):
+    init_db_schema_with_tokens(test_db_path)
+    conn = sqlite3.connect(test_db_path)
+    conn.execute("INSERT INTO sessions VALUES ('s1', NULL, 2748, 11267, 152, 334987, 12000)")
+    conn.commit()
+    conn.close()
+
+    assert extract_tokens_from_db(test_db_path) == {
+        "input": 2748,
+        "cached": 334987,
+        "cache_write": 12000,
+        "reasoning": 152,
+        "output": 11267,
+        "total": 2748 + 334987 + 12000 + 152 + 11267,
+    }
+
+
+def test_extract_tokens_uses_latest_session(test_db_path: Path):
+    init_db_schema_with_tokens(test_db_path)
+    conn = sqlite3.connect(test_db_path)
+    conn.execute("INSERT INTO sessions VALUES ('s1', NULL, 1, 1, 0, 0, 0)")
+    conn.execute("INSERT INTO sessions VALUES ('s2', NULL, 500, 40, 5, 900, 30)")
+    conn.commit()
+    conn.close()
+
+    tokens = extract_tokens_from_db(test_db_path)
+    assert tokens["input"] == 500
+    assert tokens["cached"] == 900
+
+
+def test_extract_tokens_null_columns_stay_none(test_db_path: Path):
+    # NULL counts (e.g. a crashed run) must surface as None, not 0.
+    init_db_schema_with_tokens(test_db_path)
+    conn = sqlite3.connect(test_db_path)
+    conn.execute("INSERT INTO sessions VALUES ('s1', NULL, 100, 7, NULL, NULL, NULL)")
+    conn.commit()
+    conn.close()
+
+    tokens = extract_tokens_from_db(test_db_path)
+    assert tokens["input"] == 100
+    assert tokens["output"] == 7
+    assert tokens["reasoning"] is None
+    assert tokens["cached"] is None
+    assert tokens["cache_write"] is None
+    assert tokens["total"] == 107
+
+
+def test_extract_tokens_old_schema_without_token_columns(test_db_path: Path):
+    # Older Hermes schemas lack the token columns entirely -> all-None.
+    init_db_schema(test_db_path)
+    assert extract_tokens_from_db(test_db_path) == empty_tokens()
+
+
+def test_extract_tokens_missing_or_invalid_db(test_db_path: Path):
+    assert extract_tokens_from_db(test_db_path) == empty_tokens()  # no file
+    test_db_path.write_text("not a database")
+    assert extract_tokens_from_db(test_db_path) == empty_tokens()

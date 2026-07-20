@@ -22,6 +22,73 @@ from pathlib import Path
 
 from devops_bench.agents.result import ToolCall
 
+# Canonical token buckets (harness-local until the unified token schema lands):
+# ``input`` is the non-cached prompt, ``cached`` is cache reads, ``output``
+# excludes ``reasoning``, and ``total`` is the sum of all buckets.
+_TOKEN_BUCKETS = ("input", "cached", "cache_write", "reasoning", "output", "total")
+
+# Hermes ``sessions`` columns -> canonical buckets. Hermes populates these via
+# its per-turn cost calculation; ``cache_write_tokens`` exists because Hermes
+# drives Anthropic prompt caching with explicit cache_control breakpoints.
+_SESSION_TOKEN_COLUMNS = {
+    "input_tokens": "input",
+    "cache_read_tokens": "cached",
+    "cache_write_tokens": "cache_write",
+    "reasoning_tokens": "reasoning",
+    "output_tokens": "output",
+}
+
+
+def empty_tokens() -> dict:
+    """Return the canonical token dict with every bucket ``None`` (unavailable)."""
+    return dict.fromkeys(_TOKEN_BUCKETS, None)
+
+
+def extract_tokens_from_db(db_path: Path) -> dict:
+    """Read canonical token usage from the latest session in Hermes ``state.db``.
+
+    The ``sessions`` table carries per-session token counts
+    (``input_tokens`` / ``output_tokens`` / ``reasoning_tokens`` /
+    ``cache_read_tokens`` / ``cache_write_tokens``). Columns are probed via
+    ``PRAGMA table_info`` so older Hermes schemas simply yield ``None`` buckets;
+    any read failure yields all-``None`` (never a fabricated ``0``).
+
+    Args:
+        db_path: Path to the run's ``state.db``.
+
+    Returns:
+        The canonical token dict; ``total`` is the sum of reported buckets, or
+        ``None`` when nothing was reported.
+    """
+    tokens = empty_tokens()
+    if not db_path.exists():
+        return tokens
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            cursor = conn.cursor()
+            present = {row[1] for row in cursor.execute("PRAGMA table_info(sessions)")}
+            columns = [c for c in _SESSION_TOKEN_COLUMNS if c in present]
+            if not columns:
+                return tokens
+            cursor.execute(
+                f"SELECT {', '.join(columns)} FROM sessions ORDER BY id DESC LIMIT 1"  # noqa: S608
+            )
+            row = cursor.fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return tokens
+    if row is None:
+        return tokens
+    for column, value in zip(columns, row, strict=True):
+        if isinstance(value, int) and not isinstance(value, bool):
+            tokens[_SESSION_TOKEN_COLUMNS[column]] = value
+    reported = [tokens[b] for b in _TOKEN_BUCKETS[:-1] if tokens[b] is not None]
+    if reported:
+        tokens["total"] = sum(reported)
+    return tokens
+
 
 def extract_trajectory_from_db(db_path: Path) -> tuple[list[dict], list[str]]:
     """Extract trajectory (tool calls and results) from Hermes state.db."""
