@@ -18,12 +18,13 @@ agent.run(prompt) -> AgentResult     # base: latency + safety net
 
 ## Supported harnesses
 
-Three harnesses ship today. Each self-registers under a canonical key.
+Each harness self-registers under a canonical key.
 
 | Key | Wraps | How it runs | Capabilities |
 | --- | --- | --- | --- |
 | `gemini` | The Google **Gemini CLI** binary | Headless subprocess; trajectory parsed from `--output-format stream-json` on stdout | MCP, skills, rules, allowed-tools |
 | `openclaw` | The **Openclaw Agent CLI** | `openclaw agent --local` with per-run isolated state/config; trajectory via `openclaw sessions export-trajectory` | MCP, skills, rules |
+| `hermes` | The **Hermes Agent CLI** binary | Subprocess driving `hermes chat` with a run-scoped home directory (`$HERMES_HOME`); trajectory and token usage parsed from SQLite `state.db` (tokens summed from the `sessions` table) | MCP, skills, rules |
 | `api` | **In-process** model call | Calls `get_model(provider, model)` and runs a model-agnostic MCP tool-use loop (`max_turns`, default 50) | MCP (spawns a stdio server), skills (served as tools), rules (system instruction) |
 
 > `oc` is just a shorthand alias for the `openclaw` CLI; this doc uses `openclaw` throughout.
