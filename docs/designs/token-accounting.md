@@ -27,6 +27,14 @@ Two systematic distortions exist today:
 schema carries them through to the leaderboard, and (c) a stacked
 input/cache/output chart is a straight read off the row.
 
+**Status:** implemented for the shared schema (`agents/result.py`), the `api`
+and `gemini` harnesses, the row layer (`normalize.py` / `ResultRow` /
+`schema.d.ts` / ingest validation). The `antigravity` harness emits the shape
+via its own decoder (switching it to the shared helper is a one-line follow-up
+once both changes land); `openclaw` passes provider-native usage through, which
+the normalizer's aliases still flatten (`cached`/`reasoning` stay `None` until
+it is canonicalized). The stacked chart itself is follow-up dashboard work.
+
 ## The canonical schema
 
 Every harness returns `AgentResult.tokens` in this shape. Missing buckets are
@@ -90,22 +98,25 @@ Notes:
 `results/normalize.py::normalize_tokens` currently returns `(input, output)`
 only. This design widens the row contract:
 
-- Add `cached_tokens` (and `reasoning_tokens`, optionally `total_tokens`) to
-  `ResultRow`, with a `SCHEMA_VERSION` bump.
+- Add `cached_tokens` / `reasoning_tokens` to `ResultRow` — additive nullable
+  fields, so no `SCHEMA_VERSION` bump is needed and historical rows stay valid.
 - Add `cached` / `reasoning` aliases to the normalizer's key tables; keep the
   existing aliases for historical `results.json` files.
-- Forward the new fields through the leaderboard ingest, and render a stacked
-  `input` / `cached` / `output` bar per model × harness arm.
+- Mirror the fields on the dashboard `ResultRow` interface and accept them
+  (absent-tolerant) in the ingest validator; the stacked
+  `input` / `cached` / `output` bar per model × harness arm is follow-up
+  dashboard work.
 
 Because `input` is non-cached everywhere, the stacked total is the true per-task
 footprint and is finally comparable across harnesses.
 
 ## Shared schema location
 
-The bucket tuple and `empty_tokens()` helper move from
-`agents/cli/antigravity/parsing.py` to a shared module (`agents/result.py`), and
+The bucket tuple and `empty_tokens()` helper live in `agents/result.py`, and
 each harness's extractor returns the canonical dict. Extraction stays
 per-harness (each reads a different surface); only the output shape is shared.
+The `antigravity` harness's local copy folds into the shared helper once both
+changes land.
 
 ## Migration / compatibility
 

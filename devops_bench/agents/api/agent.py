@@ -26,6 +26,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from devops_bench.agents import result as agents_result
 from devops_bench.agents.api.mcp import MCPClient, extract_tool_text
 from devops_bench.agents.api.skills import (
     SkillToolInfo,
@@ -142,33 +143,31 @@ def _fold_with_extraction_errors(
 
 
 def extract_tokens(response: Any) -> dict:
-    """Pull provider token usage off the final raw response.
+    """Pull provider token usage off the final raw response, canonicalized.
 
-    Detects which provider's usage shape is present and maps each onto a stable
-    key scheme (``prompt_tokens`` / ``candidates_tokens`` / ``total_tokens``) so
-    ``results.json`` stays consistent across providers.
+    Detects which provider's usage shape is present and maps it onto the
+    canonical token buckets (:func:`devops_bench.agents.result.empty_tokens`),
+    where ``input`` is the **non-cached** prompt and ``output`` excludes
+    ``reasoning``:
 
-    Supported shapes:
+    * **Google** — ``usage_metadata``: ``input = prompt_token_count −
+      cached_content_token_count (+ tool_use_prompt_token_count)``,
+      ``reasoning = thoughts_token_count``.
+    * **Anthropic** — ``usage``: ``input_tokens`` is already non-cached;
+      cache reads/writes map to ``cached`` / ``cache_write``.
+    * **OpenAI / Ollama** — ``usage``: ``input = prompt_tokens −
+      prompt_tokens_details.cached_tokens``, ``output = completion_tokens −
+      completion_tokens_details.reasoning_tokens``.
 
-    * **Google** — ``response.usage_metadata`` with ``prompt_token_count`` /
-      ``candidates_token_count`` / ``total_token_count``.
-    * **Anthropic** — ``response.usage`` with ``input_tokens`` /
-      ``output_tokens`` (no aggregated total; the sum is used).
-    * **OpenAI / Ollama** — ``response.usage`` with ``prompt_tokens`` /
-      ``completion_tokens`` / ``total_tokens``.
-
-    The "output" field (``candidates_tokens``) absorbs whichever provider name
-    is present (``candidates_token_count`` / ``output_tokens`` /
-    ``completion_tokens``). When ``total`` is absent it is computed from the
-    other two so metrics never see ``0`` for a non-empty run.
+    ``total`` prefers the provider total and falls back to the bucket sum.
+    Unreported buckets stay ``None`` — never ``0``.
 
     Args:
         response: The last raw provider response from
             :attr:`LoopResult.response`, or ``None``.
 
     Returns:
-        A ``{"prompt_tokens", "candidates_tokens", "total_tokens"}`` dict, or
-        ``{}`` when no usage is reported.
+        The canonical token dict, or ``{}`` when no usage is reported.
     """
     if response is None:
         return {}
@@ -176,38 +175,53 @@ def extract_tokens(response: Any) -> dict:
     if usage is None:
         return {}
 
-    # Try the Google attr first, then the OpenAI-style attr, then the Anthropic
-    # alias.
-    prompt = _first_int_attr(usage, "prompt_token_count", "prompt_tokens", "input_tokens")
-    candidates = _first_int_attr(
-        usage, "candidates_token_count", "completion_tokens", "output_tokens"
-    )
-    total = _first_int_attr(usage, "total_token_count", "total_tokens")
-    # Anthropic emits no aggregated total; compute it so non-zero usage never
-    # surfaces as ``total_tokens: 0`` in results.json.
-    if total == 0 and (prompt or candidates):
-        total = prompt + candidates
+    tokens = agents_result.empty_tokens()
+    if getattr(usage, "prompt_token_count", None) is not None:  # Google
+        prompt = _opt_int_attr(usage, "prompt_token_count")
+        cached = _opt_int_attr(usage, "cached_content_token_count")
+        tool_use = _opt_int_attr(usage, "tool_use_prompt_token_count")
+        inp = prompt if cached is None else prompt - cached
+        if inp is not None and tool_use:
+            inp += tool_use
+        tokens.update(
+            input=inp,
+            cached=cached,
+            reasoning=_opt_int_attr(usage, "thoughts_token_count"),
+            output=_opt_int_attr(usage, "candidates_token_count"),
+            total=_opt_int_attr(usage, "total_token_count"),
+        )
+    elif getattr(usage, "prompt_tokens", None) is not None:  # OpenAI / Ollama
+        prompt = _opt_int_attr(usage, "prompt_tokens")
+        completion = _opt_int_attr(usage, "completion_tokens")
+        cached = _opt_int_attr(getattr(usage, "prompt_tokens_details", None), "cached_tokens")
+        reasoning = _opt_int_attr(
+            getattr(usage, "completion_tokens_details", None), "reasoning_tokens"
+        )
+        tokens.update(
+            input=prompt if cached is None else prompt - cached,
+            cached=cached,
+            reasoning=reasoning,
+            output=completion if reasoning is None else completion - reasoning,
+            total=_opt_int_attr(usage, "total_tokens"),
+        )
+    else:  # Anthropic: input_tokens is already the non-cached prompt
+        tokens.update(
+            input=_opt_int_attr(usage, "input_tokens"),
+            cached=_opt_int_attr(usage, "cache_read_input_tokens"),
+            cache_write=_opt_int_attr(usage, "cache_creation_input_tokens"),
+            output=_opt_int_attr(usage, "output_tokens"),
+        )
+    if tokens["total"] is None:
+        parts = [tokens[k] for k in ("input", "cached", "cache_write", "reasoning", "output")]
+        if any(p is not None for p in parts):
+            tokens["total"] = sum(p for p in parts if p is not None)
+    return tokens
 
-    return {
-        "prompt_tokens": prompt,
-        "candidates_tokens": candidates,
-        "total_tokens": total,
-    }
 
-
-def _first_int_attr(obj: Any, *names: str) -> int:
-    """Return the first ``names`` attribute on ``obj`` that holds a non-``None`` int.
-
-    Provider usage objects are typed namespaces / pydantic models with the
-    counts as plain ints; an unset field is either absent or ``None``. The
-    helper falls through both cases and returns ``0`` when no name matches so
-    the caller never has to ``None``-guard the arithmetic.
-    """
-    for name in names:
-        value = getattr(obj, name, None)
-        if value is not None:
-            return int(value)
-    return 0
+def _opt_int_attr(obj: Any, name: str) -> int | None:
+    """Return ``obj.<name>`` as an int, or ``None`` when absent/unset."""
+    value = getattr(obj, name, None)
+    return int(value) if value is not None and not isinstance(value, bool) else None
 
 
 def _build_dispatch(

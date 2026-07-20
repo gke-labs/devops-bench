@@ -64,6 +64,8 @@ export function validateRow(row) {
     // uncaptured usage); otherwise apply the numeric check.
     const intOrNull = (k, check) => { if (row[k] !== null) int(k, check); };
     const floatOrNull = (k, check) => { if (row[k] !== null) float(k, check); };
+    // Additive fields: absent (historical rows) and null are both valid.
+    const optIntOrNull = (k, check) => { if (row[k] !== undefined && row[k] !== null) int(k, check); };
 
     str("setupId");
     str("model");
@@ -85,6 +87,8 @@ export function validateRow(row) {
     float("latencySec", nonNeg);
     intOrNull("inputTokens", nonNeg);
     intOrNull("outputTokens", nonNeg);
+    optIntOrNull("cachedTokens", nonNeg);
+    optIntOrNull("reasoningTokens", nonNeg);
 
     return errs;
 }
