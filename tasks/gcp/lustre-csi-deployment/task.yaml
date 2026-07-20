@@ -28,90 +28,15 @@ prompt: |
   4. Create a ClusterIP Service named `gemma-service` exposing port 8000.
 expected_output: |
   critical requirements:
-  - Expected Tool Call: generate_manifest
-  - Create a PersistentVolume with driver lustre.csi.storage.gke.io referencing the existing instance.
-  - Set the PV volumeHandle to {{GCP_PROJECT_ID}}/us-central1-a/lustre-{{GKE_CLUSTER_NAME}}.
-  - Query the Lustre instance mount point and specify the IP and filesystem in the PV volumeAttributes.
-  - Create a PersistentVolumeClaim named gemma-pvc referencing the gemma-pv volume.
-  - Deploy gemma-inference-staging using nginx:alpine.
-  - Configure the deployment to request 1 GPU (nvidia.com/gpu: 1) and mount gemma-pvc at /models.
-  - Create a ClusterIP Service named gemma-service exposing port 8000.
 
-  Expected Manifest Generated:
-  apiVersion: v1
-  kind: PersistentVolume
-  metadata:
-    name: gemma-pv
-  spec:
-    storageClassName: lustre-sc
-    capacity:
-      storage: 18000Gi
-    accessModes:
-    - ReadWriteMany
-    persistentVolumeReclaimPolicy: Retain
-    volumeMode: Filesystem
-    csi:
-      driver: lustre.csi.storage.gke.io
-      volumeHandle: {{GCP_PROJECT_ID}}/us-central1-a/lustre-{{GKE_CLUSTER_NAME}}
-      volumeAttributes:
-        ip: <instance-mount-point-ip>
-        filesystem: lustrefs
-  ---
-  apiVersion: v1
-  kind: PersistentVolumeClaim
-  metadata:
-    name: gemma-pvc
-    namespace: default
-  spec:
-    accessModes:
-    - ReadWriteMany
-    storageClassName: lustre-sc
-    volumeName: gemma-pv
-    resources:
-      requests:
-        storage: 18000Gi
-  ---
-  apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: gemma-inference-staging
-    namespace: default
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: gemma
-    template:
-      metadata:
-        labels:
-          app: gemma
-      spec:
-        containers:
-        - name: gemma-container
-          image: nginx:alpine
-          volumeMounts:
-          - name: model-volume
-            mountPath: /models
-          resources:
-            limits:
-              nvidia.com/gpu: 1
-        volumes:
-        - name: model-volume
-          persistentVolumeClaim:
-            claimName: gemma-pvc
-  ---
-  apiVersion: v1
-  kind: Service
-  metadata:
-    name: gemma-service
-    namespace: default
-  spec:
-    type: ClusterIP
-    ports:
-    - port: 8000
-      targetPort: 80
-    selector:
-      app: gemma
+  - Query the pre-provisioned Managed Lustre instance 'lustre-{{GKE_CLUSTER_NAME}}' in zone us-central1-a (e.g. via 'gcloud lustre instances describe') to obtain its mount IP and filesystem name.
+  - Apply a PersistentVolume named gemma-pv backed by the Managed Lustre CSI driver lustre.csi.storage.gke.io, with volumeHandle {{GCP_PROJECT_ID}}/us-central1-a/lustre-{{GKE_CLUSTER_NAME}} and volumeAttributes populated with the queried mount IP and filesystem.
+  - Apply a PersistentVolumeClaim named gemma-pvc that statically binds to gemma-pv (volumeName gemma-pv, with a storageClassName consistent with the PV) rather than dynamically provisioning storage.
+  - Apply the gemma-inference-staging Deployment using image nginx:alpine, requesting 1 GPU (nvidia.com/gpu: 1) and mounting the gemma-pvc volume at /models.
+  - Apply a ClusterIP Service named gemma-service exposing port 8000 and selecting the gemma-inference-staging pods.
+  - Confirm that all four resources (the PersistentVolume, PersistentVolumeClaim, Deployment, and Service) were successfully applied to the '{{GKE_CLUSTER_NAME}}' cluster in project '{{GCP_PROJECT_ID}}'.
+
+  Expected Manifest Generated: N/A, not a manifest generation request.
 
 documentation:
   - doc_name: "GKE Managed Lustre CSI Driver Guide (existing instance)"
