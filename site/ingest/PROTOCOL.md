@@ -59,6 +59,7 @@ always `0`; the schema is already shaped for multi-iteration runs (§4).
 | `outcomeScore` | number \| null | `[0, 1]` or null | Judge outcome score. Passes at `>= 0.7` (the threshold lives in `derive`). **`null` when unscored** (§5). |
 | `toolScore` | number \| null | `[0, 1]` or null | Tool-invocation score; `null` when unscored. |
 | `latencySec` | number | `>= 0` | Agent wall-clock latency, seconds. |
+| `turns` | integer \| null (optional) | `>= 0` or null | Agent trajectory steps (tool calls + text turns) — an efficiency axis. `null` when no trajectory was captured; omitted by pre-turns rows. |
 | `inputTokens` | integer \| null | `>= 0` or null | Prompt tokens consumed; `null` when usage was not captured. |
 | `outputTokens` | integer \| null | `>= 0` or null | Completion tokens produced; `null` when usage was not captured. |
 

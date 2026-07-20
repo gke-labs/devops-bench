@@ -83,6 +83,8 @@ export function validateRow(row) {
     floatOrNull("outcomeScore", num01);
     floatOrNull("toolScore", num01);
     float("latencySec", nonNeg);
+    // turns: efficiency axis, OPTIONAL (pre-turns rows omit it). Validate only when present.
+    if ("turns" in row) intOrNull("turns", nonNeg);
     intOrNull("inputTokens", nonNeg);
     intOrNull("outputTokens", nonNeg);
 

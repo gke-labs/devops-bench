@@ -47,6 +47,16 @@ describe("validateRow", () => {
         expect(errs.join()).toMatch(/runId/);
     });
 
+    it("accepts turns (optional): absent, null, or a non-negative integer", () => {
+        expect(validateRow(validRow)).toEqual([]); // absent
+        expect(validateRow({ ...validRow, turns: null })).toEqual([]);
+        expect(validateRow({ ...validRow, turns: 12 })).toEqual([]);
+    });
+
+    it("flags a negative turns", () => {
+        expect(validateRow({ ...validRow, turns: -1 }).join()).toMatch(/turns/);
+    });
+
     it("accepts a runId with a uniqueness suffix (parallel/aggregated runs)", () => {
         expect(validateRow({ ...validRow, runId: "run_20260601_120000_12345" })).toEqual([]);
         expect(validateRow({ ...validRow, runId: "run_20260601_120000_matrix-7" })).toEqual([]);

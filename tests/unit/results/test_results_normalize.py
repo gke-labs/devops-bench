@@ -146,6 +146,7 @@ def test_build_rows_success_record():
         "folder": "task_001",
         "status": "success",
         "latency": 42.5,
+        "trajectory": [{"name": "list"}, {"name": "get"}, {"name": "apply"}],
         "tokens": {"prompt_tokens": 100, "candidates_tokens": 20},
         "scores": {
             OUTCOME_SCORE_KEY: {"score": 0.9, "success": True, "reason": "ok"},
@@ -170,6 +171,7 @@ def test_build_rows_success_record():
         "outcomeScore": 0.9,
         "toolScore": 0.7,
         "latencySec": 42.5,
+        "turns": 3,
         "inputTokens": 100,
         "outputTokens": 20,
         "status": "success",
@@ -194,7 +196,21 @@ def test_build_rows_failed_record_has_null_scores_and_tokens():
     assert row.tool_score is None
     assert row.input_tokens is None
     assert row.output_tokens is None
+    assert row.turns is None  # no trajectory captured
     assert row.iteration == 0
+
+
+def test_build_rows_turns_counts_trajectory_steps():
+    empty = build_rows(
+        [{"name": "n", "folder": "f", "status": "success", "trajectory": [], "scores": {}}],
+        _manifest(),
+    )[0]
+    assert empty.turns == 0  # ran, took no steps — distinct from None (no data)
+    stepped = build_rows(
+        [{"name": "n", "folder": "f", "status": "success", "trajectory": [{}, {}], "scores": {}}],
+        _manifest(),
+    )[0]
+    assert stepped.turns == 2
 
 
 def test_build_rows_preserves_order_and_run_identity():
@@ -231,6 +247,7 @@ def test_result_row_keys_match_typescript_interface():
         "outcomeScore",
         "toolScore",
         "latencySec",
+        "turns",
         "inputTokens",
         "outputTokens",
         "validated",
