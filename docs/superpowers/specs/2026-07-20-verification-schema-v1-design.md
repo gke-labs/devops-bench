@@ -98,26 +98,45 @@ Named so nobody assumes they exist:
 
 ### Component 1: Task schema
 
-New model, in a new module — independent of PR #203's differently-shaped `VerificationEntry`:
+**Correction (discovered while planning, not part of the original approval):** `Task.verification_spec`
+cannot be retyped in place. It carries an intentional, currently-tested opacity contract
+(`test_chaos_and_verification_specs_are_opaque`, `tests/unit/tasks/test_tasks_schema.py:186-192`:
+"These specs are parsed downstream, so the schema accepts any shape") and the one real consumer,
+`tasks/common/optimize-scale/task.yaml:43-46`, uses a `{name, spec}` wrapper shape with no
+`role`/`severity` — a different shape than vocab.md's entries. Retyping it would break that test
+and that task. Instead, add a **new, separate field**, `Task.verification_entries`, leaving
+`verification_spec` completely untouched (still `Any`, still opaque, still exercised only by
+`optimize-scale`'s chaos-triggered verification path).
+
+New model, in `devops_bench/tasks/schema.py` next to `Task` (co-located, same file — not a new
+module; matches the existing `Constraint`/`DocumentationEntry` precedent,
+`devops_bench/tasks/schema.py:49-112`), independent of PR #203's differently-shaped
+`VerificationEntry`:
 
 ```python
 class VerificationEntry(BaseModel):
+    model_config = _STRICT
     name: str
     role: Literal["objective", "safeguard"]
     severity: Literal["recoverable", "catastrophic"] | None = None
     # severity required iff role == "safeguard", forbidden iff role == "objective"
+    # (enforced by a model_validator(mode="after"))
     mode: Literal["converge", "assert", "hold"] | None = None
-    # default when unset: objective -> converge, safeguard -> assert
+    # default when unset resolved at runtime, not here: objective -> converge, safeguard -> assert
     weight: float = 1.0
-    check: CheckNode
-    # a leaf verifier or a combinator tree (Component 2).
+    check: dict[str, Any]
+    # a leaf verifier or combinator tree (Component 2), kept as a RAW mapping here (not parsed
+    # into a CheckNode) because it still contains unsubstituted `{{NAMESPACE}}`-style placeholders
+    # at Task-load time -- substitution + parse_node() dispatch happens later, at run time
+    # (Component 3), mirroring how `verification_spec` itself defers parsing today
+    # (`_build_verification_mapping`, `devops_bench/evalharness/default.py:428-511`).
     # role/severity/weight/mode live ONLY on the entry, never inside `check` --
     # a departure from PR #203, which put weight/mode on BaseVerifier itself.
 ```
 
-`Task.verification_spec` in `devops_bench/tasks/schema.py:146` changes from `Any` to
-`list[VerificationEntry] | None`, following the file's existing "strict but additive" pattern
-(see `Constraint`/`DocumentationEntry`, `devops_bench/tasks/schema.py:49-112`, for precedent).
+`Task.verification_entries: list[VerificationEntry] | None = None` is added to
+`devops_bench/tasks/schema.py:146` as a sibling of `verification_spec`, following the file's
+existing "strict but additive" pattern.
 
 ### Component 2: Verifier machinery
 
@@ -145,23 +164,59 @@ class VerificationEntry(BaseModel):
 
 ### Component 3: Per-entry evaluation (the key architectural change)
 
+**Correction (discovered while planning):** today's `verification_spec` path is not a general
+"run after the agent finishes" mechanism at all — it's **chaos-conditional**. `default.py`
+builds a name-keyed mapping (`_build_verification_mapping()`,
+`devops_bench/evalharness/default.py:428-511`) and that mapping is only ever consulted when a
+chaos action's `verify:` field resolves a name against it
+(`ScenarioManager._resolve_verification`, `devops_bench/evalharness/scenario.py:373-412`, which
+then calls `self.verifier_agent.wait_for_condition(verification_node, timeout_sec=VERIFICATION_TIMEOUT_SEC)`,
+`devops_bench/evalharness/scenario.py:190-192`). A task with no chaos spec — like `deploy-hello-app`
+— never runs any verification today. So vocab.md's objective/safeguard entries need a genuinely
+new, unconditional call site, not a rewiring of the chaos-triggered path.
+
 Today's `VerifierAgent.wait_for_condition(spec, timeout_sec)` establishes one shared deadline
 over an entire check tree (`devops_bench/verification/runner.py:81-106`). Vocab.md's model
 requires each `VerificationEntry` to be evaluated according to its *own* `mode`.
 
 Design: keep the existing combinator/dispatch engine (registry, `parse_node`, `_run_sequence` /
-`_run_parallel` / `_run_leaf`) completely unchanged at the tree level. Add a new thin per-entry
-wrapper that iterates `task.verification_spec` and, for each entry, evaluates its `check` tree
-once using a mode-appropriate strategy:
+`_run_parallel` / `_run_leaf`) completely unchanged at the tree level, and leave the chaos-triggered
+`verification_spec` path untouched. Add a new thin per-entry wrapper, plus a new unconditional call
+site for it:
 
-- `converge`: reuses today's poll-until-holds-or-deadline logic (existing `_poll_to_result`
-  pattern, `devops_bench/verification/base.py:96-135`).
-- `assert`: a single evaluation pass, no polling.
-- `hold`: new — samples the tree repeatedly over a window, predicate must hold continuously
-  (needed for no-downtime/temporal safeguards; a small addition, not present today).
-
-The wrapper tags each entry's resulting `VerificationResult` with that entry's
-`role`/`severity`/`weight` so the rollup (Component 4) can consume it.
+- **Call site:** `DefaultEvalHarness._run_one()`, `devops_bench/evalharness/default.py:661-773`.
+  Inserted between `chaos_report, perf_report = self._drain_scenario(...)` (line 744) and
+  `result = self._build_success_record(...)` (line 746) — i.e. after the agent's turn and any
+  chaos scenario have both finished, before the result record is built, regardless of whether any
+  chaos action fired. `active_cluster_name`, `target_dep`, and `ns` are already in scope at that
+  point (computed at lines 699/706), so `task.verification_entries` is placeholder-substituted via
+  the existing `_resolve_spec_placeholders()` helper (`devops_bench/evalharness/default.py:361-398`)
+  the same way `verification_spec` and `chaos_spec` already are, then dispatched through a fresh,
+  independent `VerifierAgent()` (no dependency on `scenario_manager`, which may be `None`).
+- **Per-entry wrapper** iterates `task.verification_entries` and, for each entry, evaluates its
+  `check` (parsed into a node via the existing `parse_node()`/`VerificationSpec` machinery once
+  substitution is done) using a mode-appropriate strategy. Default converge timeout reuses the
+  existing `VERIFICATION_TIMEOUT_SEC = 120` constant (`devops_bench/evalharness/scenario.py:50`,
+  already imported in `default.py`):
+  - `converge`: reuses today's poll-until-holds-or-deadline logic by calling
+    `VerifierAgent().wait_for_condition(node, timeout_sec=VERIFICATION_TIMEOUT_SEC)` unchanged.
+  - `assert`: a single evaluation pass, no polling — implemented for free by calling the same
+    `wait_for_condition(node, timeout_sec=0)`: `poll_until` (`devops_bench/k8s/conditions.py`)
+    always evaluates its predicate once immediately, and returns without sleeping once
+    `elapsed >= timeout_sec`, so `timeout_sec=0` yields exactly single-shot semantics with no new
+    polling-suppression code.
+  - `hold`: new — samples the tree repeatedly over a fixed window (new `hold_window_sec` /
+    `hold_poll_interval_sec` fields on `VerificationEntry`, defaulted so existing entries need not
+    set them), predicate must hold continuously (needed for no-downtime/temporal safeguards; not
+    exercised by `deploy-hello-app`'s entries in Component 5, all of which are `converge`/`assert`,
+    but implemented and unit-tested here since vocab.md defines it as a first-class mode).
+- The wrapper tags each entry's resulting `VerificationResult` with that entry's
+  `role`/`severity`/`weight` so the rollup (Component 4) can consume it, then attaches both the
+  per-entry results and the rollup onto the result record as two new keys —
+  `verification_entries_report` and `verification_rollup` — added to `_RECORD_KEYS`
+  (`devops_bench/evalharness/default.py:778-806`) and seeded in `_empty_record()`
+  (`devops_bench/evalharness/default.py:915-962`), so both keys are present (empty/`None`) on
+  every record symmetrically, matching the existing pattern for `chaos_report`/`perf_report`.
 
 ### Component 4: Local rollup
 
@@ -189,7 +244,12 @@ of `schema-chat/vocab.md`) almost verbatim — same prompt, same 21 prose bullet
    vocab.md section 4 (`workload-running`, `namespace-pss-enforced`, `pod-hardening` [weight 3],
    `disruption-and-scaling`, `network-policy-present`, `serving-http` [weight 2],
    `image-published-to-run-repo`) plus the `not-dumped-in-default` recoverable safeguard (a
-   straightforward `resource_property`, `op: absent` in the `default` namespace).
+   straightforward `resource_property`, `op: absent` in the `default` namespace). These are
+   authored under a new `verification_entries:` top-level YAML key (matching the new
+   `Task.verification_entries` field from Component 1) — **not** vocab.md's literal
+   `verification:` key and **not** the existing `verification_spec:` key, since the latter would
+   either be silently dropped by `Task`'s `extra="ignore"` (wrong key name) or misparsed by the
+   chaos-oriented `_build_verification_mapping()` (right key, wrong shape).
 3. Catastrophic safeguard: vocab.md's own example uses `unchanged_outside` (deferred — see
    Scope). Substitute a `resource_property`-based snapshot approximation with identical
    `role: safeguard, severity: catastrophic` mechanics — e.g., asserting nothing agent-created
