@@ -20,10 +20,10 @@ function median(nums) {
 
 function StatCard({ label, value, sub }) {
     return (
-        <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm p-4 flex flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</span>
-            <span className="text-xl font-bold text-slate-900">{value}</span>
-            {sub ? <span className="text-[10px] text-slate-400">{sub}</span> : null}
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-sm p-4 flex flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</span>
+            <span className="text-xl font-bold text-slate-900 dark:text-slate-100">{value}</span>
+            {sub ? <span className="text-[10px] text-slate-400 dark:text-slate-500">{sub}</span> : null}
         </div>
     );
 }
@@ -47,15 +47,15 @@ function TaskTable({ setup, metric }) {
     }
 
     const Arrow = ({ k }) => sort.key === k
-        ? <span className="text-indigo-500">{sort.dir === "asc" ? "▲" : "▼"}</span>
-        : <span className="text-slate-300">↕</span>;
+        ? <span className="text-indigo-500 dark:text-indigo-400">{sort.dir === "asc" ? "▲" : "▼"}</span>
+        : <span className="text-slate-300 dark:text-slate-600">↕</span>;
 
     return (
-        <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-100 p-6">
-            <div className="mb-3 font-semibold text-slate-500 tracking-wider uppercase text-xs">Granular Task Breakdown</div>
+        <div className="w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-100 dark:shadow-none p-6">
+            <div className="mb-3 font-semibold text-slate-500 dark:text-slate-400 tracking-wider uppercase text-xs">Granular Task Breakdown</div>
             <table className="w-full text-left">
                 <thead>
-                    <tr className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 select-none">
+                    <tr className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 select-none">
                         <th className="pb-2 pr-4 cursor-pointer" onClick={() => sortBy("name")}>Task <Arrow k="name" /></th>
                         <th className="pb-2 pr-4 cursor-pointer" onClick={() => sortBy("score")}>Score ({METRIC_LABELS[metric]}) <Arrow k="score" /></th>
                     </tr>
@@ -65,19 +65,19 @@ function TaskTable({ setup, metric }) {
                         // Null-safe: an unscored task shows an empty bar and "—".
                         const s = task.scores[metric];
                         return (
-                            <tr key={task.folder} className="border-t border-slate-100">
+                            <tr key={task.folder} className="border-t border-slate-100 dark:border-slate-800">
                                 <td className="py-3 pr-4">
                                     <div className="flex flex-col">
-                                        <span className="font-semibold text-slate-700 text-sm">{task.name}</span>
-                                        <span className="text-[10px] font-mono text-slate-400 mt-0.5">{task.folder}/</span>
+                                        <span className="font-semibold text-slate-700 dark:text-slate-200 text-sm">{task.name}</span>
+                                        <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 mt-0.5">{task.folder}/</span>
                                     </div>
                                 </td>
                                 <td className="py-3 pr-4 w-1/2">
                                     <div className="flex items-center gap-3">
-                                        <div className="flex-grow bg-slate-100 h-2 rounded-full overflow-hidden">
+                                        <div className="flex-grow bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
                                             <div className="progress-bar-fill h-full rounded-full" style={{ width: `${s ?? 0}%`, backgroundColor: setup.color }} />
                                         </div>
-                                        <span className="text-sm font-semibold text-slate-700 w-12 text-right shrink-0">{s == null ? "—" : `${s}%`}</span>
+                                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 w-12 text-right shrink-0">{s == null ? "—" : `${s}%`}</span>
                                     </div>
                                 </td>
                             </tr>
@@ -110,7 +110,7 @@ export function Detail() {
 
     const backLink = (
         <div className="w-full">
-            <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-indigo-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded">
+            <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                 </svg>
@@ -149,14 +149,14 @@ export function Detail() {
 
             <div className="w-full flex flex-col gap-6">
                 {/* Identity hero */}
-                <div className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-100 p-6 flex flex-col lg:flex-row lg:items-center gap-6 justify-between">
+                <div className="w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-100 dark:shadow-none p-6 flex flex-col lg:flex-row lg:items-center gap-6 justify-between">
                     <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                         <SetupIdentity setup={setup} model={model} harness={harness} variant="hero" />
                     </div>
                     <div className="flex flex-col items-start lg:items-end gap-2 shrink-0">
                         <div className="flex items-baseline gap-1.5">
-                            <span className="text-4xl font-bold text-slate-900">{score.toFixed(1)}<span className="text-2xl">%</span></span>
-                            <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">{METRIC_LABELS[metric]}</span>
+                            <span className="text-4xl font-bold text-slate-900 dark:text-slate-100">{score.toFixed(1)}<span className="text-2xl">%</span></span>
+                            <span className="text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide">{METRIC_LABELS[metric]}</span>
                         </div>
                         <MetricToggle value={metric} onChange={setMetric} available={available} />
                     </div>
@@ -180,15 +180,15 @@ export function Detail() {
             </div>
 
             {/* Single-setup trend chart */}
-            <section className="w-full bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-100 p-6 flex flex-col">
+            <section className="w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-100 dark:shadow-none p-6 flex flex-col">
                 <div className="mb-4">
-                    <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                        <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                        <svg className="w-4 h-4 text-emerald-500 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
                         </svg>
                         Score Trend Over Time
                     </h2>
-                    <p className="text-[10px] text-slate-500 mt-1">This setup's success rate across historical run iterations.</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">This setup's success rate across historical run iterations.</p>
                 </div>
                 <TrendChart
                     setups={[setup]}

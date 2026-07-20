@@ -18,10 +18,10 @@ import { AUGMENTATIONS, augmentationLabel } from "./vocab.js";
 
 // Per-augmentation chip style. Tokens not listed here use the neutral fallback.
 const AUG_TAG_CLS = {
-    skills: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100",
-    mcp: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
+    skills: "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-100 dark:ring-indigo-500/30",
+    mcp: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-100 dark:ring-emerald-500/30"
 };
-const AUG_TAG_FALLBACK = "bg-slate-100 text-slate-500";
+const AUG_TAG_FALLBACK = "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400";
 
 // Full label distinguishing a setup. Leads with the first-class pairing
 // (model × harness), then one segment per augmentation token (or "Baseline"

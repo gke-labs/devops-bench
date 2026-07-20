@@ -8,8 +8,8 @@ function FilterGroup({ group, filterState, onToggle }) {
     if (group.options.length === 0) return null;
     const primary = group.tier === "primary";
     const labelCls = primary
-        ? "text-[11px] font-bold tracking-wide uppercase text-slate-600"
-        : "text-[10px] font-semibold tracking-wider uppercase text-slate-400";
+        ? "text-[11px] font-bold tracking-wide uppercase text-slate-600 dark:text-slate-300"
+        : "text-[10px] font-semibold tracking-wider uppercase text-slate-400 dark:text-slate-500";
     const sizeCls = primary ? "px-3 py-1 text-xs" : "px-2.5 py-0.5 text-[11px]";
 
     return (
@@ -20,15 +20,15 @@ function FilterGroup({ group, filterState, onToggle }) {
                 const cls = active
                     ? (primary
                         ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                        : "bg-slate-700 text-white border-slate-700 shadow-sm")
-                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50";
+                        : "bg-slate-700 dark:bg-slate-600 text-white border-slate-700 dark:border-slate-600 shadow-sm")
+                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700";
                 return (
                     <button
                         key={opt.value}
                         type="button"
                         onClick={() => onToggle(group.key, opt.value)}
                         aria-pressed={active}
-                        className={`${sizeCls} rounded-full border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 ${cls}`}
+                        className={`${sizeCls} rounded-full border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900 ${cls}`}
                     >
                         {opt.text}
                     </button>
@@ -43,26 +43,26 @@ export function FilterBar({ groups, filterState, onToggle, onClear, shown, total
     const secondary = groups.filter(g => g.tier === "secondary");
 
     return (
-        <div className="px-6 py-4 bg-white border-b border-slate-100 flex flex-col gap-3">
+        <div className="px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-3">
             <div className="flex items-start justify-between gap-4">
                 <div className="flex flex-col gap-2 flex-grow">
                     {primary.map(g => <FilterGroup key={g.key} group={g} filterState={filterState} onToggle={onToggle} />)}
                 </div>
                 <div className="flex items-center gap-3 shrink-0 pt-0.5">
-                    <span className="text-[11px] text-slate-400 whitespace-nowrap">{shown} of {total}</span>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap">{shown} of {total}</span>
                     {anyFilterActive(filterState) && (
                         <button
                             type="button"
                             onClick={onClear}
-                            className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded"
+                            className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded"
                         >
                             Clear all
                         </button>
                     )}
                 </div>
             </div>
-            <div className="flex items-center gap-2 pt-1 mt-1 border-t border-slate-100">
-                <span className="text-[9px] font-semibold tracking-wider uppercase text-slate-300 shrink-0">Modifiers</span>
+            <div className="flex items-center gap-2 pt-1 mt-1 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-[9px] font-semibold tracking-wider uppercase text-slate-300 dark:text-slate-600 shrink-0">Modifiers</span>
                 <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-4 gap-y-1 flex-grow pl-1">
                     {secondary.map(g => <FilterGroup key={g.key} group={g} filterState={filterState} onToggle={onToggle} />)}
                 </div>

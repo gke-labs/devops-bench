@@ -8,20 +8,20 @@ import { setupTags } from "../lib/accessors.js";
 
 const VARIANTS = {
     row: {
-        modelBox: "p-1 bg-white rounded-md shadow-sm border border-slate-100 flex-shrink-0 group-hover:scale-105 transition-transform",
+        modelBox: "p-1 bg-white dark:bg-slate-800 rounded-md shadow-sm border border-slate-100 dark:border-slate-700 flex-shrink-0 group-hover:scale-105 transition-transform",
         harnessBox: "p-1 rounded-md shadow-sm flex-shrink-0 group-hover:scale-105 transition-transform",
-        name: "text-slate-900 font-semibold text-sm truncate",
-        sub: "text-[10px] text-slate-400 font-normal truncate",
+        name: "text-slate-900 dark:text-slate-100 font-semibold text-sm truncate",
+        sub: "text-[10px] text-slate-400 dark:text-slate-500 font-normal truncate",
         hair: "w-2.5",
         connector: "w-5 h-5 text-sm group-hover:text-indigo-500 group-hover:ring-indigo-200 transition-colors",
         chipSize: "sm",
         gap: "gap-2"
     },
     hero: {
-        modelBox: "p-1.5 bg-white rounded-lg shadow-sm border border-slate-100 flex-shrink-0 scale-125 origin-left",
+        modelBox: "p-1.5 bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700 flex-shrink-0 scale-125 origin-left",
         harnessBox: "p-1.5 rounded-lg shadow-sm flex-shrink-0 scale-125 origin-left",
-        name: "text-slate-900 font-bold text-base sm:text-lg truncate",
-        sub: "text-xs text-slate-400 font-normal truncate",
+        name: "text-slate-900 dark:text-slate-100 font-bold text-base sm:text-lg truncate",
+        sub: "text-xs text-slate-400 dark:text-slate-500 font-normal truncate",
         hair: "w-4",
         connector: "w-6 h-6 text-base",
         chipSize: "md",
@@ -48,9 +48,9 @@ export function SetupIdentity({ setup, model, harness, variant = "row" }) {
 
             {/* Pairing connector */}
             <div aria-hidden="true" className="flex items-center justify-center gap-1 px-0.5 sm:px-1 select-none shrink-0">
-                <span className={`hidden sm:block h-px bg-gradient-to-r from-transparent to-slate-300 ${v.hair}`}></span>
-                <span className={`flex items-center justify-center rounded-md text-slate-400 font-medium leading-none ring-1 ring-slate-200/70 bg-slate-50 ${v.connector}`}>×</span>
-                <span className={`hidden sm:block h-px bg-gradient-to-l from-transparent to-slate-300 ${v.hair}`}></span>
+                <span className={`hidden sm:block h-px bg-gradient-to-r from-transparent to-slate-300 dark:to-slate-600 ${v.hair}`}></span>
+                <span className={`flex items-center justify-center rounded-md text-slate-400 dark:text-slate-500 font-medium leading-none ring-1 ring-slate-200/70 dark:ring-slate-700 bg-slate-50 dark:bg-slate-800 ${v.connector}`}>×</span>
+                <span className={`hidden sm:block h-px bg-gradient-to-l from-transparent to-slate-300 dark:to-slate-600 ${v.hair}`}></span>
             </div>
 
             {/* Harness entity + config chips */}

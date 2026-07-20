@@ -10,15 +10,15 @@ export function MetricToggle({ value, onChange, available }) {
     const hasFilter = Array.isArray(available) && available.length > 0;
     const isEnabled = m => !hasFilter || available.includes(m);
     return (
-        <div className="inline-flex p-0.5 bg-slate-100 rounded-lg text-[11px]">
+        <div className="inline-flex p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-[11px]">
             {METRICS.map(m => {
                 const active = m === value;
                 const enabled = isEnabled(m);
                 const cls = active
-                    ? "bg-white text-slate-800 shadow-sm"
+                    ? "bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm"
                     : enabled
-                        ? "text-slate-600 hover:text-slate-800"
-                        : "text-slate-300";
+                        ? "text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100"
+                        : "text-slate-300 dark:text-slate-600";
                 return (
                     <button
                         key={m}
@@ -27,7 +27,7 @@ export function MetricToggle({ value, onChange, available }) {
                         disabled={!enabled}
                         aria-pressed={active}
                         title={enabled ? metricDescription(m) : "Available once multi-iteration runs land"}
-                        className={`px-2 py-1 font-medium rounded-md whitespace-nowrap transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed ${cls}`}
+                        className={`px-2 py-1 font-medium rounded-md whitespace-nowrap transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900 disabled:cursor-not-allowed ${cls}`}
                     >
                         {METRIC_LABELS[m]}
                     </button>
