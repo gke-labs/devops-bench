@@ -102,6 +102,9 @@ class ResultRow(BaseModel):
             when the metric did not run (e.g. a failed task).
         tool_score: Tool-invocation judge score in ``[0, 1]``, or ``None``.
         latency_sec: Agent wall-clock seconds for the iteration.
+        turns: Number of agent trajectory steps (tool calls + text turns) for the
+            iteration — an efficiency axis. ``None`` when no trajectory was
+            captured.
         input_tokens: Prompt token count, or ``None`` when unreported.
         output_tokens: Completion token count, or ``None`` when unreported.
         status: Terminal record status, ``"success"`` or ``"failed"``.
@@ -123,6 +126,7 @@ class ResultRow(BaseModel):
     outcome_score: float | None
     tool_score: float | None
     latency_sec: float
+    turns: int | None = None
     input_tokens: int | None
     output_tokens: int | None
     status: str

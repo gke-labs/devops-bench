@@ -125,6 +125,8 @@ export interface ResultRow {
     /** Tool-use score in [0,1]; null when unscored. */
     toolScore: number | null;
     latencySec: number;
+    /** Agent trajectory steps (tool calls + text turns) — an efficiency axis; null when no trajectory captured. */
+    turns?: number | null;
     /** Null when token usage was not captured. */
     inputTokens: number | null;
     /** Null when token usage was not captured. */

@@ -209,6 +209,10 @@ def build_rows(records: Iterable[Mapping[str, Any]], manifest: Manifest) -> list
     for record in records:
         scores = record.get("scores")
         input_tokens, output_tokens = normalize_tokens(record.get("tokens"))
+        # turns = number of trajectory steps (tool calls + text turns). ``None``
+        # only when no trajectory was captured, distinct from an empty (0-step) run.
+        trajectory = record.get("trajectory")
+        turns = len(trajectory) if isinstance(trajectory, list) else None
         rows.append(
             ResultRow(
                 setup_id=manifest.setup_id,
@@ -223,6 +227,7 @@ def build_rows(records: Iterable[Mapping[str, Any]], manifest: Manifest) -> list
                 outcome_score=extract_score(scores, OUTCOME_SCORE_KEY),
                 tool_score=extract_score(scores, TOOL_SCORE_KEY),
                 latency_sec=float(record.get("latency") or 0.0),
+                turns=turns,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 status=record.get("status", "") or "",
