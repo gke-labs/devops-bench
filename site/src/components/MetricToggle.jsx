@@ -27,7 +27,7 @@ export function MetricToggle({ value, onChange, available }) {
                         disabled={!enabled}
                         aria-pressed={active}
                         title={enabled ? metricDescription(m) : "Available once multi-iteration runs land"}
-                        className={`px-2.5 py-1 font-medium rounded-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed ${cls}`}
+                        className={`px-2 py-1 font-medium rounded-md whitespace-nowrap transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed ${cls}`}
                     >
                         {METRIC_LABELS[m]}
                     </button>

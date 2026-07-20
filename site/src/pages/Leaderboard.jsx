@@ -82,7 +82,7 @@ export function Leaderboard() {
                         </span>
                         <span>HARNESS <span className="text-slate-300 font-normal normal-case tracking-normal">&amp; config</span></span>
                     </div>
-                    <div className="col-span-5 sm:col-span-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
+                    <div className="col-span-5 sm:col-span-5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-x-4 sm:gap-y-2 pr-2">
                         <div className="flex items-center gap-1 min-w-[70px]">
                             <span>SCORE</span>
                             <div tabIndex={0} aria-label="Score Explanation" className="group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 rounded-full">
