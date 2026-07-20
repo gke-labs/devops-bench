@@ -132,13 +132,15 @@ class HermesAgent(AgentHarness):
         with open(config_path, "w") as f:
             yaml.safe_dump(config_data, f)
 
-    def _execute(self, prompt: str) -> AgentResult:
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
         hermes_bin = self._resolve_hermes_bin()
         caps = self.config.capabilities
         final_prompt = _prepend_rules(caps.rules.text, prompt)
 
+        # A harness-supplied workspace_path is used as-is (the harness owns its
+        # lifecycle); otherwise fall back to a throwaway temp dir.
         with tempfile.TemporaryDirectory(prefix="hermes-run-") as rundir:
-            run_path = Path(rundir)
+            run_path = workspace_path if workspace_path is not None else Path(rundir)
 
             self._prepare_config(run_path, caps.mcp_servers)
 
