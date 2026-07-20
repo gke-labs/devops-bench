@@ -89,11 +89,25 @@ SAMPLE_STREAM = _stream(
 # ---------------------------------------------------------------------------
 
 
+def _tok(**overrides):
+    """Canonical token dict with every bucket None, overridden per test."""
+    base = {
+        "input": None,
+        "cached": None,
+        "cache_write": None,
+        "reasoning": None,
+        "output": None,
+        "total": None,
+    }
+    base.update(overrides)
+    return base
+
+
 def test_parse_stream_json_emits_canonical_trajectory():
     output, trajectory, tokens, errors = parse_stream_json(SAMPLE_STREAM)
     assert output == "Done."
     assert errors == []
-    assert tokens == {"input": 10, "output": 20, "total": 30, "cached": 5}
+    assert tokens == _tok(input=10, cached=5, output=20, total=35)
     assert trajectory == [
         {
             "name": "gke__list_clusters",
@@ -143,7 +157,7 @@ def test_parse_stream_json_records_error_result_subtype():
 
 
 def test_parse_stream_json_empty_input_returns_empty():
-    assert parse_stream_json("") == ("", [], {}, [])
+    assert parse_stream_json("") == ("", [], _tok(), [])
 
 
 def test_parse_stream_json_flags_failed_mcp_server_at_init():
@@ -241,7 +255,7 @@ def test_parse_stream_json_falls_back_to_assistant_text_without_result_event():
     )
     output, _trajectory, tokens, errors = parse_stream_json(blob)
     assert output == "partial answer"
-    assert tokens == {}
+    assert tokens == _tok()
     assert errors == []
 
 
@@ -270,7 +284,7 @@ def test_parse_stream_json_falls_back_to_accumulated_usage_without_result_event(
     )
     output, _trajectory, tokens, errors = parse_stream_json(blob)
     assert output == "ab"
-    assert tokens == {"input": 30, "output": 12, "total": 42, "cached": 5}
+    assert tokens == _tok(input=30, cached=2, cache_write=3, output=12, total=47)
     assert errors == []
 
 
@@ -293,7 +307,7 @@ def test_parse_stream_json_result_usage_wins_over_accumulated():
         },
     )
     _output, _trajectory, tokens, _errors = parse_stream_json(blob)
-    assert tokens == {"input": 10, "output": 20, "total": 30, "cached": None}
+    assert tokens == _tok(input=10, output=20, total=30)
 
 
 def test_parse_stream_json_falls_back_when_result_usage_degenerate():
@@ -311,7 +325,7 @@ def test_parse_stream_json_falls_back_when_result_usage_degenerate():
         {"type": "result", "subtype": "success", "result": "x", "usage": {}},
     )
     _output, _trajectory, tokens, _errors = parse_stream_json(blob)
-    assert tokens == {"input": 15, "output": 4, "total": 19, "cached": None}
+    assert tokens == _tok(input=15, output=4, total=19)
 
 
 def test_parse_stream_json_result_string_is_authoritative_over_text():
@@ -469,7 +483,7 @@ def test_execute_returns_typed_result_with_trajectory(monkeypatch):
     assert result.output == "Done."
     assert len(result.trajectory) == 2
     assert result.errors == []
-    assert result.tokens == {"input": 10, "output": 20, "total": 30, "cached": 5}
+    assert result.tokens == _tok(input=10, cached=5, output=20, total=35)
     assert captured["timeout"] == 30.0
     assert captured["argv"][0].endswith("claude-x")
     assert captured["argv"][1:3] == ["-p", "ping"]

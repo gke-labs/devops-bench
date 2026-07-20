@@ -27,7 +27,18 @@ import json
 
 from devops_bench.agents.result import ToolCall
 
-__all__ = ["parse_stream_json"]
+__all__ = ["parse_stream_json", "empty_tokens"]
+
+# Canonical token buckets (harness-local until the unified token schema lands;
+# see gke-labs/devops-bench#212): ``input`` is the non-cached prompt, ``cached``
+# is cache reads, ``cache_write`` is cache creation, ``output`` excludes
+# ``reasoning``, and ``total`` is the sum of all buckets.
+_TOKEN_BUCKETS = ("input", "cached", "cache_write", "reasoning", "output", "total")
+
+
+def empty_tokens() -> dict:
+    """Return the canonical token dict with every bucket ``None`` (unavailable)."""
+    return dict.fromkeys(_TOKEN_BUCKETS, None)
 
 
 def _block_text(content: object) -> str | None:
@@ -67,13 +78,10 @@ def _normalize_tool_name(name: str) -> str:
     return name
 
 
-# MCP server statuses in the ``init`` event that signal a genuine connection
-# failure. A stdio server (e.g. gke-mcp) commonly reports a transient
-# ``pending`` / ``connecting`` in the init snapshot yet connects moments later
-# and serves tools normally, so only these terminal-failure states are surfaced.
-# Flagging any non-``connected`` status would false-positive on that transient
-# and wrongly mark a fully working MCP run as errored (populating ``errors`` and
-# flipping the run-level ``validated`` gate to ``False``).
+# Terminal-failure MCP statuses in the ``init`` event. Transient ``pending`` /
+# ``connecting`` states are excluded: a stdio server (e.g. gke-mcp) often reports
+# them at init yet connects moments later, so flagging them would false-positive
+# on a working run.
 _MCP_FAILED_STATUSES = frozenset({"failed", "error", "disconnected", "needs-auth", "needs_auth"})
 
 
@@ -114,7 +122,7 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
     """
     text_parts: list[str] = []
     result_output: str | None = None
-    tokens: dict = {}
+    tokens: dict = empty_tokens()
     acc_usage: dict = {}
     errors: list[str] = []
     pending: dict[str, ToolCall] = {}
@@ -134,13 +142,9 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
 
         etype = event.get("type")
         if etype == "system":
-            # The init event lists each configured MCP server with a startup
-            # status. A server that *fails* to connect leaves the run tool-less
-            # but still exits 0, so surface only terminal-failure statuses here
-            # (see ``_MCP_FAILED_STATUSES``) instead of scoring a silently-
-            # degraded MCP arm like the baseline. Transient states (``pending`` /
-            # ``connecting``) are ignored: the server often connects moments
-            # later and serves tools normally.
+            # A failed MCP server leaves the run tool-less but still exits 0, so
+            # surface terminal-failure statuses (see ``_MCP_FAILED_STATUSES``)
+            # rather than scoring a silently-degraded run clean.
             if event.get("subtype") == "init":
                 for server in event.get("mcp_servers") or []:
                     if not isinstance(server, dict):
@@ -165,9 +169,7 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
                     if isinstance(block.get("text"), str):
                         text_parts.append(block["text"])
                 elif btype in ("thinking", "redacted_thinking"):
-                    # Dropped so the trajectory matches the tool-calls-only shape
-                    # the other CLI harnesses emit.
-                    continue
+                    continue  # not part of the tool-calls-only trajectory
                 elif btype == "tool_use":
                     args = block.get("input")
                     call = ToolCall(
@@ -210,10 +212,9 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
                 errors.append(f"stream-json result error: {subtype}")
 
     output = result_output if result_output is not None else "".join(text_parts)
-    # The terminal ``result`` usage is authoritative; fall back to the summed
-    # per-turn usage when it was absent (truncated stream) or degenerate. Note
-    # ``_usage_tokens`` always returns a 4-key dict, so it is truthy even when
-    # every value is None — test the values, not the dict.
+    # Fall back to the summed per-turn usage when the terminal ``result`` usage
+    # is absent or degenerate. The canonical dict is truthy even when all-None,
+    # so test the values, not the dict.
     if not any(tokens.values()) and acc_usage:
         tokens = _usage_tokens(acc_usage)
     return output, [call.to_dict() for call in trajectory], tokens, errors
@@ -243,27 +244,29 @@ def _add_usage(acc: dict, usage: object) -> None:
 
 
 def _usage_tokens(usage: dict) -> dict:
-    """Normalize an Anthropic ``usage`` block to the row-normalizer shape.
+    """Normalize an Anthropic ``usage`` block to the canonical token buckets.
 
-    ``total`` is the sum of input/output when both are present; ``cached`` folds
-    the cache-read and cache-creation counts together (either may be absent).
-
-    Note the cross-harness asymmetry: Anthropic's ``input_tokens`` counts only
-    the *uncached* prompt, with cache-read/-creation reported separately, so
-    with Claude Code's default prompt caching ``input`` can be a small fraction
-    of the true prompt size (the bulk lands in ``cached``). The Gemini CLI's
-    ``stats.input_tokens``, by contrast, is the full prompt count. ``cached`` is
-    preserved here, but ``results/normalize.py`` currently flattens rows to
-    ``input``/``output`` only — so token/cost comparisons across the ``claude``
-    and ``gemini`` harnesses under-report Claude's prompt size. See
-    ``docs/components/agents.md`` (Token accounting).
+    Anthropic's shape maps onto the canonical buckets directly: ``input_tokens``
+    is already the *uncached* prompt (cache reads and writes are mutually
+    exclusive with it), so ``cached`` / ``cache_write`` carry the cache-read and
+    cache-creation counts separately — cache writes bill at a premium, so they
+    must not be folded into ``cached``. ``reasoning`` stays ``None``: Anthropic
+    bills thinking inside ``output_tokens`` and the stream does not split it
+    out. ``total`` is the full footprint (sum of the reported buckets), so the
+    true prompt size is ``input + cached + cache_write``.
     """
+    tokens = empty_tokens()
     inp = usage.get("input_tokens")
     out = usage.get("output_tokens")
-    total = inp + out if isinstance(inp, int) and isinstance(out, int) else None
     cache_read = usage.get("cache_read_input_tokens")
-    cache_creation = usage.get("cache_creation_input_tokens")
-    cached: int | None = None
-    if isinstance(cache_read, int) or isinstance(cache_creation, int):
-        cached = (cache_read or 0) + (cache_creation or 0)
-    return {"input": inp, "output": out, "total": total, "cached": cached}
+    cache_write = usage.get("cache_creation_input_tokens")
+    tokens.update(
+        input=inp if isinstance(inp, int) else None,
+        cached=cache_read if isinstance(cache_read, int) else None,
+        cache_write=cache_write if isinstance(cache_write, int) else None,
+        output=out if isinstance(out, int) else None,
+    )
+    reported = [v for k, v in tokens.items() if k != "total" and v is not None]
+    if reported:
+        tokens["total"] = sum(reported)
+    return tokens

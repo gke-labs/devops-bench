@@ -57,7 +57,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from devops_bench.agents.base import AGENTS, AgentHarness
-from devops_bench.agents.cli.claude_code.parsing import parse_stream_json
+from devops_bench.agents.cli.claude_code.parsing import empty_tokens, parse_stream_json
 from devops_bench.agents.config import AgentConfig
 from devops_bench.agents.result import AgentResult
 from devops_bench.agents.shared.cli_capabilities import (
@@ -84,6 +84,13 @@ _CLAUDE_MCP_FILE = "mcp-config.json"
 _CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
 
 _log = get_logger("agents.cli.claude_code")
+
+
+def _errored_with_tokens(msg: str) -> AgentResult:
+    """An errored result carrying the canonical all-``None`` token shape."""
+    result = AgentResult.errored(msg)
+    result.tokens = empty_tokens()
+    return result
 
 
 def _build_argv(
@@ -277,10 +284,8 @@ class ClaudeCodeAgent(AgentHarness):
                         timeout=self.config.timeout_sec,
                     )
                 except SubprocessError as exc:
-                    # A timeout (or non-zero exit) still yields the partial
-                    # stream-json captured before the kill; recover the
-                    # trajectory/tokens rather than discarding the run's work.
-                    # parse_stream_json tolerates a truncated pipe.
+                    # A timeout raises with the partial stream-json captured
+                    # before the kill; recover the trajectory instead of dropping it.
                     if exc.stdout:
                         output, trajectory, tokens, parse_errors = parse_stream_json(exc.stdout)
                         metadata = {}
@@ -294,10 +299,10 @@ class ClaudeCodeAgent(AgentHarness):
                             errors=[*parse_errors, f"claude subprocess error: {exc}"],
                             metadata=metadata,
                         )
-                    return AgentResult.errored(f"claude subprocess error: {exc}")
+                    return _errored_with_tokens(f"claude subprocess error: {exc}")
                 except OSError as exc:
                     # Missing / non-executable binary; core.subprocess.run does not wrap.
-                    return AgentResult.errored(f"claude binary unavailable: {exc}")
+                    return _errored_with_tokens(f"claude binary unavailable: {exc}")
 
         output, trajectory, tokens, parse_errors = parse_stream_json(completed.stdout or "")
         errors: list[str] = list(parse_errors)

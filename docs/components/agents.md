@@ -133,21 +133,24 @@ Each harness reports token usage in its own provider's terms, and
 the row. One asymmetry is worth knowing when you compare token counts or cost
 **across** harnesses:
 
-- The `claude` harness surfaces Anthropic usage, where `input_tokens` counts only
-  the *uncached* prompt; cache reads and cache writes are reported separately
-  (folded into a `cached` field the harness preserves but the row currently
-  drops). With Claude Code's default prompt caching, most of a multi-turn run's
-  prompt lands in `cached`, so the row's `input` is a small fraction of the true
-  prompt size.
+- The `claude` harness maps Anthropic usage onto the canonical six-bucket shape
+  (harness-local for now): `input` is the *uncached* prompt (Anthropic's
+  `input_tokens` already excludes cache traffic), `cached` is cache reads,
+  `cache_write` is cache creation (billed at a premium, so kept separate),
+  `output` is the completion (`reasoning` stays `None` — Anthropic bills
+  thinking inside output), and `total` is the full footprint. With Claude
+  Code's default prompt caching, most of a multi-turn run's prompt lands in
+  `cached`, so `input` alone is a small fraction of the true prompt size.
 - The `gemini` harness reports `stats.input_tokens` as the *full* prompt count,
   cached or not.
 
 So a raw `input`-token or derived-cost comparison between the two harnesses
 under-reports Claude. Treat per-harness token columns as within-harness
-measures, not cross-harness ones, until the row schema carries `cached`
-explicitly. (When the terminal `result` event is missing — e.g. a truncated pipe
-on older `claude` builds — the `claude` parser falls back to summing the
-per-turn assistant usage, so token counts survive even then.)
+measures, not cross-harness ones, until the row schema carries the cache
+buckets explicitly (the unified token-accounting work). (When the terminal
+`result` event is missing — e.g. a truncated pipe on older `claude` builds —
+the `claude` parser falls back to summing the per-turn assistant usage, so
+token counts survive even then.)
 
 ## Trajectory contents
 
