@@ -89,6 +89,8 @@ export function validateRow(row) {
     intOrNull("outputTokens", nonNeg);
     optIntOrNull("cachedTokens", nonNeg);
     optIntOrNull("reasoningTokens", nonNeg);
+    optIntOrNull("cacheWriteTokens", nonNeg);
+    optIntOrNull("totalTokens", nonNeg);
 
     return errs;
 }

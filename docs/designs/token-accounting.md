@@ -98,8 +98,11 @@ Notes:
 `results/normalize.py::normalize_tokens` currently returns `(input, output)`
 only. This design widens the row contract:
 
-- Add `cached_tokens` / `reasoning_tokens` to `ResultRow` — additive nullable
-  fields, so no `SCHEMA_VERSION` bump is needed and historical rows stay valid.
+- Add `cached_tokens` / `reasoning_tokens` / `cache_write_tokens` /
+  `total_tokens` to `ResultRow` — additive nullable fields, so no
+  `SCHEMA_VERSION` bump is needed and historical rows stay valid. All four
+  cost-formula inputs (`input·p_in + cached·p_cached + cache_write·p_write +
+  output·p_out`) are then readable off the row.
 - Add `cached` / `reasoning` aliases to the normalizer's key tables; keep the
   existing aliases for historical `results.json` files.
 - Mirror the fields on the dashboard `ResultRow` interface and accept them

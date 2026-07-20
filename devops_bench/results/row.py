@@ -111,6 +111,10 @@ class ResultRow(BaseModel):
             reports no cache telemetry.
         reasoning_tokens: Thinking-token count, or ``None`` when unreported
             (some providers bill thinking inside ``output_tokens``).
+        cache_write_tokens: Cache-creation token count (billed at a premium by
+            providers that report it), or ``None`` when unreported.
+        total_tokens: Provider-reported or bucket-sum total, or ``None`` when
+            unreported. Semantics vary for pre-canonical records.
         status: Terminal record status, ``"success"`` or ``"failed"``.
         validated: Whether the task is vetted as correct and eligible for the
             leaderboard; ingest gates promotion on this (default ``False``).
@@ -134,6 +138,8 @@ class ResultRow(BaseModel):
     output_tokens: int | None
     cached_tokens: int | None = None
     reasoning_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    total_tokens: int | None = None
     status: str
     validated: bool = False
 

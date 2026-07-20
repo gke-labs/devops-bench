@@ -133,6 +133,10 @@ export interface ResultRow {
     cachedTokens: number | null;
     /** Thinking tokens; null when unreported (some providers bill thinking inside output). */
     reasoningTokens: number | null;
+    /** Cache-creation tokens (billed at a premium where reported); null when unreported. */
+    cacheWriteTokens: number | null;
+    /** Provider or bucket-sum total; null when unreported. Semantics vary for pre-canonical rows. */
+    totalTokens: number | null;
     /** Whether the task is vetted as correct; only validated tasks promote to the leaderboard. */
     validated: boolean;
 }

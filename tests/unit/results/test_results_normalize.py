@@ -89,7 +89,7 @@ def test_setup_id_matches_catalog_slug_for_dotted_model():
 
 def test_normalize_tokens_legacy_api_shape():
     tokens = {"prompt_tokens": 10, "candidates_tokens": 5, "total_tokens": 15}
-    assert normalize_tokens(tokens) == (10, 5, None, None)
+    assert normalize_tokens(tokens) == (10, 5, None, None, None, 15)
 
 
 def test_normalize_tokens_canonical_shape():
@@ -101,17 +101,17 @@ def test_normalize_tokens_canonical_shape():
         "output": 3,
         "total": 114,
     }
-    assert normalize_tokens(tokens) == (7, 3, 100, 4)
+    assert normalize_tokens(tokens) == (7, 3, 100, 4, None, 114)
 
 
 def test_normalize_tokens_google_metadata_shape():
     tokens = {"prompt_token_count": 8, "candidates_token_count": 4}
-    assert normalize_tokens(tokens) == (8, 4, None, None)
+    assert normalize_tokens(tokens) == (8, 4, None, None, None, None)
 
 
 def test_normalize_tokens_missing_yields_none():
-    assert normalize_tokens({}) == (None, None, None, None)
-    assert normalize_tokens(None) == (None, None, None, None)
+    assert normalize_tokens({}) == (None, None, None, None, None, None)
+    assert normalize_tokens(None) == (None, None, None, None, None, None)
 
 
 def test_normalize_tokens_none_valued_canonical_keys_fall_through():
@@ -121,11 +121,13 @@ def test_normalize_tokens_none_valued_canonical_keys_fall_through():
         2,
         None,
         None,
+        None,
+        None,
     )
 
 
 def test_normalize_tokens_float_coerced_to_int():
-    assert normalize_tokens({"input": 12.0, "output": 3.9}) == (12, 3, None, None)
+    assert normalize_tokens({"input": 12.0, "output": 3.9}) == (12, 3, None, None, None, None)
 
 
 # -- extract_score -----------------------------------------------------------
@@ -192,6 +194,8 @@ def test_build_rows_success_record():
         "outputTokens": 20,
         "cachedTokens": None,
         "reasoningTokens": None,
+        "cacheWriteTokens": None,
+        "totalTokens": None,
         "status": "success",
         "validated": False,
     }
@@ -216,6 +220,8 @@ def test_build_rows_failed_record_has_null_scores_and_tokens():
     assert row.output_tokens is None
     assert row.cached_tokens is None
     assert row.reasoning_tokens is None
+    assert row.cache_write_tokens is None
+    assert row.total_tokens is None
     assert row.iteration == 0
 
 
@@ -257,6 +263,8 @@ def test_result_row_keys_match_typescript_interface():
         "outputTokens",
         "cachedTokens",
         "reasoningTokens",
+        "cacheWriteTokens",
+        "totalTokens",
         "validated",
     }
     row = build_rows(
@@ -308,3 +316,24 @@ def test_build_rows_carries_cached_and_reasoning():
     assert row.cached_tokens == 12173
     assert row.reasoning_tokens == 229
     assert row.output_tokens == 35
+    assert row.total_tokens == 31489
+    assert row.cache_write_tokens is None
+
+
+def test_build_rows_carries_cache_write():
+    record = {
+        "name": "t",
+        "folder": "f",
+        "status": "success",
+        "tokens": {
+            "input": 5,
+            "cached": 1000,
+            "cache_write": 200,
+            "reasoning": None,
+            "output": 40,
+            "total": 1245,
+        },
+    }
+    row = build_rows([record], _manifest())[0]
+    assert row.cache_write_tokens == 200
+    assert row.total_tokens == 1245
