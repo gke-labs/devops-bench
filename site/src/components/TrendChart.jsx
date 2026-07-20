@@ -14,11 +14,13 @@ import {
     Legend
 } from "chart.js";
 import { setupHistory, setupLabel, allRunDates, formatRunDate, yAxisBounds } from "../lib/accessors.js";
+import { useIsDark } from "../hooks/useIsDark.js";
 
-// Register Chart.js parts + apply the Inter/Slate styling once at module load.
+// Register Chart.js parts + apply the Inter styling once at module load. Colors
+// that differ by theme are set per-instance in `options` below (canvas can't use
+// Tailwind `dark:` variants); the tooltip is dark in both themes.
 Chart.register(LineElement, PointElement, LinearScale, Filler, Tooltip, Legend);
 Chart.defaults.font.family = "'Inter', sans-serif";
-Chart.defaults.color = "#64748b";
 Chart.defaults.plugins.tooltip.backgroundColor = "#0f172a";
 Chart.defaults.plugins.tooltip.titleColor = "#f8fafc";
 Chart.defaults.plugins.tooltip.bodyColor = "#cbd5e1";
@@ -37,6 +39,12 @@ export function TrendChart({
     ariaLabel = "Score trend over time",
     caption
 }) {
+    const isDark = useIsDark();
+    // Theme-aware axis/legend colors (the tick + grid can't use `dark:`).
+    const textColor = isDark ? "#94a3b8" : "#64748b"; // slate-400 / slate-500
+    const gridColor = isDark ? "#1e293b" : "#f1f5f9"; // slate-800 / slate-100
+    const pointHover = isDark ? "#0f172a" : "#ffffff";
+
     // Shared x-axis dates: union of run timestamps across the plotted setups.
     const dates = useMemo(() => allRunDates(setups), [setups]);
 
@@ -61,7 +69,7 @@ export function TrendChart({
         interaction: { mode: "nearest", intersect: false },
         plugins: {
             legend: showLegend
-                ? { display: true, position: "bottom", labels: { usePointStyle: true, boxWidth: 8, padding: 20, font: { size: 11, weight: "500" } } }
+                ? { display: true, position: "bottom", labels: { color: textColor, usePointStyle: true, boxWidth: 8, padding: 20, font: { size: 11, weight: "500" } } }
                 : { display: false },
             tooltip: {
                 callbacks: {
@@ -78,21 +86,21 @@ export function TrendChart({
                 // proportionally to elapsed time.
                 afterBuildTicks: axis => { axis.ticks = dates.map(t => ({ value: Date.parse(t) })); },
                 grid: { display: false },
-                ticks: { callback: value => formatRunDate(value), maxRotation: 0, autoSkip: false, padding: 8 }
+                ticks: { color: textColor, callback: value => formatRunDate(value), maxRotation: 0, autoSkip: false, padding: 8 }
             },
             y: {
                 min: yBounds.min,
                 max: yBounds.max,
                 border: { display: false },
-                grid: { color: "#f1f5f9" },
-                ticks: { callback: value => value + "%", stepSize: 10, padding: 8 }
+                grid: { color: gridColor },
+                ticks: { color: textColor, callback: value => value + "%", stepSize: 10, padding: 8 }
             }
         },
         elements: {
             line: { tension: 0.35, borderWidth: 3 },
-            point: { radius: 3, hitRadius: 12, hoverRadius: 6, hoverBackgroundColor: "#ffffff", hoverBorderWidth: 3 }
+            point: { radius: 3, hitRadius: 12, hoverRadius: 6, hoverBackgroundColor: pointHover, hoverBorderWidth: 3 }
         }
-    }), [dates, showLegend, yBounds]);
+    }), [dates, showLegend, yBounds, textColor, gridColor, pointHover]);
 
     return (
         <div className="chart-container flex-grow">

@@ -15,7 +15,7 @@ export function LeaderboardRow({ setup, models, harnesses, metric }) {
         <Link
             to={to}
             aria-label={`View details for ${setupLabel(setup, models, harnesses)}`}
-            className="relative px-6 py-4 flex flex-col sm:grid sm:grid-cols-12 gap-3 sm:gap-4 items-start sm:items-center hover:bg-slate-50/70 cursor-pointer transition-colors group select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset"
+            className="relative px-6 py-4 flex flex-col sm:grid sm:grid-cols-12 gap-3 sm:gap-4 items-start sm:items-center hover:bg-slate-50/70 dark:hover:bg-slate-800/40 cursor-pointer transition-colors group select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset"
         >
             {/* Benchmark subject: model × harness pairing (grid only, so the × stays aligned) */}
             <div className="col-span-7 sm:col-span-7 grid grid-cols-[1fr_auto_1fr] items-center gap-1 sm:gap-2 w-full sm:w-auto pr-6 sm:pr-0">
@@ -29,23 +29,23 @@ export function LeaderboardRow({ setup, models, harnesses, metric }) {
                     {setup.catastrophicCount > 0 && (
                         <span
                             title={`${setup.catastrophicCount} task(s) with a catastrophic safety violation (outcome zeroed)`}
-                            className="inline-flex items-center gap-0.5 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 ring-1 ring-rose-200"
+                            className="inline-flex items-center gap-0.5 rounded-full bg-rose-50 dark:bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-500/30"
                         >
                             ⚠ {setup.catastrophicCount}
                         </span>
                     )}
                 </span>
-                <span className="text-sm font-semibold text-slate-900 w-12 min-w-[48px]">
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 w-12 min-w-[48px]">
                     {score.toFixed(1)}%
                 </span>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden relative">
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden relative">
                     <div className="progress-bar-fill h-full rounded-full" style={{ width: `${score}%`, backgroundColor: setup.color }} />
                 </div>
             </div>
 
             {/* View-details affordance */}
             <div className="absolute right-6 top-5 sm:relative sm:right-auto sm:top-auto col-span-1 sm:col-span-1 flex items-center justify-end">
-                <svg aria-hidden="true" className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg aria-hidden="true" className="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                 </svg>
             </div>

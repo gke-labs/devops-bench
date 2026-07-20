@@ -5,6 +5,11 @@
 /* Custom styles ported from the old style.css. */
 body {
     font-family: 'Inter', sans-serif;
+    background-color: #f8fafc; /* slate-50 — matches the App shell, avoids flash */
+}
+
+.dark body {
+    background-color: #020617; /* slate-950 */
 }
 
 .progress-bar-fill {
@@ -23,6 +28,14 @@ body {
 ::-webkit-scrollbar-thumb {
     background: #cbd5e1;
     border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-track {
+    background: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+    background: #475569;
 }
 
 .chart-container {
