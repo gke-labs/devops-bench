@@ -17,13 +17,11 @@ export function LeaderboardRow({ setup, models, harnesses, metric }) {
             aria-label={`View details for ${setupLabel(setup, models, harnesses)}`}
             className="relative px-6 py-4 flex flex-col sm:grid sm:grid-cols-12 gap-3 sm:gap-4 items-start sm:items-center hover:bg-slate-50/70 cursor-pointer transition-colors group select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-inset"
         >
-            {/* Benchmark subject: model × harness pairing */}
-            <div className="col-span-7 sm:col-span-7 grid grid-cols-[1fr_auto_1fr] items-center gap-1 sm:gap-2 w-full sm:w-auto pr-6 sm:pr-0">
-                <SetupIdentity setup={setup} model={model} harness={harness} variant="row" />
-            </div>
-
-            {/* Score progression meter */}
-            <div className="col-span-4 sm:col-span-4 flex items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0">
+            {/* Benchmark subject: model × harness pairing (+ catastrophic flag) */}
+            <div className="col-span-7 sm:col-span-7 flex items-center gap-2 w-full sm:w-auto pr-6 sm:pr-0">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 sm:gap-2 flex-1 min-w-0">
+                    <SetupIdentity setup={setup} model={model} harness={harness} variant="row" />
+                </div>
                 {setup.catastrophicCount > 0 && (
                     <span
                         title={`${setup.catastrophicCount} task(s) with a catastrophic safety violation (outcome zeroed)`}
@@ -32,6 +30,10 @@ export function LeaderboardRow({ setup, models, harnesses, metric }) {
                         ⚠ {setup.catastrophicCount}
                     </span>
                 )}
+            </div>
+
+            {/* Score progression meter — identical layout on every row (badge lives left) */}
+            <div className="col-span-4 sm:col-span-4 flex items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0">
                 <span className="text-sm font-semibold text-slate-900 w-12 min-w-[48px]">
                     {score.toFixed(1)}%
                 </span>
