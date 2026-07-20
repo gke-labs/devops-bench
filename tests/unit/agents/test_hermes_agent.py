@@ -95,3 +95,53 @@ def test_prepare_config_null_mcp_servers(tmp_path: Path):
             data = yaml.safe_load(f)
 
         assert data["mcp_servers"]["new_server"]["command"] == "echo"
+
+
+def test_execute_reports_tokens_from_state_db(tmp_path: Path):
+    """End-to-end wiring: _execute must surface state.db token counts on
+    AgentResult.tokens (regression guard for the tokens= kwarg)."""
+    import sqlite3
+    from types import SimpleNamespace
+
+    from devops_bench.agents.cli.hermes import agent as agent_mod
+
+    def fake_run(cmd, check, timeout, extra_env):
+        home = Path(extra_env["HERMES_HOME"])
+        conn = sqlite3.connect(home / "state.db")
+        conn.execute(
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, started_at TIMESTAMP,"
+            " input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER,"
+            " cache_read_tokens INTEGER, cache_write_tokens INTEGER)"
+        )
+        conn.execute(
+            "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT,"
+            " role TEXT, content TEXT, tool_calls TEXT, tool_call_id TEXT, tool_name TEXT)"
+        )
+        conn.execute("INSERT INTO sessions VALUES ('s1', NULL, 2748, 11267, 152, 334987, 12000)")
+        conn.commit()
+        conn.close()
+        return SimpleNamespace(returncode=0, stdout="done", stderr="")
+
+    with patch.object(agent_mod, "devops_run", side_effect=fake_run):
+        result = HermesAgent(AgentConfig(target="/bin/hermes")).run("hello")
+
+    assert result.output == "done"
+    assert result.tokens == {
+        "input": 2748,
+        "cached": 334987,
+        "cache_write": 12000,
+        "reasoning": 152,
+        "output": 11267,
+        "total": 2748 + 334987 + 12000 + 152 + 11267,
+    }
+
+
+def test_execute_binary_unavailable_reports_canonical_none_tokens(tmp_path: Path):
+    from devops_bench.agents.cli.hermes import agent as agent_mod
+    from devops_bench.agents.cli.hermes.parsing import empty_tokens
+
+    with patch.object(agent_mod, "devops_run", side_effect=OSError("no such file")):
+        result = HermesAgent(AgentConfig(target="/bin/hermes")).run("hello")
+
+    assert result.has_errors()
+    assert result.tokens == empty_tokens()

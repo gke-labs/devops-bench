@@ -174,15 +174,16 @@ class HermesAgent(AgentHarness):
                 stderr_text = exc.stderr or ""
                 trajectory = []
                 export_errors = []
-                tokens = empty_tokens()
                 db_path = run_path / _HERMES_STATE_DB
                 if db_path.exists():
                     try:
                         trajectory, export_errors = extract_trajectory_from_db(db_path)
-                        tokens = extract_tokens_from_db(db_path)
                     except Exception as db_exc:
                         _log.warning("Failed to extract trajectory on timeout: %s", db_exc)
                         export_errors.append(f"Failed to extract trajectory on timeout: {db_exc}")
+                # Independent of trajectory extraction: never raises, and reports
+                # whatever the killed run flushed (all-None when nothing did).
+                tokens = extract_tokens_from_db(db_path)
 
                 return AgentResult(
                     output=f"Timeout expired.\n\n=== STDOUT ===\n{stdout_text}\n\n=== STDERR ===\n{stderr_text}",
@@ -193,7 +194,13 @@ class HermesAgent(AgentHarness):
                     metadata={"timeout": True},
                 )
             except OSError as exc:
-                return AgentResult.errored(f"hermes binary unavailable: {exc}")
+                # Same canonical all-None token shape as every other path.
+                return AgentResult(
+                    output=f"Error: hermes binary unavailable: {exc}",
+                    trajectory=[],
+                    tokens=empty_tokens(),
+                    errors=[f"hermes binary unavailable: {exc}"],
+                )
 
             stdout_text = completed.stdout or ""
             errors: list[str] = []

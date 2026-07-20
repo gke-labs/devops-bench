@@ -224,21 +224,32 @@ def test_parsing_missing_tool_name(test_db_path: Path):
 # -- extract_tokens_from_db ---------------------------------------------------
 
 
+_TOKEN_COLUMNS = (
+    "input_tokens",
+    "output_tokens",
+    "reasoning_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+)
+
+
 def init_db_schema_with_tokens(db_path: Path) -> None:
-    """Schema matching current Hermes: sessions carries per-session token counts."""
+    """Extend the base schema with the token columns current Hermes writes."""
+    init_db_schema(db_path)
+    conn = sqlite3.connect(db_path)
+    for column in _TOKEN_COLUMNS:
+        conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} INTEGER")
+    conn.commit()
+    conn.close()
+
+
+def insert_session(db_path: Path, session_id: str, *counts) -> None:
     conn = sqlite3.connect(db_path)
     conn.execute(
-        """
-        CREATE TABLE sessions (
-            id TEXT PRIMARY KEY,
-            started_at TIMESTAMP,
-            input_tokens INTEGER,
-            output_tokens INTEGER,
-            reasoning_tokens INTEGER,
-            cache_read_tokens INTEGER,
-            cache_write_tokens INTEGER
-        )
-    """
+        "INSERT INTO sessions (id, started_at, input_tokens, output_tokens,"
+        " reasoning_tokens, cache_read_tokens, cache_write_tokens)"
+        " VALUES (?, NULL, ?, ?, ?, ?, ?)",
+        (session_id, *counts),
     )
     conn.commit()
     conn.close()
@@ -257,10 +268,7 @@ def test_empty_tokens_all_none():
 
 def test_extract_tokens_reads_session_counts(test_db_path: Path):
     init_db_schema_with_tokens(test_db_path)
-    conn = sqlite3.connect(test_db_path)
-    conn.execute("INSERT INTO sessions VALUES ('s1', NULL, 2748, 11267, 152, 334987, 12000)")
-    conn.commit()
-    conn.close()
+    insert_session(test_db_path, "s1", 2748, 11267, 152, 334987, 12000)
 
     assert extract_tokens_from_db(test_db_path) == {
         "input": 2748,
@@ -272,26 +280,33 @@ def test_extract_tokens_reads_session_counts(test_db_path: Path):
     }
 
 
-def test_extract_tokens_uses_latest_session(test_db_path: Path):
+def test_extract_tokens_sums_across_sessions(test_db_path: Path):
+    # The DB is per-run; a run may write several session rows (compaction,
+    # sub-sessions), and session ids need not sort chronologically.
     init_db_schema_with_tokens(test_db_path)
-    conn = sqlite3.connect(test_db_path)
-    conn.execute("INSERT INTO sessions VALUES ('s1', NULL, 1, 1, 0, 0, 0)")
-    conn.execute("INSERT INTO sessions VALUES ('s2', NULL, 500, 40, 5, 900, 30)")
-    conn.commit()
-    conn.close()
+    insert_session(test_db_path, "f3a9-uuid", 1, 1, 0, 0, 0)
+    insert_session(test_db_path, "0b21-uuid", 500, 40, 5, 900, 30)
 
     tokens = extract_tokens_from_db(test_db_path)
-    assert tokens["input"] == 500
+    assert tokens["input"] == 501
+    assert tokens["output"] == 41
     assert tokens["cached"] == 900
+
+
+def test_extract_tokens_coerces_real_values(test_db_path: Path):
+    # SQLite columns are dynamically typed; a REAL count must not be dropped.
+    init_db_schema_with_tokens(test_db_path)
+    insert_session(test_db_path, "s1", 100, 7, 0, 0, 12000.0)
+
+    tokens = extract_tokens_from_db(test_db_path)
+    assert tokens["cache_write"] == 12000
+    assert tokens["input"] == 100
 
 
 def test_extract_tokens_null_columns_stay_none(test_db_path: Path):
     # NULL counts (e.g. a crashed run) must surface as None, not 0.
     init_db_schema_with_tokens(test_db_path)
-    conn = sqlite3.connect(test_db_path)
-    conn.execute("INSERT INTO sessions VALUES ('s1', NULL, 100, 7, NULL, NULL, NULL)")
-    conn.commit()
-    conn.close()
+    insert_session(test_db_path, "s1", 100, 7, None, None, None)
 
     tokens = extract_tokens_from_db(test_db_path)
     assert tokens["input"] == 100

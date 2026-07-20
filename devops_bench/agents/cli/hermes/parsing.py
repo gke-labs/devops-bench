@@ -22,9 +22,11 @@ from pathlib import Path
 
 from devops_bench.agents.result import ToolCall
 
-# Canonical token buckets (harness-local until the unified token schema lands):
-# ``input`` is the non-cached prompt, ``cached`` is cache reads, ``output``
-# excludes ``reasoning``, and ``total`` is the sum of all buckets.
+# Canonical token buckets (harness-local until the unified token schema lands;
+# see gke-labs/devops-bench#212): ``input`` is the non-cached prompt, ``cached``
+# is cache reads, ``output`` excludes ``reasoning``, and ``total`` is the sum of
+# all buckets. Bucket semantics assume Hermes normalizes provider usage to this
+# split — unverified against a live run (see docs/appendix/known_issues.md).
 _TOKEN_BUCKETS = ("input", "cached", "cache_write", "reasoning", "output", "total")
 
 # Hermes ``sessions`` columns -> canonical buckets. Hermes populates these via
@@ -44,14 +46,20 @@ def empty_tokens() -> dict:
     return dict.fromkeys(_TOKEN_BUCKETS, None)
 
 
-def extract_tokens_from_db(db_path: Path) -> dict:
-    """Read canonical token usage from the latest session in Hermes ``state.db``.
+def _connect_ro(db_path: Path) -> sqlite3.Connection:
+    """Open ``db_path`` read-only, so a live ``state.db`` is never locked."""
+    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
 
-    The ``sessions`` table carries per-session token counts
-    (``input_tokens`` / ``output_tokens`` / ``reasoning_tokens`` /
-    ``cache_read_tokens`` / ``cache_write_tokens``). Columns are probed via
-    ``PRAGMA table_info`` so older Hermes schemas simply yield ``None`` buckets;
-    any read failure yields all-``None`` (never a fabricated ``0``).
+
+def extract_tokens_from_db(db_path: Path) -> dict:
+    """Read canonical token usage from Hermes ``state.db``.
+
+    The ``sessions`` table carries per-session token counts (``input_tokens`` /
+    ``output_tokens`` / ``reasoning_tokens`` / ``cache_read_tokens`` /
+    ``cache_write_tokens``), summed across all sessions — the DB is per-run,
+    and a run may write more than one session row. Never raises: an older
+    Hermes schema (missing columns), a missing/corrupt DB, or any read failure
+    yields all-``None`` buckets (never a fabricated ``0``).
 
     Args:
         db_path: Path to the run's ``state.db``.
@@ -63,28 +71,22 @@ def extract_tokens_from_db(db_path: Path) -> dict:
     tokens = empty_tokens()
     if not db_path.exists():
         return tokens
+    select = ", ".join(f"SUM({column})" for column in _SESSION_TOKEN_COLUMNS)
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = _connect_ro(db_path)
         try:
-            cursor = conn.cursor()
-            present = {row[1] for row in cursor.execute("PRAGMA table_info(sessions)")}
-            columns = [c for c in _SESSION_TOKEN_COLUMNS if c in present]
-            if not columns:
-                return tokens
-            cursor.execute(
-                f"SELECT {', '.join(columns)} FROM sessions ORDER BY id DESC LIMIT 1"  # noqa: S608
-            )
-            row = cursor.fetchone()
+            row = conn.execute(f"SELECT {select} FROM sessions").fetchone()
         finally:
             conn.close()
     except sqlite3.Error:
         return tokens
     if row is None:
         return tokens
-    for column, value in zip(columns, row, strict=True):
-        if isinstance(value, int) and not isinstance(value, bool):
-            tokens[_SESSION_TOKEN_COLUMNS[column]] = value
-    reported = [tokens[b] for b in _TOKEN_BUCKETS[:-1] if tokens[b] is not None]
+    for bucket, value in zip(_SESSION_TOKEN_COLUMNS.values(), row, strict=True):
+        # SUM yields int, float (REAL affinity), or NULL for an all-NULL column.
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            tokens[bucket] = int(value)
+    reported = [tokens[b] for b in _SESSION_TOKEN_COLUMNS.values() if tokens[b] is not None]
     if reported:
         tokens["total"] = sum(reported)
     return tokens
@@ -100,7 +102,7 @@ def extract_trajectory_from_db(db_path: Path) -> tuple[list[dict], list[str]]:
         return [], errors
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = _connect_ro(db_path)
         try:
             cursor = conn.cursor()
 
