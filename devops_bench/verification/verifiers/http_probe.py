@@ -110,10 +110,10 @@ class HttpProbeVerifier(BaseVerifier):
             return False, f"unexpected curl output: {output!r}", None
 
         body, status_line = lines
-        try:
-            status_code = int(status_line.strip())
-        except ValueError:
+        match = re.match(r"\s*(\d{3})", status_line)
+        if not match:
             return False, f"could not parse HTTP status from {status_line!r}", None
+        status_code = int(match.group(1))
 
         raw: dict[str, Any] = {"status_code": status_code, "body_length": len(body)}
 

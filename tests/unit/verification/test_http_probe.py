@@ -75,6 +75,17 @@ def test_probe_subprocess_error_is_failure(mocker):
     assert "kubectl run failed" in result.reason
 
 
+def test_probe_parses_status_with_trailing_kubectl_noise(mocker):
+    """kubectl's `pod ... deleted` notice glued onto the code must not break parsing."""
+    _patch_run_pod(
+        mocker, 'Hello from hello-app\n200pod "http-probe-6836fa7d" deleted from default namespace'
+    )
+    v = HttpProbeVerifier.model_validate({"type": "http_probe", "url": "http://svc"})
+    result = v.verify(0)
+    assert result.success is True
+    assert result.raw["status_code"] == 200
+
+
 def test_probe_unparseable_output(mocker):
     _patch_run_pod(mocker, "no-status-line")
     v = HttpProbeVerifier.model_validate({"type": "http_probe", "url": "http://svc"})
