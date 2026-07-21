@@ -32,19 +32,11 @@ per-run working directory before invocation:
   ignored and no trust prompt fires.
 
 Auth is env-driven, matching the bench contract: ``config.api_key`` →
-``ANTHROPIC_API_KEY`` for the direct API, or keyless Vertex / Bedrock whose ADC
-/ AWS credentials live outside the config dir. ``CLAUDE_CONFIG_DIR`` is
-redirected to a fresh per-run temp dir so Claude Code's mutable global state
-(config, sessions, trust) never races across concurrent evals — which means a
-cached subscription OAuth login in ``~/.claude`` is not visible. For OAuth-based
-local debugging, export ``CLAUDE_CONFIG_DIR=~/.claude`` yourself: an ambient
-value is respected and the per-run temp dir is not injected.
-
-For keyless Vertex under ``--parallel`` locally, note that ``RunEnv.apply()``
-redirects ``CLOUDSDK_CONFIG`` to a per-run dir, so google-auth cannot find user
-ADC via that path; export ``GOOGLE_APPLICATION_CREDENTIALS`` at the real ADC
-file to bypass the lookup. On the bastion, metadata-server ADC needs no file and
-this is a non-issue.
+``ANTHROPIC_API_KEY`` for the direct API, or keyless Vertex / Bedrock via ADC /
+AWS credentials. ``CLAUDE_CONFIG_DIR`` is redirected to a fresh per-run temp dir
+so Claude Code's mutable global state never races across concurrent evals (see
+:func:`_claude_config_dir` for the OAuth-debug escape hatch, and
+``docs/appendix/known_issues.md`` for the keyless-Vertex ``--parallel`` gotcha).
 """
 
 from __future__ import annotations
@@ -71,16 +63,14 @@ from devops_bench.core.subprocess import run
 
 __all__ = ["ClaudeCodeAgent"]
 
-# Filename Claude Code auto-loads from its working directory as the operator
-# brief / startup context (its native equivalent of a system prompt).
+# Auto-loaded from the cwd as the operator brief (native system-prompt analog).
 _CLAUDE_RULES_FILE = "CLAUDE.md"
 # Workspace config dir/files Claude Code reads from its cwd: ``skills/`` is the
 # skill-discovery root and ``mcp-config.json`` is passed via ``--mcp-config``.
 _CLAUDE_CONFIG_DIRNAME = ".claude"
 _CLAUDE_SKILLS_DIR = "skills"
 _CLAUDE_MCP_FILE = "mcp-config.json"
-# Env var that relocates Claude Code's mutable global state; when the operator
-# has already exported it we defer to their value (OAuth-debug escape hatch).
+# Relocates Claude Code's mutable global state (see _claude_config_dir).
 _CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
 
 _log = get_logger("agents.cli.claude_code")
@@ -103,11 +93,10 @@ def _build_argv(
 ) -> list[str]:
     """Build the ``claude`` headless invocation for ``prompt``.
 
-    ``--verbose`` is mandatory: the CLI rejects ``--output-format stream-json``
-    under ``-p`` without it. ``--dangerously-skip-permissions`` auto-approves
-    every tool call so headless runs never block on a confirmation prompt. When
-    an MCP config is bound, ``--strict-mcp-config`` restricts the CLI to exactly
-    those servers, ignoring any stray project/user ``.mcp.json``.
+    ``--verbose`` is mandatory (the CLI rejects ``stream-json`` under ``-p``
+    without it); ``--dangerously-skip-permissions`` keeps headless runs from
+    blocking on confirmation prompts; ``--strict-mcp-config`` pins the CLI to
+    exactly the bound servers, ignoring any stray ``.mcp.json``.
 
     Args:
         target: Path to the ``claude`` binary (already user-expanded).
@@ -140,14 +129,11 @@ def _build_argv(
 def _build_env(config: AgentConfig, *, config_dir: str | None) -> dict[str, str]:
     """Build the env overlay that makes the Claude Code run model-agnostic.
 
-    ``config.api_key`` is routed onto the provider's API-key env var(s) via the
-    shared contract (:func:`~devops_bench.core.model_providers.resolve_provider`,
-    defaulted to ``anthropic`` for this harness). Vertex / Bedrock backends set
-    their ``CLAUDE_CODE_USE_*`` switch and, for Vertex, map the repo's ambient
-    ``GCP_PROJECT_ID`` / ``GCP_VERTEX_LOCATION`` onto the CLI's
-    ``ANTHROPIC_VERTEX_PROJECT_ID`` / ``CLOUD_ML_REGION`` (the same source envs
-    the in-process API adapter reads). The model is never set here — it flows
-    through the ``--model`` argv flag.
+    ``config.api_key`` routes onto the provider's key env var(s) via the shared
+    contract (default ``anthropic``); Vertex / Bedrock backends set their
+    ``CLAUDE_CODE_USE_*`` switch, with Vertex mapping the repo's ambient
+    ``GCP_PROJECT_ID`` / ``GCP_VERTEX_LOCATION`` onto the CLI's equivalents. The
+    model is never set here — it flows through the ``--model`` argv flag.
 
     Args:
         config: Resolved :class:`AgentConfig` for this run.
@@ -217,9 +203,6 @@ class ClaudeCodeAgent(AgentHarness):
     ``True`` for orchestrator-side capability negotiation (the Protocols are
     structural).
 
-    The full canonical trajectory is parsed from the official
-    ``--output-format stream-json`` event stream; no session files are read from
-    disk, and every subprocess call goes through ``core.subprocess.run``.
     """
 
     def __init__(self, config: AgentConfig | None = None) -> None:
@@ -232,20 +215,11 @@ class ClaudeCodeAgent(AgentHarness):
     def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
         """Build argv, run the CLI, and parse the stream-json output.
 
-        The agent runs the binary inside ``workspace_path`` when the harness
-        supplies one, else its own per-run temp working directory, laying down
-        the granted capabilities there first via Claude Code's native cwd
-        channels (all auto-loaded from cwd, so ``~/.claude`` stays untouched and
-        concurrent runs never race):
-
-        * ``CLAUDE.md`` — the operator brief, when ``rules.text`` is set.
-        * ``.claude/skills/<name>/SKILL.md`` — one per discovered skill.
-        * ``.claude/mcp-config.json`` — ``mcpServers`` for each command-bearing
-          MCP binding, passed via ``--mcp-config --strict-mcp-config``.
-
-        A temp working directory (used when ``workspace_path`` is ``None``) and
-        the per-run ``CLAUDE_CONFIG_DIR`` are cleaned up when ``_execute``
-        returns; a harness-supplied ``workspace_path`` is left for the harness.
+        Capabilities are laid down in the run directory first via the cwd
+        channels described in the module docstring. The temp working directory
+        (when ``workspace_path`` is ``None``) and the per-run
+        ``CLAUDE_CONFIG_DIR`` are cleaned up on return; a harness-supplied
+        ``workspace_path`` is left for the harness to collect.
         """
         caps = self.config.capabilities
         target = os.path.expanduser(self.config.target or "claude")

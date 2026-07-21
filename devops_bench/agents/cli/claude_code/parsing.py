@@ -101,11 +101,6 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
     | ``user``      | ``tool_result`` blocks matched to pending ToolCalls       |
     | ``result``    | terminal: authoritative answer, token usage, error subtype|
 
-    ``trajectory`` is a list of tool calls (``ToolCall.to_dict()``) in emission
-    order, matching the tool-calls-only shape the other CLI harnesses emit;
-    ``thinking`` / ``redacted_thinking`` blocks are dropped rather than recorded
-    as steps.
-
     The accumulated assistant ``text`` doubles as a fallback answer for the rare
     case where no terminal ``result`` event arrives (e.g. a truncated pipe on
     older ``claude`` builds); when the ``result`` event is present its ``result``
