@@ -14,11 +14,14 @@
 
 """Deadline-based dispatcher that evaluates a verification specification.
 
-The whole verification races a single monotonic deadline computed once at the
-top of :meth:`VerifierAgent.wait_for_condition`. Sequence nodes consume the
-deadline serially and fail fast (later children are recorded as skipped);
-parallel nodes hand each child the full remaining deadline and AND the results.
-Leaves consume the deadline directly via ``leaf.verify(remaining)``.
+Each top-level evaluation races a single monotonic deadline: ``wait_for_condition``
+(the chaos path) establishes one, and ``run_entry`` establishes one per entry.
+Sequence nodes consume the deadline serially and fail fast (later children are
+recorded as skipped); quantifier nodes (``all``/``parallel``, ``any``, ``none``)
+hand each child the full remaining deadline and combine the results. Leaf
+evaluation is mode-aware: ``converge`` consumes the remaining deadline via
+``leaf.verify(remaining)``, ``assert`` evaluates once via ``leaf.verify(0.0)``,
+and ``hold`` samples over a window. The mode is threaded down as a ``_ModeCtx``.
 """
 
 from __future__ import annotations
@@ -109,9 +112,13 @@ def _skipped(node: Any, reason: str) -> VerificationResult:
 class VerifierAgent:
     """Evaluate single or compound verification specs against cluster state.
 
-    All evaluations share a single monotonic deadline established by
-    :meth:`wait_for_condition`. Compound nodes propagate the deadline without
-    rebudgeting; leaves consume it directly via their ``verify`` method.
+    Two entry points establish an evaluation: :meth:`wait_for_condition` (the
+    chaos path, always ``converge``) and :meth:`run_entry` (a single typed
+    entry, evaluated under its own mode). Each establishes one monotonic
+    deadline; compound nodes propagate it without rebudgeting, and leaves
+    consume it according to the entry's mode. The agent holds no per-run
+    mutable state: the ``_ModeCtx`` is threaded as a parameter rather than
+    stored on ``self`` (quantifier children run in a thread pool).
     """
 
     def wait_for_condition(
