@@ -24,6 +24,13 @@ only.
 """
 
 from devops_bench.verification.base import VERIFIERS, BaseVerifier, VerificationResult
+from devops_bench.verification.rollup import (
+    EvaluatedEntry,
+    Role,
+    RollupScores,
+    Severity,
+    rollup,
+)
 from devops_bench.verification.runner import VerifierAgent
 from devops_bench.verification.spec import (
     AllSpec,
@@ -41,9 +48,13 @@ __all__ = [
     "AllSpec",
     "AnySpec",
     "BaseVerifier",
+    "EvaluatedEntry",
     "NoneSpec",
     "ParallelSpec",
+    "Role",
+    "RollupScores",
     "SequenceSpec",
+    "Severity",
     "VERIFIERS",
     "VerificationNode",
     "VerificationResult",
@@ -51,4 +62,5 @@ __all__ = [
     "VerifierAgent",
     "json_schema",
     "parse_node",
+    "rollup",
 ]
