@@ -3,6 +3,7 @@ task_id: 13
 name: "lustre-csi-deployment"
 infrastructure:
   deployer: "tofu"
+  provider: "gcp"
   stack: "prebuilt/lustre-csi"
   teardown: true
   variables:

@@ -2,6 +2,7 @@ task_id: 18
 name: "secret-rotation"
 infrastructure:
   deployer: "tofu"
+  provider: "gcp"
   stack: "prebuilt/secret-rotation"
   teardown: true
 prompt: |

@@ -2,6 +2,7 @@ task_id: 3
 name: "deploy-config"
 infrastructure:
   deployer: "tofu"
+  provider: "gcp"
   # Provides the cluster + the hypercomputer-d1-vllm-sa KSA (Workload Identity)
   # + the hypercomputer-d1-models-* GCS bucket the manifest's gcsfuse volume
   # references. seed_mode=infra-only deliberately does NOT pre-deploy the vllm

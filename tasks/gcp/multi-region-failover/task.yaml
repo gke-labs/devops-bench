@@ -8,6 +8,7 @@ name: "multi-region-failover"
 # regions. See docs/bastion.md.
 infrastructure:
   deployer: "tofu"
+  provider: "gcp"
   stack: "prebuilt/multi-region-failover"
   teardown: true
 prompt: |
