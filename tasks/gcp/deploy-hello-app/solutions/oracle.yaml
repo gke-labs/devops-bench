@@ -1,0 +1,212 @@
+# Oracle manifest for tasks/gcp/deploy-hello-app/task.yaml (task_id: 6).
+#
+# Hand-written, fully hardened reference solution. Applying this (with the
+# CLUSTERNAME placeholder substituted, see below and the validation runbook at
+# docs/appendix/deploy-hello-app-oracle-validation.md) is expected to score
+# every verification_entries check in task.yaml: c=1.0, rec_v=1.0, cat_v=1.
+#
+# Before applying to a live cluster, an actual HTTP-converted image of
+# tasks/gcp/deploy-hello-app/hello-app/main.go must be built and pushed to the
+# Artifact Registry path below (see the runbook) — the image reference here is
+# a placeholder, not a resolvable tag.
+#
+# All resources live in the hello-app namespace only, so both safeguards
+# (not-dumped-in-default, blast-radius) hold trivially: nothing here targets
+# default or kube-system.
+
+# Satisfies objective `namespace-pss-enforced`: the namespace itself carries
+# the `pod-security.kubernetes.io/enforce: restricted` label the check reads
+# via metadata.labels."pod-security.kubernetes.io/enforce".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hello-app
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Non-default ServiceAccount for the Deployment's `serviceAccountName`, part of
+# objective `pod-hardening` (spec.template.spec.serviceAccountName != default).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app
+---
+# Satisfies objective `workload-running` (>=2 replicas reaching readyReplicas),
+# objective `pod-hardening` (serviceAccountName, probes, resources,
+# securityContext), and objective `image-published-to-run-repo` (image path
+# contains hello-app-<CLUSTERNAME>). metadata.labels app=hello-app is what the
+# `selector: "app=hello-app"` checks match against on this Deployment object.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app
+spec:
+  replicas: 2 # workload-running: readyReplicas gte 2
+  selector:
+    matchLabels:
+      app: hello-app
+  template:
+    metadata:
+      labels:
+        app: hello-app
+    spec:
+      serviceAccountName: hello-app # pod-hardening: serviceAccountName != default
+      securityContext:
+        # Pod-level defaults; restated per-container below since the check
+        # reads spec.template.spec.containers[0].securityContext directly.
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: hello-app
+          # Placeholder image path: CLUSTERNAME is substituted with the real
+          # {{GKE_CLUSTER_NAME}} at apply time (see the runbook). REGION and
+          # PROJECT are substituted with the real registry region/project.
+          # Satisfies objective `image-published-to-run-repo`: the image path
+          # contains "hello-app-CLUSTERNAME", matching the check's
+          # `hello-app-{{GKE_CLUSTER_NAME}}` substring after substitution.
+          image: "REGION-docker.pkg.dev/PROJECT/hello-app-CLUSTERNAME/hello-app:v1"
+          ports:
+            - name: http
+              containerPort: 8080
+          # pod-hardening: livenessProbe / readinessProbe must exist. Probing
+          # "/" ties directly to objective `serving-http`'s http_probe, which
+          # also expects HTTP 200 from the app root.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          # pod-hardening: resources.requests and resources.limits must exist.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          # pod-hardening: allowPrivilegeEscalation false, readOnlyRootFilesystem
+          # true, runAsNonRoot true, plus the rest restricted PSS requires so
+          # the pod actually admits and starts (seccompProfile, capabilities
+          # drop ALL, non-zero runAsUser).
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          # Writable scratch space so the read-only-rootfs container can still
+          # run (e.g. for /tmp usage).
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+# Satisfies objective `serving-http` (status.loadBalancer.ingress[0].ip once
+# GKE provisions it, plus the http_probe expecting 200 from the Service DNS
+# name). metadata.labels app=hello-app is what the check's label selector
+# matches on this Service object; spec.selector routes traffic to the pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app
+spec:
+  type: LoadBalancer
+  selector:
+    app: hello-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+# Satisfies half of objective `disruption-and-scaling` (a PodDisruptionBudget
+# exists in hello-app).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: hello-app
+---
+# Satisfies the other half of objective `disruption-and-scaling` (a
+# HorizontalPodAutoscaler exists in hello-app).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hello-app
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+# Satisfies objective `network-policy-present` (a NetworkPolicy exists in
+# hello-app). Ingress is scoped to the app's serving port (allowing traffic
+# from any source, including the LoadBalancer path and in-cluster probes);
+# egress is left open since this app has no lockdown requirement beyond
+# ingress exposure.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hello-app
+  namespace: hello-app
+  labels:
+    app: hello-app
+spec:
+  podSelector:
+    matchLabels:
+      app: hello-app
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - {}
