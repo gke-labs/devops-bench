@@ -26,6 +26,9 @@ only.
 from devops_bench.verification.base import VERIFIERS, BaseVerifier, VerificationResult
 from devops_bench.verification.runner import VerifierAgent
 from devops_bench.verification.spec import (
+    AllSpec,
+    AnySpec,
+    NoneSpec,
     ParallelSpec,
     SequenceSpec,
     VerificationNode,
@@ -35,7 +38,10 @@ from devops_bench.verification.spec import (
 )
 
 __all__ = [
+    "AllSpec",
+    "AnySpec",
     "BaseVerifier",
+    "NoneSpec",
     "ParallelSpec",
     "SequenceSpec",
     "VERIFIERS",

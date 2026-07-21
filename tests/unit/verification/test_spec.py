@@ -156,10 +156,20 @@ def test_parse_node_propagates_validation_error():
         parse_node({"type": "pod_healthy"})  # missing selector
 
 
+def test_all_any_none_nodes_parse():
+    from devops_bench.verification import AllSpec, AnySpec, NoneSpec
+
+    for tag, cls in (("all", AllSpec), ("any", AnySpec), ("none", NoneSpec)):
+        spec = VerificationSpec(
+            {"type": tag, "checks": [{"type": "pod_healthy", "selector": "app=web"}]}
+        )
+        assert isinstance(spec.root, cls)
+        assert isinstance(spec.root.checks[0], PodHealthyVerifier)
+
+
 def test_json_schema_emits_all_discriminated_types():
     schema = json_schema()
 
     text = repr(schema)
-    # All four union members must appear in the emitted schema.
-    for tag in ("pod_healthy", "scaling_complete", "sequence", "parallel"):
+    for tag in ("pod_healthy", "scaling_complete", "sequence", "parallel", "all", "any", "none"):
         assert tag in text

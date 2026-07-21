@@ -26,10 +26,13 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as futures_wait
-from typing import Any
+from typing import Any, Literal
 
 from devops_bench.verification.base import BaseVerifier, VerificationResult
 from devops_bench.verification.spec import (
+    AllSpec,
+    AnySpec,
+    NoneSpec,
     ParallelSpec,
     SequenceSpec,
     VerificationSpec,
@@ -109,8 +112,12 @@ class VerifierAgent:
         """Dispatch a node against the shared deadline."""
         if isinstance(node, SequenceSpec):
             return self._run_sequence(node, deadline)
-        if isinstance(node, ParallelSpec):
-            return self._run_parallel(node, deadline)
+        if isinstance(node, ParallelSpec | AllSpec):
+            return self._run_quantified(node, deadline, "all")
+        if isinstance(node, AnySpec):
+            return self._run_quantified(node, deadline, "any")
+        if isinstance(node, NoneSpec):
+            return self._run_quantified(node, deadline, "none")
         return self._run_leaf(node, deadline)
 
     def _run_leaf(self, node: Any, deadline: float) -> VerificationResult:
@@ -155,19 +162,28 @@ class VerifierAgent:
             children=children,
         )
 
-    def _run_parallel(self, node: ParallelSpec, deadline: float) -> VerificationResult:
-        """Run children concurrently; each sees the full remaining deadline.
+    def _run_quantified(
+        self,
+        node: Any,
+        deadline: float,
+        quantifier: Literal["all", "any", "none"],
+    ) -> VerificationResult:
+        """Run children concurrently and combine by ``quantifier``.
 
-        A parallel child still blocked in ``kubectl wait`` / ``poll_until`` when
+        ``all`` requires every child to pass (the old ``parallel`` semantics);
+        ``any`` requires at least one; ``none`` requires zero. An empty ``checks``
+        list is vacuously true for ``all`` and ``none`` and false for ``any``.
+
+        Each child sees the full remaining deadline. A child still blocked when
         the deadline hits is bounded by the ``remaining`` value handed to its
-        ``verify`` call, so worker threads do not linger long past the deadline.
-        A leaf that unexpectedly raises is converted to a failed child result so
-        one bad leaf does not abort the rest of the group.
+        ``verify`` call. A leaf that unexpectedly raises becomes a failed child
+        result so one bad leaf does not abort the group.
         """
         start = time.monotonic()
         if not node.checks:
+            vacuous = quantifier != "any"
             return VerificationResult(
-                success=True,
+                success=vacuous,
                 elapsed_time=time.monotonic() - start,
                 reason="no checks",
                 name=node.name,
@@ -199,12 +215,18 @@ class VerifierAgent:
                     )
         finally:
             ex.shutdown(wait=False, cancel_futures=True)
-        ok = all(r.success for r in results)
+        ok_count = sum(1 for r in results if r.success)
+        if quantifier == "all":
+            ok = ok_count == len(results)
+        elif quantifier == "any":
+            ok = ok_count > 0
+        else:  # none
+            ok = ok_count == 0
         reasons = [f"[{i}] {'ok' if r.success else 'fail'}" for i, r in enumerate(results)]
         return VerificationResult(
             success=ok,
             elapsed_time=time.monotonic() - start,
-            reason="; ".join(reasons),
+            reason=f"{quantifier}: {'; '.join(reasons)}",
             name=node.name,
             children=results,
         )

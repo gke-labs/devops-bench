@@ -422,6 +422,99 @@ def test_parallel_with_exhausted_deadline_times_out_all_children_using_real_veri
     assert {c.name for c in result.children} == {"pods", "scale"}
 
 
+def test_all_group_behaves_like_parallel_and():
+    def fake_pod(self: PodHealthyVerifier, timeout_sec: float) -> VerificationResult:
+        return _stub_result(success=True)
+
+    spec = VerificationSpec(
+        {
+            "type": "all",
+            "checks": [
+                {"type": "pod_healthy", "selector": "app=web"},
+                {"type": "pod_healthy", "selector": "app=db"},
+            ],
+        }
+    )
+    with patch.object(PodHealthyVerifier, "verify", fake_pod):
+        result = VerifierAgent().wait_for_condition(spec, timeout_sec=30)
+    assert result.success is True
+
+
+def test_any_group_passes_when_one_child_passes():
+    def fake_pod(self: PodHealthyVerifier, timeout_sec: float) -> VerificationResult:
+        return _stub_result(success="web" in self.selector)
+
+    spec = VerificationSpec(
+        {
+            "type": "any",
+            "checks": [
+                {"type": "pod_healthy", "selector": "app=web"},
+                {"type": "pod_healthy", "selector": "app=db"},
+            ],
+        }
+    )
+    with patch.object(PodHealthyVerifier, "verify", fake_pod):
+        result = VerifierAgent().wait_for_condition(spec, timeout_sec=30)
+    assert result.success is True
+
+
+def test_any_group_fails_when_all_children_fail():
+    def fake_pod(self: PodHealthyVerifier, timeout_sec: float) -> VerificationResult:
+        return _stub_result(success=False)
+
+    spec = VerificationSpec(
+        {
+            "type": "any",
+            "checks": [
+                {"type": "pod_healthy", "selector": "app=web"},
+                {"type": "pod_healthy", "selector": "app=db"},
+            ],
+        }
+    )
+    with patch.object(PodHealthyVerifier, "verify", fake_pod):
+        result = VerifierAgent().wait_for_condition(spec, timeout_sec=30)
+    assert result.success is False
+
+
+def test_none_group_passes_when_no_child_passes():
+    def fake_pod(self: PodHealthyVerifier, timeout_sec: float) -> VerificationResult:
+        return _stub_result(success=False)
+
+    spec = VerificationSpec(
+        {"type": "none", "checks": [{"type": "pod_healthy", "selector": "app=web"}]}
+    )
+    with patch.object(PodHealthyVerifier, "verify", fake_pod):
+        result = VerifierAgent().wait_for_condition(spec, timeout_sec=30)
+    assert result.success is True
+
+
+def test_none_group_fails_when_a_child_passes():
+    def fake_pod(self: PodHealthyVerifier, timeout_sec: float) -> VerificationResult:
+        return _stub_result(success=True)
+
+    spec = VerificationSpec(
+        {"type": "none", "checks": [{"type": "pod_healthy", "selector": "app=web"}]}
+    )
+    with patch.object(PodHealthyVerifier, "verify", fake_pod):
+        result = VerifierAgent().wait_for_condition(spec, timeout_sec=30)
+    assert result.success is False
+
+
+def test_any_with_no_checks_fails_and_none_passes():
+    any_result = VerifierAgent().wait_for_condition(
+        VerificationSpec({"type": "any", "checks": []}), timeout_sec=5
+    )
+    none_result = VerifierAgent().wait_for_condition(
+        VerificationSpec({"type": "none", "checks": []}), timeout_sec=5
+    )
+    all_result = VerifierAgent().wait_for_condition(
+        VerificationSpec({"type": "all", "checks": []}), timeout_sec=5
+    )
+    assert any_result.success is False
+    assert none_result.success is True
+    assert all_result.success is True
+
+
 def test_parallel_leaf_unhandled_exception_becomes_failed_child_not_group_abort():
     # A leaf that raises unexpectedly must not abort the whole parallel group;
     # the other children should still run and report normally.

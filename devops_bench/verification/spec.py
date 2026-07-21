@@ -28,6 +28,9 @@ from devops_bench.verification import verifiers as _verifiers  # noqa: F401
 from devops_bench.verification.base import VERIFIERS
 
 __all__ = [
+    "AllSpec",
+    "AnySpec",
+    "NoneSpec",
     "ParallelSpec",
     "SequenceSpec",
     "VerificationNode",
@@ -101,6 +104,59 @@ class ParallelSpec(BaseModel):
     """
 
     type: Literal["parallel"]
+    name: str | None = None
+    checks: list[Any]
+
+    _parse_children = model_validator(mode="before")(_parse_compound_children)
+
+
+@VERIFIERS.register("all")
+class AllSpec(BaseModel):
+    """Independent group: members run concurrently; every child must pass.
+
+    Vocab-correct alias of :class:`ParallelSpec` with identical semantics.
+
+    Attributes:
+        type: Discriminator literal, always ``"all"``.
+        name: Optional label echoed onto the result; metadata, never structural.
+        checks: Sibling child nodes; each is itself a parsed verifier node.
+    """
+
+    type: Literal["all"]
+    name: str | None = None
+    checks: list[Any]
+
+    _parse_children = model_validator(mode="before")(_parse_compound_children)
+
+
+@VERIFIERS.register("any")
+class AnySpec(BaseModel):
+    """Independent group: members run concurrently; at least one child must pass.
+
+    Attributes:
+        type: Discriminator literal, always ``"any"``.
+        name: Optional label echoed onto the result; metadata, never structural.
+        checks: Sibling child nodes; each is itself a parsed verifier node.
+    """
+
+    type: Literal["any"]
+    name: str | None = None
+    checks: list[Any]
+
+    _parse_children = model_validator(mode="before")(_parse_compound_children)
+
+
+@VERIFIERS.register("none")
+class NoneSpec(BaseModel):
+    """Independent group: members run concurrently; no child may pass.
+
+    Attributes:
+        type: Discriminator literal, always ``"none"``.
+        name: Optional label echoed onto the result; metadata, never structural.
+        checks: Sibling child nodes; each is itself a parsed verifier node.
+    """
+
+    type: Literal["none"]
     name: str | None = None
     checks: list[Any]
 
