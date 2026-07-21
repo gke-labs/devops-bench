@@ -2,6 +2,7 @@ task_id: 1
 name: "get-app-architecture"
 infrastructure:
   deployer: "tofu"
+  provider: "gcp"
   stack: "prebuilt/hypercomputer-d1"
   teardown: true
   variables:

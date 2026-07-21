@@ -3,6 +3,7 @@ task_id: 14
 name: "gpu-stress-test-diagnosis"
 infrastructure:
   deployer: "tofu"
+  provider: "gcp"
   stack: "prebuilt/gpu-stress-test"
   teardown: true
   variables:

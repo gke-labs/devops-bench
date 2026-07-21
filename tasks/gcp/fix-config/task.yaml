@@ -2,6 +2,7 @@ task_id: 5
 name: "fix-config"
 infrastructure:
   deployer: "tofu"
+  provider: "gcp"
   # seed_mode=broken-frontend pre-seeds the hypercomputer-d1-frontend Deployment
   # with USE_GEMINI_API="true" (the misconfiguration). The agent's job is to
   # re-apply the manifest below, which flips USE_GEMINI_API back to "false".
