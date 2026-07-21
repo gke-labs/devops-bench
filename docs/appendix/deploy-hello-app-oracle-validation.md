@@ -40,12 +40,29 @@ substitutions below.
 
 The oracle's `image:` field is a placeholder
 (`REGION-docker.pkg.dev/PROJECT/hello-app-CLUSTERNAME/hello-app:v1`) — it does
-not resolve on its own. Before applying, convert
-`tasks/gcp/deploy-hello-app/hello-app/main.go` (currently a `fmt.Println`
-one-shot) into a minimal HTTP server that listens on `:8080` and returns
-`200` from `/`, containerize it, create the Artifact Registry repo named
-`hello-app-<GKE_CLUSTER_NAME>` (matching the task's parallel-safety
-convention), and push the image there.
+not resolve on its own. A known-good HTTP server ships at
+`tasks/gcp/deploy-hello-app/solutions/hello-app/` (a minimal Go server on
+`:8080` returning `200` from `/`, plus its `Dockerfile`). It is the
+HTTP-converted counterpart to the `fmt.Println` fixture at `hello-app/main.go`,
+kept separate so the task fixture stays a plain hello-world. Create the
+Artifact Registry repo named `hello-app-<GKE_CLUSTER_NAME>` (matching the
+task's parallel-safety convention), build the image for `linux/amd64` (GKE
+nodes are amd64), and push it:
+
+```bash
+REGION=<your-AR-region>            # e.g. us-central1
+IMAGE="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/hello-app-${GKE_CLUSTER_NAME}/hello-app:v1"
+
+gcloud artifacts repositories create "hello-app-${GKE_CLUSTER_NAME}" \
+  --repository-format=docker --location="${REGION}" --project="${GCP_PROJECT_ID}"
+gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+docker build --platform linux/amd64 \
+  -t "${IMAGE}" tasks/gcp/deploy-hello-app/solutions/hello-app
+docker push "${IMAGE}"
+```
+
+Use the same `REGION` / `PROJECT` / `CLUSTERNAME` values in the Step 3 `sed`.
 
 ### 3. Apply the oracle manifest
 
