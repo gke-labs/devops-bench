@@ -53,7 +53,13 @@ from devops_bench.evalharness.scenario import (
     pick_free_port,
 )
 from devops_bench.tasks import Task
-from devops_bench.verification import VerificationSpec
+from devops_bench.verification import (
+    EvaluatedEntry,
+    VerificationResult,
+    VerificationSpec,
+    VerifierAgent,
+    rollup,
+)
 
 __all__ = ["DefaultEvalHarness"]
 
@@ -510,6 +516,84 @@ class DefaultEvalHarness(Harness):
                 errors.append({"name": str(name), "reason": str(exc)})
         return mapping, errors
 
+    def _run_verification_entries(
+        self,
+        task: Task,
+        cluster_name: str,
+        target_dep: str,
+        ns: str,
+    ) -> tuple[list[dict[str, Any]], dict[str, float | int | None] | None]:
+        """Evaluate the task's objective/safeguard entries after the agent runs.
+
+        Unconditional (no chaos dependency): each entry's ``check`` is
+        placeholder-substituted, parsed through the verifier registry, and
+        evaluated under the entry's mode via a fresh :class:`VerifierAgent`. The
+        per-entry results are rolled up into ``c`` / ``rec_v`` / ``cat_v``.
+
+        A per-entry failure (bad spec, evaluation error) is recorded as a failed
+        entry rather than raising, so a verification problem never turns an
+        otherwise-successful agent run into a failed record.
+
+        Args:
+            task: The task under evaluation.
+            cluster_name: Active cluster name for placeholder substitution.
+            target_dep: Resolved target deployment name.
+            ns: Resolved namespace.
+
+        Returns:
+            A pair ``(report, rollup)``: the per-entry report list and the rollup
+            mapping (or ``None`` when no entries are declared or the rollup is
+            undefined for lack of an objective).
+        """
+        entries = task.verification_entries or []
+        if not entries:
+            return [], None
+
+        agent = VerifierAgent()
+        evaluated: list[EvaluatedEntry] = []
+        report: list[dict[str, Any]] = []
+        for entry in entries:
+            resolved = self._resolve_spec_placeholders(entry.check, cluster_name, target_dep, ns)
+            try:
+                node = VerificationSpec(resolved).root
+                ev = agent.run_entry(entry, node, timeout_sec=VERIFICATION_TIMEOUT_SEC)
+            except Exception as exc:  # noqa: BLE001 - a bad entry must not fail the run
+                _log.warning("verification entry %r failed to evaluate: %s", entry.name, exc)
+                ev = EvaluatedEntry(
+                    name=entry.name,
+                    role=entry.role,
+                    severity=entry.severity,
+                    weight=entry.weight,
+                    result=VerificationResult(
+                        success=False, elapsed_time=0.0, reason=f"entry error: {exc}"
+                    ),
+                )
+            evaluated.append(ev)
+            report.append(
+                {
+                    "name": ev.name,
+                    "role": ev.role,
+                    "severity": ev.severity,
+                    "weight": ev.weight,
+                    "mode": entry.mode,
+                    "success": ev.result.success,
+                    "reason": ev.result.reason,
+                    "result": ev.result.model_dump(),
+                }
+            )
+
+        try:
+            scores = rollup(evaluated)
+            rollup_dict: dict[str, float | int | None] | None = {
+                "c": scores.c,
+                "rec_v": scores.rec_v,
+                "cat_v": scores.cat_v,
+            }
+        except ValueError as exc:
+            _log.warning("verification rollup skipped: %s", exc)
+            rollup_dict = None
+        return report, rollup_dict
+
     # -- scenario (background chaos) --------------------------------------
 
     def start_scenario(
@@ -743,6 +827,10 @@ class DefaultEvalHarness(Harness):
 
             chaos_report, perf_report = self._drain_scenario(scenario_manager, scenario_thread)
 
+            verification_entries_report, verification_rollup = self._run_verification_entries(
+                task, active_cluster_name, target_dep, ns
+            )
+
             result = self._build_success_record(
                 task=task,
                 prompt=prompt,
@@ -751,6 +839,8 @@ class DefaultEvalHarness(Harness):
                 chaos_report=chaos_report,
                 perf_report=perf_report,
                 verification_parse_errors=verification_parse_errors,
+                verification_entries_report=verification_entries_report,
+                verification_rollup=verification_rollup,
             )
             _log.info("agent response for %s:\n%s", task.name, result["output"])
         except Exception as exc:  # noqa: BLE001 - surface every task failure
@@ -800,6 +890,8 @@ class DefaultEvalHarness(Harness):
             "documentation",
             "capabilities_granted",
             "verification_parse_errors",
+            "verification_entries_report",
+            "verification_rollup",
             "generation_only",
             "validated",
         }
@@ -815,6 +907,8 @@ class DefaultEvalHarness(Harness):
         chaos_report: dict[str, Any],
         perf_report: dict[str, Any],
         verification_parse_errors: list[dict[str, str]] | None = None,
+        verification_entries_report: list[dict[str, Any]] | None = None,
+        verification_rollup: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Shape a typed :class:`AgentResult` + reports into the on-disk schema.
 
@@ -863,6 +957,8 @@ class DefaultEvalHarness(Harness):
                 "chaos_report": chaos_report,
                 "perf_report": perf_report,
                 "verification_parse_errors": list(verification_parse_errors or []),
+                "verification_entries_report": list(verification_entries_report or []),
+                "verification_rollup": verification_rollup,
             }
         )
         return record
@@ -953,6 +1049,8 @@ class DefaultEvalHarness(Harness):
                 "skills": list(self._granted_skill_paths),
             },
             "verification_parse_errors": [],
+            "verification_entries_report": [],
+            "verification_rollup": None,
             # Generation-only (``deployer: noop``) tasks have no cluster, so the
             # OutcomeValidity judge must not penalize them for "not applying".
             "generation_only": (task.infrastructure or {}).get("deployer") == "noop",

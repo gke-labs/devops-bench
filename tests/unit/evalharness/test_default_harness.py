@@ -391,3 +391,71 @@ def test_resolve_deployment_and_namespace_precedence_and_types(
     dep, ns = harness._resolve_deployment_and_namespace(task_non_str_vars)  # noqa: SLF001
     assert dep == "123"
     assert ns == "456"
+
+
+def test_run_verification_entries_scores_objectives_and_rollup(
+    isolated_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The per-entry wrapper evaluates entries and produces a c/rec_v/cat_v rollup."""
+    from devops_bench.verification import VerificationResult
+
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
+
+    task = Task.from_dict(
+        {
+            "task_id": "t",
+            "name": "demo",
+            "prompt": "p",
+            "verification_entries": [
+                {
+                    "name": "obj-ok",
+                    "role": "objective",
+                    "check": {"type": "pod_healthy", "selector": "app={{NAMESPACE}}"},
+                },
+                {
+                    "name": "guard-ok",
+                    "role": "safeguard",
+                    "severity": "catastrophic",
+                    "check": {"type": "pod_healthy", "selector": "app=web"},
+                },
+            ],
+        }
+    )
+
+    # Stub the leaf so no cluster is needed; assert placeholders were resolved.
+    def fake_verify(self: Any, timeout_sec: float) -> VerificationResult:
+        return VerificationResult(
+            success=True, elapsed_time=0.0, reason="ok", raw={"selector": self.selector}
+        )
+
+    from devops_bench.verification.verifiers import PodHealthyVerifier
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(PodHealthyVerifier, "verify", fake_verify)
+        report, rollup_scores = harness._run_verification_entries(  # noqa: SLF001
+            task, cluster_name="cl", target_dep="dep", ns="hello-ns"
+        )
+
+    assert rollup_scores == {"c": 1.0, "rec_v": None, "cat_v": 1}
+    assert [r["name"] for r in report] == ["obj-ok", "guard-ok"]
+    # {{NAMESPACE}} was substituted to the resolved namespace before evaluation.
+    assert report[0]["result"]["raw"]["selector"] == "app=hello-ns"
+
+
+def test_run_verification_entries_empty_returns_empty(isolated_env: None) -> None:
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
+    task = Task.from_dict({"task_id": "t", "name": "demo", "prompt": "p"})
+    report, rollup_scores = harness._run_verification_entries(  # noqa: SLF001
+        task, cluster_name="cl", target_dep="dep", ns="ns"
+    )
+    assert report == []
+    assert rollup_scores is None
+
+
+def test_empty_record_carries_verification_keys(isolated_env: None) -> None:
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
+    task = Task.from_dict({"task_id": "t", "name": "demo", "prompt": "p"})
+    record = harness._empty_record(task)  # noqa: SLF001
+    assert record["verification_entries_report"] == []
+    assert record["verification_rollup"] is None
+    assert {"verification_entries_report", "verification_rollup"} <= harness._RECORD_KEYS  # noqa: SLF001

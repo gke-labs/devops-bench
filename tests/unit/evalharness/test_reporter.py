@@ -70,6 +70,8 @@ _RESULTS_JSON_REQUIRED_KEYS: frozenset[str] = frozenset(
         "documentation",
         "capabilities_granted",
         "verification_parse_errors",
+        "verification_entries_report",
+        "verification_rollup",
         "generation_only",
         "validated",
     }
