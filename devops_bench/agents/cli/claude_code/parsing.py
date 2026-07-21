@@ -24,6 +24,7 @@ harnesses emit.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 
 from devops_bench.agents.result import ToolCall
 
@@ -39,25 +40,36 @@ def empty_tokens() -> dict:
     return dict.fromkeys(_TOKEN_BUCKETS, None)
 
 
+def _int_or_none(val: object) -> int | None:
+    """Return ``val`` if it is a real ``int`` (``bool`` rejected), else ``None``.
+
+    Mirrors ``results/normalize._coerce_int``'s bool rejection so a stray JSON
+    ``true`` in a usage field never surfaces as a token count.
+    """
+    return val if isinstance(val, int) and not isinstance(val, bool) else None
+
+
 def _block_text(content: object) -> str | None:
     """Render a tool_result ``content`` payload to a string, or ``None``.
 
     Claude Code emits tool results either as a bare string or as a list of
-    content blocks (``[{"type": "text", "text": ...}]``). Both are flattened to
-    text; any other shape is JSON-encoded so nothing is dropped silently.
+    content blocks. Text blocks contribute their text; any other block (e.g. an
+    ``image``) is JSON-encoded in place so nothing is dropped silently.
     """
     if content is None:
         return None
     if isinstance(content, str):
         return content
     if isinstance(content, list):
+        if not content:
+            return None
         parts = [
             block["text"]
-            for block in content
             if isinstance(block, dict) and isinstance(block.get("text"), str)
+            else json.dumps(block, default=str)
+            for block in content
         ]
-        if parts:
-            return "".join(parts)
+        return "".join(parts)
     return json.dumps(content, default=str)
 
 
@@ -83,6 +95,34 @@ def _normalize_tool_name(name: str) -> str:
 _MCP_FAILED_STATUSES = frozenset({"failed", "error", "disconnected", "needs-auth", "needs_auth"})
 
 
+def _iter_events(stdout: str) -> Iterator[tuple[object, str | None]]:
+    """Yield ``(event, error)`` pairs from the stream, one populated per item.
+
+    The stream is normally newline-delimited JSON, but a rebuffered or truncated
+    pipe can concatenate several objects onto one physical line. Each line is
+    decoded with ``raw_decode`` in a loop so every object is recovered rather
+    than lost to a single ``Extra data`` error. A malformed remainder yields one
+    error and the rest of that line is abandoned.
+    """
+    decoder = json.JSONDecoder()
+    for lineno, raw in enumerate(stdout.splitlines(), start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        idx = 0
+        while idx < len(line):
+            while idx < len(line) and line[idx].isspace():
+                idx += 1
+            if idx >= len(line):
+                break
+            try:
+                event, idx = decoder.raw_decode(line, idx)
+            except json.JSONDecodeError as exc:
+                yield None, f"stream-json line {lineno} parse error: {exc}"
+                break
+            yield event, None
+
+
 def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
     """Parse a Claude Code ``--output-format stream-json`` stdout stream.
 
@@ -101,10 +141,12 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
     | ``user``      | ``tool_result`` blocks matched to pending ToolCalls       |
     | ``result``    | terminal: authoritative answer, token usage, error subtype|
 
-    The accumulated assistant ``text`` doubles as a fallback answer for the rare
-    case where no terminal ``result`` event arrives (e.g. a truncated pipe on
-    older ``claude`` builds); when the ``result`` event is present its ``result``
-    string is authoritative.
+    The accumulated assistant ``text`` doubles as a fallback answer when no
+    terminal ``result`` event arrives (a truncated pipe) or when it carries an
+    empty answer (error subtypes emit ``""``). Likewise token usage falls back to
+    the per-turn accumulator only when the terminal event reports no usage;
+    per-turn usage is deduped by message id, since Claude Code repeats the same
+    ``usage`` on every content-block envelope of one API message.
 
     Args:
         stdout: Raw process stdout, possibly empty.
@@ -116,19 +158,19 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
     text_parts: list[str] = []
     result_output: str | None = None
     tokens: dict = empty_tokens()
+    result_usage_seen = False
     acc_usage: dict = {}
+    seen_usage_ids: set[str] = set()
     errors: list[str] = []
-    pending: dict[str, ToolCall] = {}
+    # Each id maps to a FIFO queue of pending calls: distinct tool_use blocks can
+    # legitimately reuse an id, so results are matched in emission order rather
+    # than the second call silently overwriting the first.
+    pending: dict[str, list[ToolCall]] = {}
     trajectory: list[ToolCall] = []
 
-    for lineno, raw in enumerate(stdout.splitlines(), start=1):
-        line = raw.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError as exc:
-            errors.append(f"stream-json line {lineno} parse error: {exc}")
+    for event, error in _iter_events(stdout):
+        if error is not None:
+            errors.append(error)
             continue
         if not isinstance(event, dict):
             continue
@@ -147,10 +189,18 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
                         name = server.get("name") or "<unknown>"
                         errors.append(f"mcp server {name!r} failed to connect at init: {status}")
         elif etype == "assistant":
-            message = event.get("message") or {}
+            message = event.get("message")
+            if not isinstance(message, dict):
+                continue
             # Accumulate per-turn usage so a truncated stream (no terminal
-            # ``result`` event) still yields token counts, not ``{}``.
-            _add_usage(acc_usage, message.get("usage"))
+            # ``result`` event) still yields token counts. Claude Code emits one
+            # envelope per content block of a single API message, each repeating
+            # the identical ``usage``, so count each message id only once.
+            msg_id = message.get("id")
+            if not (isinstance(msg_id, str) and msg_id in seen_usage_ids):
+                if isinstance(msg_id, str):
+                    seen_usage_ids.add(msg_id)
+                _add_usage(acc_usage, message.get("usage"))
             content = message.get("content")
             if not isinstance(content, list):
                 continue
@@ -173,9 +223,10 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
                     trajectory.append(call)
                     call_id = block.get("id")
                     if call_id:
-                        pending[str(call_id)] = call
+                        pending.setdefault(str(call_id), []).append(call)
         elif etype == "user":
-            content = (event.get("message") or {}).get("content")
+            message = event.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
             if not isinstance(content, list):
                 # A user message with a bare-string content echoes the prompt.
                 continue
@@ -183,7 +234,8 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
                 if not isinstance(block, dict) or block.get("type") != "tool_result":
                     continue
                 call_id = block.get("tool_use_id") or ""
-                target = pending.pop(str(call_id), None) if call_id else None
+                queue = pending.get(str(call_id)) if call_id else None
+                target = queue.pop(0) if queue else None
                 if target is None:
                     errors.append(
                         f"stream-json tool_result without matching tool_use (id={call_id!r})"
@@ -194,21 +246,25 @@ def parse_stream_json(stdout: str) -> tuple[str, list[dict], dict, list[str]]:
         elif etype == "result":
             # Terminal event: ``result`` is the authoritative answer, ``usage``
             # holds token accounting, and an ``error_*`` subtype flags failure.
+            # Guard against a later degenerate ``result`` (empty answer / no
+            # usage) clobbering an earlier good one.
             tail = event.get("result")
-            if isinstance(tail, str):
+            if isinstance(tail, str) and not result_output:
                 result_output = tail
             usage = event.get("usage")
-            if isinstance(usage, dict):
+            if isinstance(usage, dict) and _has_usage(usage):
                 tokens = _usage_tokens(usage)
+                result_usage_seen = True
             subtype = event.get("subtype")
             if isinstance(subtype, str) and subtype.startswith("error_"):
                 errors.append(f"stream-json result error: {subtype}")
 
-    output = result_output if result_output is not None else "".join(text_parts)
-    # Fall back to the summed per-turn usage when the terminal ``result`` usage
-    # is absent or degenerate. The canonical dict is truthy even when all-None,
-    # so test the values, not the dict.
-    if not any(tokens.values()) and acc_usage:
+    # ``result_output`` may be an empty string (error subtypes emit ``""``); fall
+    # back to the accumulated assistant text so a real partial answer survives.
+    output = result_output or "".join(text_parts)
+    # Only fall back to summed per-turn usage when the terminal event reported no
+    # recognized usage — a terminal event that reported genuine zeros is trusted.
+    if not result_usage_seen and acc_usage:
         tokens = _usage_tokens(acc_usage)
     return output, [call.to_dict() for call in trajectory], tokens, errors
 
@@ -221,18 +277,28 @@ _USAGE_KEYS = (
 )
 
 
+def _has_usage(usage: dict) -> bool:
+    """True if ``usage`` carries at least one recognized integer count.
+
+    Distinguishes a terminal ``result`` that reported genuine (possibly zero)
+    counts from one that reported nothing, so the accumulator fallback only
+    fires in the latter case.
+    """
+    return any(_int_or_none(usage.get(key)) is not None for key in _USAGE_KEYS)
+
+
 def _add_usage(acc: dict, usage: object) -> None:
     """Fold an Anthropic per-turn ``usage`` block into a running accumulator.
 
-    Summing each turn's counts matches the cumulative accounting Claude Code
-    reports in the terminal ``result`` event (every API call bills its full
-    input), so the accumulator is a faithful stand-in when that event is lost.
+    Callers dedupe by message id first, so each API message is added once. The
+    terminal ``result`` usage is cumulative and authoritative; this accumulator
+    is only a best-effort stand-in for a truncated stream that never emits it.
     """
     if not isinstance(usage, dict):
         return
     for key in _USAGE_KEYS:
-        val = usage.get(key)
-        if isinstance(val, int):
+        val = _int_or_none(usage.get(key))
+        if val is not None:
             acc[key] = acc.get(key, 0) + val
 
 
@@ -244,15 +310,11 @@ def _usage_tokens(usage: dict) -> dict:
     Anthropic bills thinking inside ``output_tokens``.
     """
     tokens = empty_tokens()
-    inp = usage.get("input_tokens")
-    out = usage.get("output_tokens")
-    cache_read = usage.get("cache_read_input_tokens")
-    cache_write = usage.get("cache_creation_input_tokens")
     tokens.update(
-        input=inp if isinstance(inp, int) else None,
-        cached=cache_read if isinstance(cache_read, int) else None,
-        cache_write=cache_write if isinstance(cache_write, int) else None,
-        output=out if isinstance(out, int) else None,
+        input=_int_or_none(usage.get("input_tokens")),
+        cached=_int_or_none(usage.get("cache_read_input_tokens")),
+        cache_write=_int_or_none(usage.get("cache_creation_input_tokens")),
+        output=_int_or_none(usage.get("output_tokens")),
     )
     reported = [v for k, v in tokens.items() if k != "total" and v is not None]
     if reported:

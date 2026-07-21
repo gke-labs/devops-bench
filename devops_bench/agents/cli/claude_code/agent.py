@@ -76,10 +76,17 @@ _CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
 _log = get_logger("agents.cli.claude_code")
 
 
-def _errored_with_tokens(msg: str) -> AgentResult:
-    """An errored result carrying the canonical all-``None`` token shape."""
+def _errored_with_tokens(msg: str, *, stderr: str | None = None) -> AgentResult:
+    """An errored result carrying the canonical all-``None`` token shape.
+
+    ``stderr`` (last 2000 chars) is attached to ``metadata`` when present, so the
+    no-stdout failure path keeps the same diagnostic signal as the other paths.
+    """
     result = AgentResult.errored(msg)
     result.tokens = empty_tokens()
+    tail = (stderr or "").strip()
+    if tail:
+        result.metadata["stderr"] = tail[-2000:]
     return result
 
 
@@ -102,7 +109,8 @@ def _build_argv(
         target: Path to the ``claude`` binary (already user-expanded).
         prompt: Task prompt, passed as an argv value (never through a shell).
         model: Model id for ``--model``, or ``None`` to use the CLI default.
-        max_turns: Cap for ``--max-turns``, or ``None`` for the CLI default.
+        max_turns: Cap for ``--max-turns``; ``None`` or non-positive uses the
+            CLI default (the CLI rejects ``0``, so it is treated as unset).
         mcp_config_path: Absolute path to the MCP config document, or ``None``.
 
     Returns:
@@ -119,7 +127,7 @@ def _build_argv(
     ]
     if model:
         argv.extend(["--model", model])
-    if max_turns is not None:
+    if max_turns is not None and max_turns > 0:
         argv.extend(["--max-turns", str(max_turns)])
     if mcp_config_path:
         argv.extend(["--mcp-config", mcp_config_path, "--strict-mcp-config"])
@@ -164,11 +172,16 @@ def _build_env(config: AgentConfig, *, config_dir: str | None) -> dict[str, str]
         project = os.environ.get("GCP_PROJECT_ID")
         if project:
             overlay["ANTHROPIC_VERTEX_PROJECT_ID"] = project
-        overlay["CLOUD_ML_REGION"] = os.environ.get("GCP_VERTEX_LOCATION", "global")
+        # Prefer the repo var, then an operator-set native CLOUD_ML_REGION, so we
+        # only fall back to "global" when neither is set (never clobber it).
+        region = os.environ.get("GCP_VERTEX_LOCATION") or os.environ.get("CLOUD_ML_REGION")
+        overlay["CLOUD_ML_REGION"] = region or "global"
     elif spec.backend == "bedrock":
         overlay["CLAUDE_CODE_USE_BEDROCK"] = "1"
     if config_dir is not None:
         overlay[_CONFIG_DIR_ENV] = config_dir
+    # Operator-supplied extra_env is applied last and deliberately wins over the
+    # harness-set keys above (its escape hatch for backend/region overrides).
     if config.extra_env:
         overlay.update(config.extra_env)
     return overlay
@@ -178,14 +191,19 @@ def _build_env(config: AgentConfig, *, config_dir: str | None) -> dict[str, str]
 def _claude_config_dir() -> Iterator[str | None]:
     """Yield a fresh per-run ``CLAUDE_CONFIG_DIR``, or ``None`` if operator-set.
 
-    An ambient ``CLAUDE_CONFIG_DIR`` is the operator's escape hatch (e.g. to
-    reuse a cached OAuth login for local debugging); it is left untouched and
-    ``None`` is yielded so no per-run temp dir is created or injected.
+    A non-empty ambient ``CLAUDE_CONFIG_DIR`` is the operator's escape hatch
+    (e.g. to reuse a cached OAuth login for local debugging); it is left
+    untouched and ``None`` is yielded so no per-run temp dir is created or
+    injected. An empty ambient value is ignored so per-run isolation still
+    applies (the CLI treats an empty var as unset and would race on ~/.claude).
     """
-    if _CONFIG_DIR_ENV in os.environ:
+    if os.environ.get(_CONFIG_DIR_ENV):
         yield None
         return
-    with tempfile.TemporaryDirectory(prefix="claude-config-") as tmpdir:
+    # ignore_cleanup_errors: Claude Code may leave straggler state/lock files or
+    # MCP-server children; a cleanup OSError must not turn a completed run into
+    # an errored one via the base safety net.
+    with tempfile.TemporaryDirectory(prefix="claude-config-", ignore_cleanup_errors=True) as tmpdir:
         yield tmpdir
 
 
@@ -273,10 +291,13 @@ class ClaudeCodeAgent(AgentHarness):
                             errors=[*parse_errors, f"claude subprocess error: {exc}"],
                             metadata=metadata,
                         )
-                    return _errored_with_tokens(f"claude subprocess error: {exc}")
+                    return _errored_with_tokens(
+                        f"claude subprocess error: {exc}", stderr=exc.stderr
+                    )
                 except OSError as exc:
-                    # Missing / non-executable binary; core.subprocess.run does not wrap.
-                    return _errored_with_tokens(f"claude binary unavailable: {exc}")
+                    # Spawn failure core.subprocess.run does not wrap: usually a
+                    # missing / non-executable binary, but also a vanished cwd.
+                    return _errored_with_tokens(f"failed to spawn claude: {exc}")
 
         output, trajectory, tokens, parse_errors = parse_stream_json(completed.stdout or "")
         errors: list[str] = list(parse_errors)

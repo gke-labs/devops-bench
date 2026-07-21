@@ -339,6 +339,163 @@ def test_parse_stream_json_result_string_is_authoritative_over_text():
     assert output == "Done."
 
 
+def test_parse_stream_json_dedupes_accumulated_usage_by_message_id():
+    """Claude Code emits one envelope per content block of a single API message,
+    each repeating the identical ``usage``; a truncated stream must count that
+    message's usage once, not once per block."""
+    usage = {"input_tokens": 100, "output_tokens": 40, "cache_read_input_tokens": 8}
+    blob = _stream(
+        {
+            "type": "assistant",
+            "message": {"id": "msg_1", "content": [{"type": "thinking"}], "usage": usage},
+        },
+        {
+            "type": "assistant",
+            "message": {"id": "msg_1", "content": [{"type": "text", "text": "hi"}], "usage": usage},
+        },
+        {
+            "type": "assistant",
+            "message": {
+                "id": "msg_1",
+                "content": [{"type": "tool_use", "id": "t", "name": "Bash", "input": {}}],
+                "usage": usage,
+            },
+        },
+    )
+    _output, _trajectory, tokens, _errors = parse_stream_json(blob)
+    assert tokens == _tok(input=100, cached=8, output=40, total=148)
+
+
+def test_parse_stream_json_empty_result_falls_back_to_text():
+    """An error subtype emits ``result: ""``; the real partial answer in the
+    accumulated assistant text must survive rather than grading as empty."""
+    blob = _stream(
+        _assistant({"type": "text", "text": "partial answer"}),
+        {"type": "result", "subtype": "error_max_turns", "result": ""},
+    )
+    output, _trajectory, _tokens, errors = parse_stream_json(blob)
+    assert output == "partial answer"
+    assert any("error_max_turns" in e for e in errors)
+
+
+def test_parse_stream_json_all_zero_result_usage_is_authoritative():
+    """A terminal ``result`` reporting genuine zeros is trusted — it is not
+    conflated with 'no usage reported' and replaced by the accumulator."""
+    blob = _stream(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "x"}], "usage": {"input_tokens": 50}},
+        },
+        {
+            "type": "result",
+            "subtype": "success",
+            "result": "x",
+            "usage": {"input_tokens": 0, "output_tokens": 0},
+        },
+    )
+    _output, _trajectory, tokens, _errors = parse_stream_json(blob)
+    assert tokens == _tok(input=0, output=0, total=0)
+
+
+def test_parse_stream_json_degenerate_second_result_does_not_clobber():
+    """A later degenerate ``result`` (empty answer, no usage) must not destroy a
+    good earlier one."""
+    blob = _stream(
+        {
+            "type": "result",
+            "subtype": "success",
+            "result": "first",
+            "usage": {"input_tokens": 10, "output_tokens": 20},
+        },
+        {"type": "result", "subtype": "error_during_execution", "result": "", "usage": {}},
+    )
+    output, _trajectory, tokens, _errors = parse_stream_json(blob)
+    assert output == "first"
+    assert tokens == _tok(input=10, output=20, total=30)
+
+
+def test_parse_stream_json_recovers_concatenated_objects_on_one_line():
+    """A rebuffered stream that concatenates objects onto one physical line must
+    not lose the whole run to a single 'Extra data' error."""
+    line = json.dumps(
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": "hi"}]}}
+    ) + json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "result": "hi",
+            "usage": {"input_tokens": 3, "output_tokens": 1},
+        }
+    )
+    output, _trajectory, tokens, errors = parse_stream_json(line + "\n")
+    assert output == "hi"
+    assert tokens == _tok(input=3, output=1, total=4)
+    assert errors == []
+
+
+def test_parse_stream_json_non_dict_message_does_not_crash():
+    """A malformed line whose ``message`` is a bare string is skipped, not fatal
+    — one bad envelope must not lose the whole otherwise-parseable run."""
+    blob = _stream(
+        {"type": "assistant", "message": "Execution error"},
+        {"type": "user", "message": "echo"},
+        {
+            "type": "result",
+            "subtype": "success",
+            "result": "ok",
+            "usage": {"input_tokens": 5, "output_tokens": 2},
+        },
+    )
+    output, _trajectory, tokens, _errors = parse_stream_json(blob)
+    assert output == "ok"
+    assert tokens == _tok(input=5, output=2, total=7)
+
+
+def test_parse_stream_json_rejects_bool_usage_values():
+    """A stray JSON ``true`` in a usage field is rejected, never summed as 1."""
+    blob = _stream(
+        {
+            "type": "result",
+            "subtype": "success",
+            "result": "x",
+            "usage": {"input_tokens": True, "output_tokens": 20},
+        },
+    )
+    _output, _trajectory, tokens, _errors = parse_stream_json(blob)
+    assert tokens == _tok(input=None, output=20, total=20)
+
+
+def test_parse_stream_json_matches_duplicate_tool_use_ids_fifo():
+    """Distinct tool_use blocks reusing an id are matched in emission order, so
+    neither call is orphaned and no spurious 'unmatched' error is raised."""
+    blob = _stream(
+        _assistant({"type": "tool_use", "id": "x", "name": "A", "input": {}}),
+        _assistant({"type": "tool_use", "id": "x", "name": "B", "input": {}}),
+        _user({"type": "tool_result", "tool_use_id": "x", "content": "r1"}),
+        _user({"type": "tool_result", "tool_use_id": "x", "content": "r2"}),
+    )
+    _output, trajectory, _tokens, errors = parse_stream_json(blob)
+    assert [(t["name"], t["result"]) for t in trajectory] == [("A", "r1"), ("B", "r2")]
+    assert errors == []
+
+
+def test_block_text_preserves_non_text_blocks():
+    """A mixed tool_result content list must not silently drop non-text blocks
+    (e.g. an image) — they are JSON-encoded in place."""
+    blob = _stream(
+        _assistant({"type": "tool_use", "id": "c", "name": "Read", "input": {}}),
+        _user(
+            {
+                "type": "tool_result",
+                "tool_use_id": "c",
+                "content": [{"type": "image", "source": {"x": 1}}, {"type": "text", "text": "ok"}],
+            }
+        ),
+    )
+    _output, trajectory, _tokens, _errors = parse_stream_json(blob)
+    assert trajectory[0]["result"] == '{"type": "image", "source": {"x": 1}}ok'
+
+
 # ---------------------------------------------------------------------------
 # argv
 # ---------------------------------------------------------------------------
@@ -588,7 +745,8 @@ def test_execute_handles_missing_binary(monkeypatch):
     monkeypatch.setattr(claude_mod, "run", fake_run)
     result = ClaudeCodeAgent(AgentConfig(target="claude")).run("p")
     assert result.has_errors()
-    assert "binary unavailable" in result.errors[0]
+    assert "failed to spawn claude" in result.errors[0]
+    assert result.tokens == _tok()
 
 
 def test_execute_passes_timeout_to_subprocess(monkeypatch):
