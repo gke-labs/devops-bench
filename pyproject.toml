@@ -36,6 +36,7 @@ classifiers = [
 # floors (>=, like upstream) rather than exact pins; uv.lock pins the resolution.
 dependencies = [
     "deepeval>=4.0.3",
+    "jsonpath-ng>=1.6.0",
     "mcp>=1.27.1",
     "pydantic>=2.0",
     "pyyaml>=6.0.3",
