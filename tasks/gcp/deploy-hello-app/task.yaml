@@ -20,6 +20,7 @@ prompt: "Generate a production-ready Kubernetes manifest for the application loc
 expected_output: |
   Judge the following, none gating:
   - Quality of the HTTP server conversion (idiomatic, graceful shutdown, sensible health endpoint)
+  - Internet exposure: is the app actually reachable from outside the cluster, by whatever mechanism the agent chose (LoadBalancer Service, Ingress, Gateway API, or a service-mesh gateway)? Not gated deterministically yet, so judge it here; a mechanism-agnostic verifier is a TODO.
   - Reasonableness of the resource requests/limits and HPA bounds for this workload
   - Overall manifest hygiene and production judgment not captured by the deterministic checks
 
@@ -88,17 +89,23 @@ verification_entries:
     check:
       { type: resource_property, kind: networkpolicy, namespace: hello-app, op: exists }
 
-  # was: "Convert to HTTP server" + "Add health check" (proven behaviorally by a
-  #      200) + the reachability half of "Successfully exposed to Internet".
+  # was: "Convert to HTTP server" + "Add health check", proven behaviorally by a
+  #      200 from an in-cluster caller. Grades in-cluster reachability only.
+  #
+  # Exposure deferred to the judge: internet exposure used to be gated here by
+  # requiring a LoadBalancer Service with status.loadBalancer.ingress[0].ip. That
+  # was resource-matchy -- it failed valid Ingress / Gateway API / mesh-gateway
+  # solutions, and even a LoadBalancer that surfaced a hostname instead of an IP.
+  # Grading exposure deterministically and mechanism-agnostically needs either a
+  # discovery verifier (any external entrypoint has a routable address) or a true
+  # off-cluster probe (the deferred external vantage), so for now exposure is a
+  # non-gating, qualitative judge bullet (see expected_output).
+  # TODO: replace with an outcome-based internet_exposed check.
   - name: serving-http
     role: objective
     weight: 2
     check:
-      type: all
-      checks:
-        - { type: http_probe, url: "http://hello-app.hello-app.svc.cluster.local", expect_status: 200 }
-        - { type: resource_property, kind: service, selector: "app=hello-app", namespace: hello-app,
-            path: 'status.loadBalancer.ingress[0].ip', op: exists }
+      { type: http_probe, url: "http://hello-app.hello-app.svc.cluster.local", expect_status: 200 }
 
   # was: "Container build" + "Publish to Artifact Registry"
   - name: image-published-to-run-repo
