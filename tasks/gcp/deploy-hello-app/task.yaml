@@ -20,7 +20,7 @@ prompt: "Generate a production-ready Kubernetes manifest for the application loc
 expected_output: |
   Judge the following, none gating:
   - Quality of the HTTP server conversion (idiomatic, graceful shutdown, sensible health endpoint)
-  - Internet exposure: is the app actually reachable from outside the cluster, by whatever mechanism the agent chose (LoadBalancer Service, Ingress, Gateway API, or a service-mesh gateway)? Not gated deterministically yet, so judge it here; a mechanism-agnostic verifier is a TODO.
+  - Exposure hygiene: is the chosen exposure mechanism reasonable for this app (a LoadBalancer Service or an Ingress, not something fragile or overly broad)? Basic external reachability is now graded deterministically by the serving-http objective.
   - Reasonableness of the resource requests/limits and HPA bounds for this workload
   - Overall manifest hygiene and production judgment not captured by the deterministic checks
 
@@ -89,23 +89,21 @@ verification_entries:
     check:
       { type: resource_property, kind: networkpolicy, namespace: hello-app, op: exists }
 
-  # was: "Convert to HTTP server" + "Add health check", proven behaviorally by a
-  #      200 from an in-cluster caller. Grades in-cluster reachability only.
+  # was: "Convert to HTTP server" + "Add health check" + "Successfully exposed to
+  #      Internet", collapsed into one outcome: GET the Service's external address
+  #      from the verifier host (off-cluster) and expect 200. The host is not a
+  #      cluster node and cannot route a ClusterIP, so a 200 proves the app both
+  #      serves HTTP and is reachable over the external network. Mechanism-agnostic
+  #      across the common path: any LoadBalancer Service or Ingress that surfaced
+  #      an ip or a hostname is accepted, rather than one hard-coded resource shape.
   #
-  # Exposure deferred to the judge: internet exposure used to be gated here by
-  # requiring a LoadBalancer Service with status.loadBalancer.ingress[0].ip. That
-  # was resource-matchy -- it failed valid Ingress / Gateway API / mesh-gateway
-  # solutions, and even a LoadBalancer that surfaced a hostname instead of an IP.
-  # Grading exposure deterministically and mechanism-agnostically needs either a
-  # discovery verifier (any external entrypoint has a routable address) or a true
-  # off-cluster probe (the deferred external vantage), so for now exposure is a
-  # non-gating, qualitative judge bullet (see expected_output).
-  # TODO: replace with an outcome-based internet_exposed check.
+  # Requires the verifier host to have network egress to the LoadBalancer's
+  # external address. Gateway API discovery (status.addresses) is a follow-up.
   - name: serving-http
     role: objective
     weight: 2
     check:
-      { type: http_probe, url: "http://hello-app.hello-app.svc.cluster.local", expect_status: 200 }
+      { type: external_http_probe, kind: service, selector: "app=hello-app", namespace: hello-app, expect_status: 200 }
 
   # was: "Container build" + "Publish to Artifact Registry"
   - name: image-published-to-run-repo

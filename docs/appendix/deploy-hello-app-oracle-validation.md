@@ -83,6 +83,16 @@ kubectl -n hello-app rollout status deployment/hello-app --timeout=180s
 kubectl -n hello-app get svc hello-app -w   # wait for EXTERNAL-IP to populate
 ```
 
+`serving-http` now GETs this EXTERNAL-IP from the machine running the
+verifier (off-cluster), not from inside the cluster, so:
+
+- The host running `verify.py` (or Step 5 below) needs network egress to
+  that external IP.
+- It may take a short time after EXTERNAL-IP appears for the LoadBalancer's
+  backends to actually start serving 200s. The check polls/converges up to
+  the entry deadline, so give it a generous timeout rather than a single
+  immediate probe.
+
 ### 5. Run the verification entries
 
 Run each `verification_entries` check from `task.yaml` against the live
