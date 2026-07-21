@@ -14,8 +14,14 @@
 
 """Concrete single-condition verifiers."""
 
+from devops_bench.verification.verifiers.http_probe import HttpProbeVerifier
 from devops_bench.verification.verifiers.pod_healthy import PodHealthyVerifier
 from devops_bench.verification.verifiers.resource_property import ResourcePropertyVerifier
 from devops_bench.verification.verifiers.scaling_complete import ScalingCompleteVerifier
 
-__all__ = ["PodHealthyVerifier", "ResourcePropertyVerifier", "ScalingCompleteVerifier"]
+__all__ = [
+    "HttpProbeVerifier",
+    "PodHealthyVerifier",
+    "ResourcePropertyVerifier",
+    "ScalingCompleteVerifier",
+]
