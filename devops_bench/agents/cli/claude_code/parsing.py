@@ -18,7 +18,7 @@ Folds the ``tool_use`` / ``tool_result`` content blocks into the canonical
 :class:`ToolCall` list and pulls the final answer and token usage from the
 terminal ``result`` event. ``thinking`` / ``redacted_thinking`` blocks are
 dropped so the trajectory matches the tool-calls-only shape the other CLI
-harnesses (Gemini, OpenClaw, Antigravity) emit.
+harnesses emit.
 """
 
 from __future__ import annotations
@@ -29,10 +29,8 @@ from devops_bench.agents.result import ToolCall
 
 __all__ = ["parse_stream_json", "empty_tokens"]
 
-# Canonical token buckets (harness-local until the unified token schema lands;
-# see gke-labs/devops-bench#212): ``input`` is the non-cached prompt, ``cached``
-# is cache reads, ``cache_write`` is cache creation, ``output`` excludes
-# ``reasoning``, and ``total`` is the sum of all buckets.
+# Canonical token buckets, harness-local until the shared schema lands
+# (gke-labs/devops-bench#212). ``input`` is non-cached; ``total`` sums all buckets.
 _TOKEN_BUCKETS = ("input", "cached", "cache_write", "reasoning", "output", "total")
 
 
@@ -246,14 +244,9 @@ def _add_usage(acc: dict, usage: object) -> None:
 def _usage_tokens(usage: dict) -> dict:
     """Normalize an Anthropic ``usage`` block to the canonical token buckets.
 
-    Anthropic's shape maps onto the canonical buckets directly: ``input_tokens``
-    is already the *uncached* prompt (cache reads and writes are mutually
-    exclusive with it), so ``cached`` / ``cache_write`` carry the cache-read and
-    cache-creation counts separately — cache writes bill at a premium, so they
-    must not be folded into ``cached``. ``reasoning`` stays ``None``: Anthropic
-    bills thinking inside ``output_tokens`` and the stream does not split it
-    out. ``total`` is the full footprint (sum of the reported buckets), so the
-    true prompt size is ``input + cached + cache_write``.
+    ``input_tokens`` is already the uncached prompt; cache reads and writes stay
+    separate buckets (writes bill at a premium). ``reasoning`` stays ``None`` —
+    Anthropic bills thinking inside ``output_tokens``.
     """
     tokens = empty_tokens()
     inp = usage.get("input_tokens")
