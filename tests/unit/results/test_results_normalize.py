@@ -201,11 +201,18 @@ def test_build_rows_failed_record_has_null_scores_and_tokens():
 
 
 def test_build_rows_turns_counts_trajectory_steps():
+    # The record defaults trajectory to [], so an empty list means "not captured"
+    # -> None, not a misleading 0-step count.
     empty = build_rows(
         [{"name": "n", "folder": "f", "status": "success", "trajectory": [], "scores": {}}],
         _manifest(),
     )[0]
-    assert empty.turns == 0  # ran, took no steps — distinct from None (no data)
+    assert empty.turns is None
+    missing = build_rows(
+        [{"name": "n", "folder": "f", "status": "success", "scores": {}}],
+        _manifest(),
+    )[0]
+    assert missing.turns is None
     stepped = build_rows(
         [{"name": "n", "folder": "f", "status": "success", "trajectory": [{}, {}], "scores": {}}],
         _manifest(),
