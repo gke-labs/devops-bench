@@ -69,6 +69,53 @@ def test_materialize_skills_writes_named_skill_files(tmp_path: Path):
     assert "body" in copied.read_text(encoding="utf-8")
 
 
+def test_materialize_skills_rejects_malicious_names(tmp_path: Path, caplog) -> None:
+    """Frontmatter names that would escape ``skills_root`` are warned and skipped."""
+    src = tmp_path / "src"
+    abs_escape = tmp_path / "abs-escape"
+    bad_names = ("../rel-escape", str(abs_escape), "nested/name", "..")
+    for index, bad_name in enumerate(bad_names):
+        skill_dir = src / f"skill{index}"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {bad_name}\ndescription: d\n---\nbody\n", encoding="utf-8"
+        )
+    good = src / "zz-good"
+    good.mkdir(parents=True)
+    (good / "SKILL.md").write_text(
+        "---\nname: good-skill\ndescription: d\n---\nbody\n", encoding="utf-8"
+    )
+    dest = tmp_path / "skills" / "dest"
+
+    written = materialize_skills(dest, (str(src),))
+
+    assert written == ["good-skill"]
+    assert not (tmp_path / "skills" / "rel-escape").exists()
+    assert not abs_escape.exists()
+    assert sorted(p.name for p in dest.iterdir()) == ["good-skill"]
+    assert "Skipping skill '../rel-escape'" in caplog.text
+
+
+def test_materialize_skills_warns_and_keeps_first_on_duplicate_names(
+    tmp_path: Path, caplog
+) -> None:
+    """A second SKILL.md with an already-seen name is skipped, not overwritten."""
+    first = tmp_path / "src1" / "dup"
+    second = tmp_path / "src2" / "dup"
+    for source_dir, body in ((first, "first body"), (second, "second body")):
+        source_dir.mkdir(parents=True)
+        (source_dir / "SKILL.md").write_text(
+            f"---\nname: dup-skill\ndescription: d\n---\n{body}\n", encoding="utf-8"
+        )
+    dest = tmp_path / "dest"
+
+    written = materialize_skills(dest, (str(tmp_path / "src1"), str(tmp_path / "src2")))
+
+    assert written == ["dup-skill"]
+    assert "first body" in (dest / "dup-skill" / "SKILL.md").read_text(encoding="utf-8")
+    assert "Skipping duplicate skill 'dup-skill'" in caplog.text
+
+
 def test_materialize_skills_skips_missing_paths(tmp_path: Path):
     """A non-existent source path is warned and skipped, not fatal."""
     assert materialize_skills(tmp_path / "dest", (str(tmp_path / "nope"),)) == []

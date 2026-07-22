@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -157,6 +158,30 @@ def test_api_agent_registered_under_canonical_key():
     assert AGENTS.get("api") is ApiAgent
 
 
+def test_package_import_alone_registers_api_agent():
+    """``import devops_bench.agents.api`` (no ``.agent`` submodule import) must
+    register the harness — the documented consumer convention resolves via
+    ``AGENTS.get`` after a package import. Runs in a fresh interpreter because
+    this test module itself imports ``.agent``, which would mask a regression
+    (review finding: the package ``__init__`` didn't import the module, so the
+    registration decorator never ran)."""
+    import subprocess
+    import sys
+    import textwrap
+
+    script = textwrap.dedent(
+        """
+        import devops_bench.agents.api
+        from devops_bench.agents.base import AGENTS
+        assert AGENTS.get("api").__name__ == "ApiAgent"
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 0, result.stderr
+
+
 # ---------------------------------------------------------------------------
 # fold_trajectory
 # ---------------------------------------------------------------------------
@@ -242,6 +267,55 @@ def test_fold_trajectory_handles_none_args_and_none_call_id():
     assert fold_trajectory(contents) == [
         {"name": "t", "args": {}, "result": None, "status": "called"},
     ]
+
+
+def test_fold_trajectory_pairs_unkeyed_gemini_style_calls_fifo():
+    """Gemini emits every function call with ``id=None`` and ``run_tool_loop``
+    appends one result per call in order — the fold must pair them FIFO
+    instead of dropping every result as an orphan (review finding: the default
+    provider produced all-'called' trajectories and errored every clean run)."""
+    contents = [
+        {"role": "user", "content": "g"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"name": "alpha", "args": {"a": 1}, "id": None},
+                {"name": "beta", "args": {"b": 2}, "id": None},
+            ],
+        },
+        {"role": "tool", "tool_call_id": None, "name": "alpha", "content": "A-result"},
+        {"role": "tool", "tool_call_id": None, "name": "beta", "content": "Error: b"},
+        {"role": "assistant", "content": "done"},
+    ]
+    from devops_bench.agents.api.agent import _fold_with_extraction_errors
+
+    folded, orphans = _fold_with_extraction_errors(contents)
+    assert orphans == []
+    assert folded == [
+        {"name": "alpha", "args": {"a": 1}, "result": "A-result", "status": "completed"},
+        {"name": "beta", "args": {"b": 2}, "result": "Error: b", "status": "error"},
+    ]
+
+
+def test_fold_trajectory_extra_unkeyed_result_is_still_an_orphan():
+    """Id-less results beyond the number of id-less calls stay orphans —
+    FIFO pairing must not absorb genuinely unmatched results."""
+    contents = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"name": "t", "args": {}, "id": None}],
+        },
+        {"role": "tool", "tool_call_id": None, "name": "t", "content": "paired"},
+        {"role": "tool", "tool_call_id": None, "name": "ghost", "content": "stray"},
+    ]
+    from devops_bench.agents.api.agent import _fold_with_extraction_errors
+
+    folded, orphans = _fold_with_extraction_errors(contents)
+    assert folded == [{"name": "t", "args": {}, "result": "paired", "status": "completed"}]
+    assert len(orphans) == 1
+    assert "stray" in orphans[0]
 
 
 def test_fold_trajectory_drops_unpaired_tool_results_silently_from_trajectory():
@@ -558,6 +632,36 @@ def test_execute_dispatch_error_lands_in_errors_and_continues(monkeypatch):
     ]
 
 
+def test_execute_marks_mcp_iserror_result_as_error(monkeypatch):
+    """An MCP server reporting failure via ``CallToolResult.isError`` (rather
+    than raising) must fold as ``status="error"`` and land on ``errors`` —
+    previously the flag was ignored and failures scored as completed (review
+    finding)."""
+
+    class _IsErrorMCP(_FakeMCPClient):
+        async def call_tool(self, name: str, arguments: dict) -> Any:
+            block = SimpleNamespace(text="unknown pod foo")
+            return SimpleNamespace(content=[block], isError=True)
+
+    fc = [{"name": "get_pod", "args": {}, "id": "c1"}]
+    fake = _FakeLLMClient([_Turn(text="trying", calls=fc), _Turn(text="giving up")])
+    mcp = _IsErrorMCP(tools=[SimpleNamespace(name="get_pod", description="d", inputSchema=None)])
+    monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
+    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path: mcp)
+
+    result = ApiAgent(AgentConfig(capabilities=_mcp_caps("server"))).run("ping")
+
+    assert any("Error calling tool get_pod" in e for e in result.errors)
+    assert result.trajectory == [
+        {
+            "name": "get_pod",
+            "args": {},
+            "result": "Error: unknown pod foo",
+            "status": "error",
+        },
+    ]
+
+
 def test_execute_records_missing_mcp_when_tool_requested_without_server(monkeypatch):
     """No MCP server, but the model still requests a tool → recorded, not crashed."""
     fc = [{"name": "ghost", "args": {}, "id": "c2"}]
@@ -610,7 +714,8 @@ def test_execute_skills_discover_without_mcp(monkeypatch, tmp_path):
     result = ApiAgent(cfg).run("p")
 
     assert result.errors == []  # skill dispatch hit the file, not the MCP error
-    # ``read_skill_file`` returns the whole file (frontmatter + body) so the
+    # Dispatch serves the whole file (frontmatter + body) captured at
+    # discovery so the
     # model can read either as it sees fit — matches the legacy semantic.
     assert result.trajectory == [
         {
@@ -641,25 +746,23 @@ def test_execute_no_skills_no_mcp_runs_tool_less(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_execute_returns_errored_on_mcpclient_value_error(monkeypatch):
-    """A ``ValueError`` from ``MCPClient.__aenter__`` (e.g. an unspawnable
-    server command) must convert to an errored :class:`AgentResult` rather
-    than bubbling through the base safety net.
+def test_execute_lets_value_error_reach_base_safety_net(monkeypatch):
+    """A ``ValueError`` raised inside the run (MCP setup, provider adapter,
+    anywhere) must bubble to :meth:`AgentHarness.run`'s safety net, which logs
+    the full traceback and converts to an errored result tagged with the
+    exception type.
 
-    After PR3's ``shlex.join`` fix, a whitespace-only binding command is no
-    longer lossy-collapsed to ``""``, so the *binding* path no longer
-    triggers MCPClient's empty-string guard naturally. We instead patch
-    ``MCPClient`` to raise the same ``ValueError`` directly, which exercises
-    the agent-side conversion path.
+    The agent previously intercepted ``ValueError`` itself "for empty MCP
+    commands" — a case its own pre-guard makes unreachable — thereby swallowing
+    unrelated ValueErrors without a traceback (review finding); the catch is
+    gone.
     """
 
     class _BoomMCP:
         def __init__(self, _path: str) -> None: ...
 
         async def __aenter__(self) -> _BoomMCP:
-            raise ValueError(
-                "MCP server_path is empty; set AGENT_MCP_SERVER to the MCP server command."
-            )
+            raise ValueError("bad provider argument")
 
         async def __aexit__(self, *_a: Any) -> None: ...
 
@@ -672,9 +775,72 @@ def test_execute_returns_errored_on_mcpclient_value_error(monkeypatch):
     )
     result = ApiAgent(AgentConfig(capabilities=caps)).run("p")
     assert result.has_errors()
-    assert "MCP server_path is empty" in result.errors[0]
-    # The base safety net was NOT used (we converted the ValueError ourselves).
+    # The base safety net formats as "<ExcType>: <msg>" — proof it was used.
+    assert result.errors[0] == "ValueError: bad provider argument"
     assert result.output.startswith("Error: ")
+
+
+def test_execute_times_out_via_config_timeout_sec(monkeypatch):
+    """``AgentConfig.timeout_sec`` must bound the whole run — a hanging MCP
+    server or provider call converts to an errored result at the deadline
+    instead of wedging the benchmark (review finding: the field was ignored)."""
+
+    async def _hang(*_a: Any, **_kw: Any):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(agent_mod, "_run_async", _hang)
+    monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: _FakeLLMClient([]))
+
+    result = ApiAgent(AgentConfig(timeout_sec=0.05)).run("p")
+    assert result.has_errors()
+    assert "timed out after 0.05s" in result.errors[0]
+
+
+def test_execute_reraises_internal_timeout_before_deadline(monkeypatch):
+    """A ``TimeoutError`` from inside the run (e.g. a provider socket timeout —
+    ``socket.timeout`` is ``TimeoutError`` since 3.10) raised well before the
+    configured deadline must not be relabeled as the agent-level timeout: it
+    re-raises to the base safety net, which tags the exception type and logs
+    the traceback."""
+
+    async def _boom(*_a: Any, **_kw: Any):
+        raise TimeoutError("socket read timed out")
+
+    monkeypatch.setattr(agent_mod, "_run_async", _boom)
+    monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: _FakeLLMClient([]))
+
+    result = ApiAgent(AgentConfig(timeout_sec=600.0)).run("p")
+    assert result.has_errors()
+    assert result.errors[0] == "TimeoutError: socket read timed out"
+
+
+def test_execute_honors_max_turns_zero(monkeypatch):
+    """``max_turns=0`` means zero model turns — it must not be silently
+    replaced by the 50-turn default via a falsy-``or`` (review finding)."""
+    fake = _FakeLLMClient([_Turn(text="never called")])
+    monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
+    result = ApiAgent(AgentConfig(max_turns=0)).run("p")
+    # The loop never invoked the model.
+    assert fake.calls == []
+    assert result.output == ""
+
+
+def test_execute_warns_when_extra_mcp_servers_dropped(monkeypatch, caplog):
+    """Only the first MCP binding is honored (documented aggregate behavior);
+    dropping servers 2..N must at least be visible in the logs."""
+    fake = _FakeLLMClient([_Turn(text="ok")])
+    mcp = _FakeMCPClient(tools=[])
+    monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
+    monkeypatch.setattr(agent_mod, "MCPClient", lambda _path: mcp)
+    caps = AllCapabilities(
+        mcp_servers=(
+            McpBinding(name="one", command=("server-a",)),
+            McpBinding(name="two", command=("server-b",)),
+        ),
+    )
+    with caplog.at_level("WARNING", logger="devops_bench.agents.api.agent"):
+        ApiAgent(AgentConfig(capabilities=caps)).run("p")
+    assert any("only the first MCP binding" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from devops_bench.agents.shared.skills import parse_skill_md
+from devops_bench.agents.shared.skills import iter_skills
 from devops_bench.core import get_logger
 
 if TYPE_CHECKING:
@@ -115,27 +115,19 @@ def materialize_skills(skills_root: Path, paths: tuple[str, ...]) -> list[str]:
 
     Args:
         skills_root: The destination skills directory to populate.
-        paths: Skill source directories to walk recursively. Missing paths are
-            warned and skipped (matching the API agent's discovery semantic).
+        paths: Skill source directories, discovered via the shared
+            :func:`~devops_bench.agents.shared.skills.iter_skills` walk
+            (expanduser, sorted order, escaping/duplicate names warned and
+            skipped, missing paths warned).
 
     Returns:
         The names of the skills materialized, in discovery order.
     """
     written: list[str] = []
-    for raw_path in paths:
-        if not raw_path:
-            continue
-        source = Path(os.path.expanduser(raw_path))
-        if not source.exists():
-            _log.warning("Skills directory not found: %s", source)
-            continue
-        for skill_file in sorted(source.rglob(_SKILL_FILE)):
-            name, _description, content = parse_skill_md(str(skill_file))
-            if not name or content is None:
-                continue
-            dest_dir = skills_root / name
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            (dest_dir / _SKILL_FILE).write_text(content, encoding="utf-8")
-            written.append(name)
-            _log.info("Linked skill %s -> %s", name, dest_dir)
+    for skill in iter_skills(paths):
+        dest_dir = skills_root / skill.name
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / _SKILL_FILE).write_text(skill.content, encoding="utf-8")
+        written.append(skill.name)
+        _log.info("Linked skill %s -> %s", skill.name, dest_dir)
     return written

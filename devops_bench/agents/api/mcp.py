@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import shlex
 from contextlib import AsyncExitStack
+from types import TracebackType
 from typing import Any
 
-from devops_bench.core import MissingDependencyError, get_logger
+from devops_bench.core import get_logger
 
 __all__ = ["MCPClient", "extract_tool_text"]
 
@@ -39,7 +40,8 @@ class MCPClient:
         session: The active ``ClientSession`` once entered, else ``None``.
 
     Raises:
-        MissingDependencyError: If the ``mcp`` SDK is not installed (on enter).
+        ImportError: If the ``mcp`` package is missing (a broken install —
+            ``mcp`` is a required dependency; on enter).
         ValueError: If ``server_path`` is empty or whitespace-only (on enter).
     """
 
@@ -52,8 +54,11 @@ class MCPClient:
         try:
             from mcp.client.session import ClientSession
             from mcp.client.stdio import StdioServerParameters, stdio_client
-        except ImportError as exc:  # pragma: no cover - exercised via MissingDependencyError
-            raise MissingDependencyError("the API agent's MCP client", "mcp") from exc
+        except ImportError as exc:  # pragma: no cover - broken install only
+            raise ImportError(
+                "The API agent's MCP client needs the 'mcp' package, a required "
+                "dependency of devops-bench; reinstall the package to restore it."
+            ) from exc
 
         # Split the command so a multi-word server_path (e.g. "uv run mcp-server")
         # is spawned as program + args rather than a single executable name; the
@@ -66,15 +71,27 @@ class MCPClient:
                 "MCP server command."
             )
         server_params = StdioServerParameters(command=parts[0], args=parts[1:])
-        stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-        self.read_stream, self.write_stream = stdio_transport
-        self.session = await self.exit_stack.enter_async_context(
-            ClientSession(self.read_stream, self.write_stream)
-        )
-        await self.session.initialize()
+        # Unwind anything already entered (e.g. the spawned server subprocess)
+        # when a later setup step fails — __aexit__ never runs if __aenter__
+        # raises, so cleanup must happen here.
+        try:
+            stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+            self.read_stream, self.write_stream = stdio_transport
+            self.session = await self.exit_stack.enter_async_context(
+                ClientSession(self.read_stream, self.write_stream)
+            )
+            await self.session.initialize()
+        except BaseException:
+            await self.exit_stack.aclose()
+            raise
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         await self.exit_stack.aclose()
 
     async def list_tools(self) -> Any:

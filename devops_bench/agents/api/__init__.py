@@ -15,11 +15,15 @@
 """API/MCP agent harness driving the shared :func:`run_tool_loop` primitive.
 
 The concrete harness lives in :mod:`devops_bench.agents.api.agent` and
-self-registers under ``"api"`` via ``@AGENTS.register``. That module and its
-siblings (:mod:`devops_bench.agents.api.mcp`,
-:mod:`devops_bench.agents.api.skills`) pull in heavy optional dependencies (the
-``mcp`` SDK, ``deepeval``) only at call time — importing this package never
-forces those imports.
+self-registers under ``"api"`` via ``@AGENTS.register`` — importing this
+package triggers that registration (matching the CLI harness packages), so
+``AGENTS.get("api")`` works after ``import devops_bench.agents.api``. Heavy
+optional dependencies (the ``mcp`` SDK, ``deepeval``, provider SDKs) still
+load only at call time.
 """
 
 from __future__ import annotations
+
+from devops_bench.agents.api.agent import ApiAgent
+
+__all__ = ["ApiAgent"]

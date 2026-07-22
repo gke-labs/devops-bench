@@ -55,6 +55,42 @@ def test_mcp_client_enter_rejects_empty_server_path():
         asyncio.run(client.__aenter__())
 
 
+def test_aenter_unwinds_exit_stack_when_session_setup_fails(monkeypatch):
+    """If session setup fails after the stdio transport spawned the server,
+    ``__aenter__`` must unwind its exit stack — ``__aexit__`` never runs when
+    ``__aenter__`` raises, so without the unwind the server subprocess leaks
+    (regression for the review finding)."""
+    import mcp.client.session as session_mod
+    import mcp.client.stdio as stdio_mod
+
+    state = {"transport_exited": False}
+
+    class _Transport:
+        def __init__(self, _params) -> None: ...
+
+        async def __aenter__(self):
+            return (SimpleNamespace(), SimpleNamespace())
+
+        async def __aexit__(self, *_a) -> None:
+            state["transport_exited"] = True
+
+    class _BoomSession:
+        def __init__(self, _r, _w) -> None: ...
+
+        async def __aenter__(self):
+            raise RuntimeError("handshake failed")
+
+        async def __aexit__(self, *_a) -> None: ...
+
+    monkeypatch.setattr(stdio_mod, "stdio_client", lambda params: _Transport(params))
+    monkeypatch.setattr(session_mod, "ClientSession", _BoomSession)
+
+    client = MCPClient("server")
+    with pytest.raises(RuntimeError, match="handshake failed"):
+        asyncio.run(client.__aenter__())
+    assert state["transport_exited"] is True
+
+
 def test_call_tool_degrades_gracefully_when_deepeval_missing(monkeypatch):
     """If ``deepeval`` is not installed, ``call_tool`` still works (untraced).
 
