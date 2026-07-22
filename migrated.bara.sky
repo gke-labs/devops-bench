@@ -35,7 +35,7 @@ MIGRATED = [
     # __init__.py lags its PR by design: it ships trimmed to the base surface and only reaches
     # blob parity once the wave-5 concrete-metrics PR re-adds the family imports upstream. Do not
     # flip it by hand before then — gke-labs imports the full package root (NEVER_SYNC'd until parity).
-    # "devops_bench/metrics/__init__.py",
+    "devops_bench/metrics/__init__.py",
     # "tests/unit/metrics/test_metrics_base.py",
     # "tests/unit/metrics/test_metrics_extension_axis.py",
     # "tests/unit/metrics/test_package_import.py",
@@ -78,8 +78,8 @@ MIGRATED = [
     # "tests/unit/models/test_models_claude.py",
     # "devops_bench/models/ollama.py",
     # "tests/unit/models/test_models_ollama.py",
-    # "devops_bench/agents/cli/gemini_cli/**",
-    # "devops_bench/agents/cli/__init__.py",
+    "devops_bench/agents/cli/gemini_cli/**",
+    "devops_bench/agents/cli/__init__.py",
     # "tests/unit/agents/test_agents_cli_gemini.py",
     # PR: openclaw CLI agent + agents shared + chaos base
     # (chaos base replaces upstream agents/chaos/ — git rm the 3 superseded files in this PR)
@@ -91,33 +91,33 @@ MIGRATED = [
     # "devops_bench/chaos/base.py",
     # "devops_bench/chaos/agent.py",
     # "devops_bench/chaos/schema.py",
-    # "devops_bench/chaos/spec.py",
-    # "devops_bench/chaos/__init__.py",
+    "devops_bench/chaos/spec.py",
+    "devops_bench/chaos/__init__.py",
     # "tests/unit/chaos/test_base.py",
     # "tests/unit/chaos/test_agent.py",
     # "tests/unit/chaos/test_spec.py",
     # "tests/unit/chaos/test_extension_axis.py",
     # "tests/unit/chaos/test_package_import.py",
     # PR: verification base + metrics judge
-    # "devops_bench/verification/base.py",
+    "devops_bench/verification/base.py",
     # "devops_bench/verification/spec.py",
     # "devops_bench/verification/runner.py",
-    # "devops_bench/verification/__init__.py",
-    # "tests/unit/verification/test_base.py",
+    "devops_bench/verification/__init__.py",
+    "tests/unit/verification/test_base.py",
     # "tests/unit/verification/test_spec.py",
     # "tests/unit/verification/test_runner.py",
     # "tests/unit/verification/test_verifier_registry.py",
-    # "tests/unit/verification/test_package_import.py",
-    # "devops_bench/metrics/geval.py",
+    "tests/unit/verification/test_package_import.py",
+    "devops_bench/metrics/geval.py",
     # "devops_bench/metrics/pipeline.py",
-    # "devops_bench/metrics/_skills.py",
-    # "tests/unit/metrics/test_metrics_geval.py",
+    "devops_bench/metrics/_skills.py",
+    "tests/unit/metrics/test_metrics_geval.py",
     # "tests/unit/metrics/test_metrics_pipeline.py",
     # "tests/unit/metrics/test_metrics_skills.py",
     # PR: deployers base + default kind stack (task-specific stacks travel with their task — wave 9)
-    # "devops_bench/deployers/base.py",
+    "devops_bench/deployers/base.py",
     # "devops_bench/deployers/factory.py",
-    # "devops_bench/deployers/__init__.py",
+    "devops_bench/deployers/__init__.py",
     # "tests/unit/deployers/test_deployers_factory.py",
     # "tf/prebuilt/kind/**",
     # PR: evalharness reporter (consumes results/)
@@ -146,9 +146,9 @@ MIGRATED = [
     # "tests/unit/verification/test_scaling_complete.py",
     # PR: deployer engines (tofu + noop)
     # "devops_bench/deployers/tofu.py",
-    # "tests/unit/deployers/test_deployers_tofu.py",
-    # "devops_bench/deployers/noop.py",
-    # "tests/unit/deployers/test_deployers_noop.py",
+    "tests/unit/deployers/test_deployers_tofu.py",
+    "devops_bench/deployers/noop.py",
+    "tests/unit/deployers/test_deployers_noop.py",
     # PR: concrete metrics (all five; each travels with its skills/ guide — see wave 3 skills —
     # and this PR restores the full metrics/__init__.py surface, so flip the init after it lands)
     # "devops_bench/metrics/grounding.py",
