@@ -33,7 +33,7 @@ MIGRATED = [
     # metrics registry base
     # "devops_bench/metrics/base.py",
     # __init__.py lags its PR by design: it ships trimmed to the base surface and only reaches
-    # blob parity once the wave-5 concrete-metrics PR re-adds the family imports upstream. Do not
+    # blob parity once the wave-4 concrete-metrics PR re-adds the family imports upstream. Do not
     # flip it by hand before then — gke-labs imports the full package root (NEVER_SYNC'd until parity).
     "devops_bench/metrics/__init__.py",
     # "tests/unit/metrics/test_metrics_base.py",
@@ -114,15 +114,34 @@ MIGRATED = [
     "tests/unit/metrics/test_metrics_geval.py",
     # "tests/unit/metrics/test_metrics_pipeline.py",
     # "tests/unit/metrics/test_metrics_skills.py",
-    # PR: deployers base + default kind stack (task-specific stacks travel with their task — wave 9)
+    # PR: deployers base + engines + default kind stack (task-specific stacks travel with their task — wave 8)
     "devops_bench/deployers/base.py",
     # "devops_bench/deployers/factory.py",
     "devops_bench/deployers/__init__.py",
     # "tests/unit/deployers/test_deployers_factory.py",
+    # "devops_bench/deployers/tofu.py",
+    "tests/unit/deployers/test_deployers_tofu.py",
+    "devops_bench/deployers/noop.py",
+    "tests/unit/deployers/test_deployers_noop.py",
     # "tf/prebuilt/kind/**",
     # PR: evalharness reporter (consumes results/)
     # "devops_bench/evalharness/reporter.py",
     # "tests/unit/evalharness/test_reporter.py",
+    # PR: verification verifiers (pod-healthy + scaling-complete; pulled forward from wave 5)
+    # "devops_bench/verification/verifiers/pod_healthy.py",
+    # "tests/unit/verification/test_pod_healthy.py",
+    # "devops_bench/verification/verifiers/scaling_complete.py",
+    # "tests/unit/verification/test_scaling_complete.py",
+    # PR: concrete metrics (all five; pulled forward from wave 5; each travels with its skills/
+    # guide — see wave 3 skills — and this PR restores the full metrics/__init__.py surface,
+    # so flip the init after it lands)
+    # "devops_bench/metrics/grounding.py",
+    # "tests/unit/metrics/test_metrics_grounding.py",
+    # "devops_bench/metrics/tool_invocation.py",
+    # "devops_bench/metrics/checklist.py",
+    # "devops_bench/metrics/outcome_validity.py",
+    # "devops_bench/metrics/chaos_metrics.py",
+    # "tests/unit/metrics/test_metrics_chaos.py",
 
     # --- Wave 5: concretes on the components (parallel; one batched PR per owner — pr-plan.md §3.2) ---
     # PR: API agent + MCP client (mcp.py's only importer is the API agent, so it travels here)
@@ -139,32 +158,20 @@ MIGRATED = [
     # "tests/unit/chaos/test_generate_load.py",
     # "devops_bench/chaos/triggers/**",
     # "tests/unit/chaos/test_time_trigger.py",
-    # PR: verification verifiers (pod-healthy + scaling-complete)
-    # "devops_bench/verification/verifiers/pod_healthy.py",
-    # "tests/unit/verification/test_pod_healthy.py",
-    # "devops_bench/verification/verifiers/scaling_complete.py",
-    # "tests/unit/verification/test_scaling_complete.py",
-    # PR: deployer engines (tofu + noop)
-    # "devops_bench/deployers/tofu.py",
-    "tests/unit/deployers/test_deployers_tofu.py",
-    "devops_bench/deployers/noop.py",
-    "tests/unit/deployers/test_deployers_noop.py",
-    # PR: concrete metrics (all five; each travels with its skills/ guide — see wave 3 skills —
-    # and this PR restores the full metrics/__init__.py surface, so flip the init after it lands)
-    # "devops_bench/metrics/grounding.py",
-    # "tests/unit/metrics/test_metrics_grounding.py",
-    # "devops_bench/metrics/tool_invocation.py",
-    # "devops_bench/metrics/checklist.py",
-    # "devops_bench/metrics/outcome_validity.py",
-    # "devops_bench/metrics/chaos_metrics.py",
-    # "tests/unit/metrics/test_metrics_chaos.py",
 
-    # --- Wave 6: harness base + scenario, and module docs/skills (each after its module lands) ---
+    # --- Wave 6: eval harness (base + scenario + default), and module docs/skills (each after its module lands) ---
     # "devops_bench/evalharness/base.py",
     # "devops_bench/evalharness/artifacts.py",
     # "devops_bench/evalharness/scenario.py",
+    # "devops_bench/evalharness/default.py",
     # "devops_bench/evalharness/__init__.py",
     # "tests/unit/evalharness/test_scenario.py",
+    # "tests/unit/evalharness/test_default_harness.py",
+    # "tests/unit/evalharness/test_registry_resolution.py",
+    # "tests/unit/evalharness/test_spec_parsing.py",
+    # "tests/unit/evalharness/test_single_env_read.py",
+    # "tests/unit/evalharness/test_e2e_smoke.py",
+    # "tests/unit/evalharness/test_package_import.py",
     # docs + skills whose module has fully landed (pr-plan.md §3.4)
     # "docs/components/infra.md",
     # "docs/components/model_providers.md",
@@ -182,16 +189,7 @@ MIGRATED = [
     # ".agents/skills/cleanup-orphaned-resources/**",
     # ".claude/skills/cleanup-orphaned-resources",
 
-    # --- Wave 7: default eval harness ---
-    # "devops_bench/evalharness/default.py",
-    # "tests/unit/evalharness/test_default_harness.py",
-    # "tests/unit/evalharness/test_registry_resolution.py",
-    # "tests/unit/evalharness/test_spec_parsing.py",
-    # "tests/unit/evalharness/test_single_env_read.py",
-    # "tests/unit/evalharness/test_e2e_smoke.py",
-    # "tests/unit/evalharness/test_package_import.py",
-
-    # --- Wave 8: entrypoints + cross-cutting tests ---
+    # --- Wave 7: entrypoints + cross-cutting tests ---
     # "devops_bench/cli.py",
     # "devops_bench/__main__.py",
     # "devops_bench/run.py",
@@ -201,8 +199,8 @@ MIGRATED = [
     # "tests/unit/verification/test_optimize_scale_regression.py",
     # "tests/integration/**",
 
-    # --- Wave 9: benchmark tasks, each coupled with the tf stack it provisions (flip-group entries
-    # --- flip together). Ships after wave 8 so every task can be validated on the full upstream
+    # --- Wave 8: benchmark tasks, each coupled with the tf stack it provisions (flip-group entries
+    # --- flip together). Ships after wave 7 so every task can be validated on the full upstream
     # --- pipeline before ownership moves. A shared stack carries all the tasks that use it. ---
     # noop tasks (no stack; need only the pipeline to validate)
     # "tasks/noop/**",
@@ -234,8 +232,8 @@ MIGRATED = [
     # "tasks/kind/cp-recovery/**",  # flip-group: cp-recovery
     # "tf/prebuilt/cp-recovery-kind/**",  # flip-group: cp-recovery
 
-    # --- Wave 10: eval-lifecycle skills, onboarding + repo-overview docs (need cli/ + evalharness,
-    # --- and task data from wave 9 for the run/validate skills to exercise) ---
+    # --- Wave 9: eval-lifecycle skills, onboarding + repo-overview docs (need cli/ + evalharness,
+    # --- and task data from wave 8 for the run/validate skills to exercise) ---
     # ".agents/skills/run-eval/**",
     # ".claude/skills/run-eval",
     # ".agents/skills/run-parallel-evals/**",
@@ -253,7 +251,7 @@ MIGRATED = [
     # "docs/how-to/run-evals.md",
     # "docs/components/bastion.md",
     # "tf/prebuilt/bastion/**",
-    # tasks docs (need the wave-9 task data they document)
+    # tasks docs (need the wave-8 task data they document)
     # "docs/how-to/add-a-task.md",
     # "tasks/AGENTS.md",
     # "docs/getting-started.md",
