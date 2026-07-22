@@ -192,6 +192,8 @@ def test_write_run_artifacts_emits_rows_and_manifest(
             "latency": 12.0,
             "tokens": {"input": 100, "output": 20},
             "scores": {
+                "OutcomeScore": {"score": 0.9, "version": "v1", "reason": "c=0.900"},
+                "ChecklistScore": {"score": 0.9, "success": True, "reason": "ok"},
                 "OutcomeValidity": {"score": 0.9, "success": True, "reason": "ok"},
                 "ToolInvocation": {"score": 0.6, "success": True, "reason": "ok"},
             },
@@ -214,6 +216,8 @@ def test_write_run_artifacts_emits_rows_and_manifest(
     assert row["taskFolder"] == "task_001"
     assert row["taskName"] == "Rotate Secret"
     assert row["outcomeScore"] == 0.9
+    assert row["correctnessScore"] == 0.9
+    assert row["scoringVersion"] == "v1"
     assert row["toolScore"] == 0.6
     assert row["inputTokens"] == 100
     assert row["outputTokens"] == 20
