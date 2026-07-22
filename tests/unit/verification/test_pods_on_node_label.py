@@ -93,6 +93,59 @@ def test_failure_when_no_running_pods_match():
     assert "no Running pods" in result.reason
 
 
+def test_failure_when_no_nodes_match_the_label():
+    # Zero labeled nodes (typo in the label, or the pool never came up) must be
+    # diagnosed as such rather than reported as every pod being misplaced.
+    labeled = _nodes()  # no items
+    pods = _pods(("web-1", "on-demand", "Running"))
+    with patch(
+        "devops_bench.verification.verifiers.pods_on_node_label.get_resource",
+        side_effect=[labeled, pods],
+    ):
+        result = PodsOnNodeWithLabelVerifier(
+            selector="app=web", node_label="cloud.google.com/gke-spot=true"
+        ).verify(timeout_sec=0)
+
+    assert result.success is False
+    assert "no nodes match node_label" in result.reason
+    assert "web-1" not in result.reason  # not blaming the pod
+
+
+def test_failure_when_fewer_than_min_pods_placed():
+    # One replica has settled correctly but the task requires two — a partial
+    # rollout must not pass while others are still scheduling.
+    labeled = _nodes("spot-a", "spot-b")
+    pods = _pods(("web-1", "spot-a", "Running"), ("web-2", "", "Pending"))
+    with patch(
+        "devops_bench.verification.verifiers.pods_on_node_label.get_resource",
+        side_effect=[labeled, pods],
+    ):
+        result = PodsOnNodeWithLabelVerifier(
+            selector="app=web",
+            node_label="cloud.google.com/gke-spot=true",
+            min_pods=2,
+        ).verify(timeout_sec=0)
+
+    assert result.success is False
+    assert "need >= 2" in result.reason
+
+
+def test_success_when_min_pods_satisfied():
+    labeled = _nodes("spot-a", "spot-b")
+    pods = _pods(("web-1", "spot-a", "Running"), ("web-2", "spot-b", "Running"))
+    with patch(
+        "devops_bench.verification.verifiers.pods_on_node_label.get_resource",
+        side_effect=[labeled, pods],
+    ):
+        result = PodsOnNodeWithLabelVerifier(
+            selector="app=web",
+            node_label="cloud.google.com/gke-spot=true",
+            min_pods=2,
+        ).verify(timeout_sec=5)
+
+    assert result.success is True
+
+
 def test_failure_when_kubectl_errors():
     with patch(
         "devops_bench.verification.verifiers.pods_on_node_label.get_resource",

@@ -44,12 +44,16 @@ class PodsOnNodeWithLabelVerifier(BaseVerifier):
         node_label: Node label selector the pods' nodes must match (e.g.
             ``"cloud.google.com/gke-spot=true"``).
         namespace: Optional namespace for the pods; defaults to the active one.
+        min_pods: Minimum number of correctly-placed Running pods required to
+            pass (default ``1``). Guards against a partial rollout passing while
+            replicas are still Pending and may yet land on the wrong nodes.
     """
 
     type: Literal["pods_on_node_with_label"] = "pods_on_node_with_label"
     selector: str
     node_label: str
     namespace: str | None = None
+    min_pods: int = 1
 
     def verify(self, timeout_sec: float) -> VerificationResult:
         """Poll until every matched, Running pod sits on a labeled node.
@@ -73,9 +77,7 @@ class PodsOnNodeWithLabelVerifier(BaseVerifier):
             read, else ``None``.
         """
         try:
-            labeled = get_resource(
-                "nodes", selector=self.node_label, kubeconfig=self.kubeconfig
-            )
+            labeled = get_resource("nodes", selector=self.node_label, kubeconfig=self.kubeconfig)
             pods = get_resource(
                 "pods",
                 selector=self.selector,
@@ -88,6 +90,7 @@ class PodsOnNodeWithLabelVerifier(BaseVerifier):
         labeled_nodes = {
             (node.get("metadata") or {}).get("name") for node in labeled.get("items", [])
         }
+        labeled_nodes.discard(None)
         # Only Running pods have a settled node; Pending/terminating pods are not
         # yet placed and would spuriously fail (or pass) a placement check.
         running = [
@@ -100,19 +103,35 @@ class PodsOnNodeWithLabelVerifier(BaseVerifier):
             for pod in running
         }
         raw: dict[str, Any] = {
-            "labeled_nodes": sorted(name for name in labeled_nodes if name),
+            "labeled_nodes": sorted(labeled_nodes),
             "placement": placement,
         }
+        # No labeled nodes at all means the label selector is wrong or the node
+        # pool never came up — surface that instead of blaming every pod.
+        if not labeled_nodes:
+            return (
+                False,
+                f"no nodes match node_label {self.node_label!r} "
+                "(check the selector or whether the node pool came up)",
+                raw,
+            )
         if not running:
             return False, f"no Running pods matched selector {self.selector!r}", raw
-        misplaced = {
-            name: node for name, node in placement.items() if node not in labeled_nodes
-        }
+        misplaced = {name: node for name, node in placement.items() if node not in labeled_nodes}
         if misplaced:
             return (
                 False,
                 f"{len(misplaced)}/{len(running)} pod(s) not on a node matching "
                 f"{self.node_label!r}: {misplaced}",
+                raw,
+            )
+        # Every Running pod here is correctly placed; require enough of them so a
+        # partial rollout (replicas still Pending) does not pass prematurely.
+        if len(running) < self.min_pods:
+            return (
+                False,
+                f"only {len(running)} correctly-placed Running pod(s) matching "
+                f"{self.selector!r}; need >= {self.min_pods} (others may still be scheduling)",
                 raw,
             )
         return (
