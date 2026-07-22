@@ -24,7 +24,7 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from devops_bench.core import ConfigError
 
@@ -141,6 +141,65 @@ def args_to_config(args: argparse.Namespace) -> BenchmarkConfig:
     )
 
 
+def _fmt_reason(reason: Any, limit: int = 160) -> str:
+    """Flatten a possibly-multiline reason to a single truncated line."""
+    if not reason:
+        return ""
+    flat = " ".join(str(reason).split())
+    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
+
+
+def print_run_summary(records: list[dict[str, Any]]) -> None:
+    """Print a per-task deterministic + judge scoreboard to stdout.
+
+    Consolidates the deterministic verification rollup (which otherwise only
+    reaches ``results.json``) with the LLM-judge scores, so a single run's
+    outcome is legible without opening the JSON.
+    """
+    if not records:
+        return
+    print("\n================ run summary ================")
+    for r in records:
+        print(f"\n{r.get('name') or '<unknown>'}  [{r.get('status') or ''}]")
+
+        rollup = r.get("verification_rollup")
+        if rollup is not None:
+            c = rollup.get("c")
+            rec_v = rollup.get("rec_v")
+            c_s = "n/a" if c is None else f"{c:.2f}"
+            rec_s = "n/a" if rec_v is None else f"{rec_v:.2f}"
+            print(f"  deterministic:  c={c_s}  rec_v={rec_s}  cat_v={rollup.get('cat_v')}")
+
+        entries = r.get("verification_entries_report") or []
+        objectives = [e for e in entries if e.get("role") == "objective"]
+        safeguards = [e for e in entries if e.get("role") == "safeguard"]
+        if objectives:
+            print("  objectives (feed c):")
+            for e in objectives:
+                mark = "PASS" if e.get("success") else "FAIL"
+                tail = "" if e.get("success") else f"  {_fmt_reason(e.get('reason'))}"
+                print(f"    [{mark}] {e.get('name')} (w{e.get('weight')}){tail}")
+        if safeguards:
+            print("  safeguards:")
+            for e in safeguards:
+                held = e.get("success")
+                mark = "HELD  " if held else "BREACH"
+                tail = "" if held else f"  {_fmt_reason(e.get('reason'))}"
+                print(f"    [{mark}] {e.get('name')} ({e.get('severity')}){tail}")
+
+        scores = r.get("scores") or {}
+        if scores:
+            print("  judge (GEval, non-gating):")
+            for metric, val in scores.items():
+                if isinstance(val, dict):
+                    score = val.get("score")
+                    score_s = "n/a" if score is None else f"{score:.2f}"
+                    mark = "PASS" if val.get("success") else "FAIL"
+                    print(f"    [{mark}] {metric} = {score_s}  {_fmt_reason(val.get('reason'))}")
+                else:
+                    print(f"    {metric} = {val}")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Console entry point: parse args, run the benchmark, return an exit code.
 
@@ -163,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    print_run_summary(result.results)
     failed = sum(1 for r in result.results if r.get("status") == "failed")
     print(f"ran {len(result.results)} task(s), {failed} failed; results: {result.results_path}")
     return 1 if failed else 0

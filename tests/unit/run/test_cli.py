@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from devops_bench.cli import args_to_config, build_parser, main
+from devops_bench.cli import args_to_config, build_parser, main, print_run_summary
 from devops_bench.core import ConfigError
 from devops_bench.run import BenchmarkResult
 
@@ -119,3 +119,47 @@ def test_main_exit_two_on_config_error(
     monkeypatch.setattr("devops_bench.run.run_benchmark", _raise)
     assert main(["src"]) == 2
     assert "error: boom" in capsys.readouterr().err
+
+
+def test_print_run_summary_includes_deterministic_and_judge(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    record = {
+        "name": "deploy-hello-app",
+        "status": "success",
+        "verification_rollup": {"c": 0.3, "rec_v": 1.0, "cat_v": 1},
+        "verification_entries_report": [
+            {
+                "name": "serving-http",
+                "role": "objective",
+                "weight": 2,
+                "success": False,
+                "reason": "no service matched",
+            },
+            {
+                "name": "blast-radius",
+                "role": "safeguard",
+                "severity": "catastrophic",
+                "weight": 1,
+                "success": True,
+                "reason": "held",
+            },
+        ],
+        "scores": {
+            "OutcomeValidity": {"score": 0.6, "success": False, "reason": "missed HPA"},
+        },
+    }
+    print_run_summary([record])
+    out = capsys.readouterr().out
+    assert "c=0.30" in out
+    assert "rec_v=1.00" in out
+    assert "cat_v=1" in out
+    assert "[FAIL] serving-http" in out
+    assert "no service matched" in out
+    assert "[HELD" in out
+    assert "blast-radius" in out
+    assert "OutcomeValidity = 0.60" in out
+
+
+def test_print_run_summary_handles_sparse_record() -> None:
+    print_run_summary([{"status": "success"}])
