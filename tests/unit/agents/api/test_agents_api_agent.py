@@ -278,25 +278,48 @@ def test_fold_with_extraction_errors_surfaces_orphan_results():
 # ---------------------------------------------------------------------------
 
 
+def _tok(**overrides):
+    """Canonical token dict with every bucket None, overridden per test."""
+    base = {
+        "input": None,
+        "cached": None,
+        "cache_write": None,
+        "reasoning": None,
+        "output": None,
+        "total": None,
+    }
+    base.update(overrides)
+    return base
+
+
 def test_extract_tokens_reads_usage_metadata():
     usage = SimpleNamespace(prompt_token_count=3, candidates_token_count=5, total_token_count=8)
     response = SimpleNamespace(usage_metadata=usage)
-    assert extract_tokens(response) == {
-        "prompt_tokens": 3,
-        "candidates_tokens": 5,
-        "total_tokens": 8,
-    }
+    assert extract_tokens(response) == _tok(input=3, output=5, total=8)
+
+
+def test_extract_tokens_google_subtracts_cached_and_splits_reasoning():
+    # Gemini's prompt_token_count includes cached content; canonical input is
+    # the non-cached remainder plus tool-result input tokens.
+    usage = SimpleNamespace(
+        prompt_token_count=1000,
+        cached_content_token_count=600,
+        tool_use_prompt_token_count=50,
+        thoughts_token_count=30,
+        candidates_token_count=20,
+        total_token_count=1100,
+    )
+    response = SimpleNamespace(usage_metadata=usage)
+    assert extract_tokens(response) == _tok(
+        input=450, cached=600, reasoning=30, output=20, total=1100
+    )
 
 
 def test_extract_tokens_falls_back_to_usage_attribute():
     usage = SimpleNamespace(prompt_token_count=1, candidates_token_count=2, total_token_count=3)
     # No ``usage_metadata``; the function should still find ``usage``.
     response = SimpleNamespace(usage=usage)
-    assert extract_tokens(response) == {
-        "prompt_tokens": 1,
-        "candidates_tokens": 2,
-        "total_tokens": 3,
-    }
+    assert extract_tokens(response) == _tok(input=1, output=2, total=3)
 
 
 def test_extract_tokens_returns_empty_dict_when_no_usage():
@@ -304,53 +327,55 @@ def test_extract_tokens_returns_empty_dict_when_no_usage():
     assert extract_tokens(None) == {}
 
 
-def test_extract_tokens_defaults_missing_counts_to_zero():
-    """Missing counts default to 0; if the source provided no total but the
-    other two fields are non-zero, the helper computes prompt+candidates so a
-    non-empty run never shows ``total_tokens: 0`` in results.json."""
+def test_extract_tokens_missing_counts_stay_none_but_total_is_computed():
+    """Unreported buckets stay None (never a fabricated 0); the total falls
+    back to the sum of whatever was reported."""
     usage = SimpleNamespace(prompt_token_count=4)  # other counts unset
     response = SimpleNamespace(usage_metadata=usage)
-    assert extract_tokens(response) == {
-        "prompt_tokens": 4,
-        "candidates_tokens": 0,
-        # 4 + 0 (no source total provided, but a non-zero prompt → compute it).
-        "total_tokens": 4,
-    }
+    assert extract_tokens(response) == _tok(input=4, total=4)
 
 
-def test_extract_tokens_reads_anthropic_input_output_shape():
-    """Anthropic emits ``usage.input_tokens`` / ``usage.output_tokens`` and **no**
-    aggregated total. The helper must map both onto the legacy keys and compute
-    the total so non-Google providers do not silently drop tokens.
-
-    Regression test for the blocking bug found in review: the previous
-    extract_tokens only read Google-style fields and returned zeros for any
-    Anthropic response, corrupting token metrics in results.json.
-    """
+def test_extract_tokens_reads_anthropic_shape():
+    """Anthropic's input_tokens is already the non-cached prompt; cache reads
+    and writes map to their own buckets and the total is the bucket sum."""
     usage = SimpleNamespace(input_tokens=42, output_tokens=17)
     response = SimpleNamespace(usage=usage)
-    assert extract_tokens(response) == {
-        "prompt_tokens": 42,
-        "candidates_tokens": 17,
-        "total_tokens": 59,
-    }
+    assert extract_tokens(response) == _tok(input=42, output=17, total=59)
+
+
+def test_extract_tokens_anthropic_cache_buckets():
+    usage = SimpleNamespace(
+        input_tokens=5,
+        cache_read_input_tokens=1000,
+        cache_creation_input_tokens=200,
+        output_tokens=40,
+    )
+    response = SimpleNamespace(usage=usage)
+    assert extract_tokens(response) == _tok(
+        input=5, cached=1000, cache_write=200, output=40, total=1245
+    )
 
 
 def test_extract_tokens_reads_openai_ollama_shape():
-    """OpenAI / Ollama emit ``usage.prompt_tokens`` / ``completion_tokens`` /
-    ``total_tokens``. The helper must map ``completion_tokens`` → the legacy
-    ``candidates_tokens`` slot and pass ``total_tokens`` through verbatim.
-
-    Regression test for the same blocking bug — Ollama responses returned
-    all-zero tokens before the provider-shape detection landed.
-    """
     usage = SimpleNamespace(prompt_tokens=10, completion_tokens=20, total_tokens=30)
     response = SimpleNamespace(usage=usage)
-    assert extract_tokens(response) == {
-        "prompt_tokens": 10,
-        "candidates_tokens": 20,
-        "total_tokens": 30,
-    }
+    assert extract_tokens(response) == _tok(input=10, output=20, total=30)
+
+
+def test_extract_tokens_openai_subtracts_cached_and_reasoning():
+    # cached_tokens is a subset of prompt_tokens; reasoning_tokens is a subset
+    # of completion_tokens. Canonical input/output are the remainders.
+    usage = SimpleNamespace(
+        prompt_tokens=2006,
+        completion_tokens=300,
+        total_tokens=2306,
+        prompt_tokens_details=SimpleNamespace(cached_tokens=1920),
+        completion_tokens_details=SimpleNamespace(reasoning_tokens=250),
+    )
+    response = SimpleNamespace(usage=usage)
+    assert extract_tokens(response) == _tok(
+        input=86, cached=1920, reasoning=250, output=50, total=2306
+    )
 
 
 def test_extract_tokens_google_total_passes_through_when_present():
@@ -358,18 +383,17 @@ def test_extract_tokens_google_total_passes_through_when_present():
     usage = SimpleNamespace(prompt_token_count=5, candidates_token_count=7, total_token_count=99)
     response = SimpleNamespace(usage_metadata=usage)
     # The helper does not second-guess a provider-supplied total even when it
-    # disagrees with prompt+candidates (some providers include reasoning/cached
-    # tokens in the total).
-    assert extract_tokens(response)["total_tokens"] == 99
+    # disagrees with the bucket sum (providers may roll extras into it).
+    assert extract_tokens(response)["total"] == 99
 
 
-def test_extract_tokens_preserves_legacy_on_disk_key_scheme():
-    """The on-disk dict shape must stay ``{prompt_tokens, candidates_tokens,
-    total_tokens}`` for D3 (results.json stability) — three keys, exactly.
-    """
+def test_extract_tokens_emits_canonical_key_scheme():
+    """The on-disk dict shape is the canonical six-bucket scheme (see
+    ``devops_bench.agents.result.TOKEN_BUCKETS``); results/normalize.py keeps
+    the legacy provider aliases readable for historical records."""
     usage = SimpleNamespace(input_tokens=1, output_tokens=2)
     keys = set(extract_tokens(SimpleNamespace(usage=usage)).keys())
-    assert keys == {"prompt_tokens", "candidates_tokens", "total_tokens"}
+    assert keys == {"input", "cached", "cache_write", "reasoning", "output", "total"}
 
 
 # ---------------------------------------------------------------------------
@@ -403,11 +427,7 @@ def test_execute_runs_with_no_tools_when_capabilities_default(monkeypatch):
 
     assert result.output == "done"
     assert result.trajectory == []
-    assert result.tokens == {
-        "prompt_tokens": 3,
-        "candidates_tokens": 5,
-        "total_tokens": 8,
-    }
+    assert result.tokens == _tok(input=3, output=5, total=8)
     assert result.errors == []
     # Caller-formats-tools: the agent must call format_tools on the (empty)
     # skill list before invoking the loop.
@@ -432,8 +452,8 @@ def test_execute_passes_explicit_provider_and_model_to_get_model(monkeypatch):
 
 def test_execute_records_anthropic_tokens_through_to_agentresult(monkeypatch):
     """End-to-end: an Anthropic-shaped usage object surfaces on
-    ``AgentResult.tokens`` under the legacy key scheme — regression for the
-    blocking bug where non-Google providers silently logged zero tokens."""
+    ``AgentResult.tokens`` under the canonical bucket scheme — regression for
+    the blocking bug where non-Google providers silently logged zero tokens."""
     fake = _FakeLLMClient(
         [
             _Turn(
@@ -445,16 +465,12 @@ def test_execute_records_anthropic_tokens_through_to_agentresult(monkeypatch):
     )
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
     result = ApiAgent(AgentConfig()).run("p")
-    assert result.tokens == {
-        "prompt_tokens": 42,
-        "candidates_tokens": 17,
-        "total_tokens": 59,
-    }
+    assert result.tokens == _tok(input=42, output=17, total=59)
 
 
 def test_execute_records_openai_tokens_through_to_agentresult(monkeypatch):
     """End-to-end: an OpenAI/Ollama-shaped usage object surfaces under the
-    legacy key scheme."""
+    canonical bucket scheme."""
     fake = _FakeLLMClient(
         [
             _Turn(
@@ -466,11 +482,7 @@ def test_execute_records_openai_tokens_through_to_agentresult(monkeypatch):
     )
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
     result = ApiAgent(AgentConfig()).run("p")
-    assert result.tokens == {
-        "prompt_tokens": 10,
-        "candidates_tokens": 20,
-        "total_tokens": 30,
-    }
+    assert result.tokens == _tok(input=10, output=20, total=30)
 
 
 # ---------------------------------------------------------------------------
@@ -510,11 +522,7 @@ def test_execute_folds_assistant_tool_pairs_into_canonical_trajectory(monkeypatc
             "status": "completed",
         },
     ]
-    assert result.tokens == {
-        "prompt_tokens": 10,
-        "candidates_tokens": 20,
-        "total_tokens": 30,
-    }
+    assert result.tokens == _tok(input=10, output=20, total=30)
     assert result.errors == []
     assert result.metadata["tools_used"] == ["do_thing"]
     # MCP session was entered & exited via the async-context-manager protocol.

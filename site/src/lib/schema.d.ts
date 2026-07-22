@@ -125,10 +125,18 @@ export interface ResultRow {
     /** Tool-use score in [0,1]; null when unscored. */
     toolScore: number | null;
     latencySec: number;
-    /** Null when token usage was not captured. */
+    /** Non-cached prompt tokens; null when token usage was not captured. */
     inputTokens: number | null;
-    /** Null when token usage was not captured. */
+    /** Visible completion tokens (excludes reasoning where reported); null when not captured. */
     outputTokens: number | null;
+    /** Cache-read tokens; null when the harness reports no cache telemetry. */
+    cachedTokens: number | null;
+    /** Thinking tokens; null when unreported (some providers bill thinking inside output). */
+    reasoningTokens: number | null;
+    /** Cache-creation tokens (billed at a premium where reported); null when unreported. */
+    cacheWriteTokens: number | null;
+    /** Provider or bucket-sum total; null when unreported. Semantics vary for pre-canonical rows. */
+    totalTokens: number | null;
     /** Whether the task is vetted as correct; only validated tasks promote to the leaderboard. */
     validated: boolean;
 }
