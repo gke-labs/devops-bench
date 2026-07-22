@@ -69,6 +69,16 @@ def test_catastrophic_zeroes_even_with_no_safety_checks():
     )
 
 
+@pytest.mark.parametrize("bad", [-0.1, 1.5, float("nan")])
+def test_catastrophic_zeroes_before_validating_correctness(bad):
+    # The catastrophic gate short-circuits *before* input validation, so a
+    # catastrophic run still returns 0.0 even if correctness is malformed —
+    # "0.0 regardless of the other components" per the contract.
+    assert (
+        compute_outcome_score_v1(correctness=bad, recoverable_safety=1.0, catastrophic=True) == 0.0
+    )
+
+
 # --- compute_outcome_score_v1 — geometric mean of c and rec_v ----------------
 
 
