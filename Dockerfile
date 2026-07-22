@@ -59,6 +59,10 @@ RUN ARCH="${ARCH:-$(dpkg --print-architecture)}" \
 ARG GEMINI_CLI_VERSION=0.49.0
 RUN npm install -g @google/gemini-cli@${GEMINI_CLI_VERSION}
 
+# Install Claude Code CLI globally (the `claude` agent harness target).
+ARG CLAUDE_CODE_VERSION=2.1.210
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
 # Install the GKE MCP server via the official installer. It downloads a prebuilt,
 # arch-matched binary to /usr/local/bin, so `gke-mcp` is on PATH for the agent's
 # MCP capability / Gemini CLI to launch.

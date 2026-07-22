@@ -89,6 +89,19 @@ def test_alias_normalizes_to_canonical_key() -> None:
     assert isinstance(agent, agent_cls)
 
 
+def test_claude_code_alias_normalizes_to_canonical_key() -> None:
+    """``claude-code`` resolves to the canonical ``claude`` agent.
+
+    The ``AGENTS`` registry has no alias mechanism; the alias lives in
+    ``_AGENT_TYPE_ALIASES`` and is applied only by ``resolve_agent``.
+    """
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
+
+    agent_cls = AGENTS.get("claude")
+    agent = harness.resolve_agent("claude-code")
+    assert isinstance(agent, agent_cls)
+
+
 def test_unknown_agent_type_raises_not_registered() -> None:
     """An agent key with no registration produces ``NotRegisteredError``."""
     harness = DefaultEvalHarness(project_id="p", cluster_name="c")

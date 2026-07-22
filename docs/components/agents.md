@@ -18,12 +18,14 @@ agent.run(prompt) -> AgentResult     # base: latency + safety net
 
 ## Supported harnesses
 
-Three harnesses ship today. Each self-registers under a canonical key.
+Several harnesses ship today. Each self-registers under a canonical key.
 
 | Key | Wraps | How it runs | Capabilities |
 | --- | --- | --- | --- |
 | `gemini` | The Google **Gemini CLI** binary | Headless subprocess; trajectory parsed from `--output-format stream-json` on stdout | MCP, skills, rules, allowed-tools |
+| `claude` | The **Claude Code CLI** binary | Headless `claude -p --output-format stream-json --verbose --dangerously-skip-permissions`; trajectory parsed from the event stream on stdout | MCP, skills, rules |
 | `openclaw` | The **Openclaw Agent CLI** | `openclaw agent --local` with per-run isolated state/config; trajectory via `openclaw sessions export-trajectory` | MCP, skills, rules |
+| `antigravity` | The **Antigravity CLI** (`agy`) binary | Headless subprocess preserving the real `HOME` for cached OAuth/ADC; trajectory parsed from the transcript JSONL log | MCP, skills, rules |
 | `api` | **In-process** model call | Calls `get_model(provider, model)` and runs a model-agnostic MCP tool-use loop (`max_turns`, default 50) | MCP (spawns a stdio server), skills (served as tools), rules (system instruction) |
 
 > `oc` is just a shorthand alias for the `openclaw` CLI; this doc uses `openclaw` throughout.
@@ -44,9 +46,11 @@ Every harness resolves `AGENT_PROVIDER` through one shared contract
 (`devops_bench/core/model_providers.py`), so the same `AGENT_*` config behaves
 identically across them. The `api` harness uses it to pick the adapter family and
 backend for `get_model(provider, model)` and runs the tool-use loop in-process.
-The CLI harnesses (`gemini`, `openclaw`) use it to route `AGENT_API_KEY` onto the
-binary's provider-specific env var(s) and pass the model through: the Gemini CLI
-gets `GEMINI_MODEL`, and openclaw gets a `--model provider/id` flag. Either way,
+The CLI harnesses (`gemini`, `claude`, `openclaw`) use it to route `AGENT_API_KEY`
+onto the binary's provider-specific env var(s) and pass the model through: the
+Gemini CLI gets `GEMINI_MODEL`, the Claude Code CLI gets `ANTHROPIC_API_KEY` (or
+keyless Vertex/Bedrock via `CLAUDE_CODE_USE_VERTEX` / `CLAUDE_CODE_USE_BEDROCK`)
+plus a `--model` flag, and openclaw gets a `--model provider/id` flag. Either way,
 the model is a runtime input, never baked into the harness.
 
 For everything about providers, model ids, and how `get_model` resolves them, see
@@ -121,6 +125,40 @@ server, **skills** drop `SKILL.md` files the agent can discover, and **rules**
 supply an operator brief. Setting `BENCH_USE_MCP=false` drops the MCP binding
 entirely, so the agent sees no tools and the scorer agrees that none ran — skills
 and rules are unaffected.
+
+## Token accounting
+
+Each harness reports token usage in its own provider's terms, and
+`results/normalize.py` flattens whatever it hands back to `input` / `output` on
+the row. One asymmetry is worth knowing when you compare token counts or cost
+**across** harnesses:
+
+- The `claude` harness maps Anthropic usage onto the canonical six-bucket shape
+  (harness-local for now): `input` is the *uncached* prompt (Anthropic's
+  `input_tokens` already excludes cache traffic), `cached` is cache reads,
+  `cache_write` is cache creation (billed at a premium, so kept separate),
+  `output` is the completion (`reasoning` stays `None` — Anthropic bills
+  thinking inside output), and `total` is the full footprint. With Claude
+  Code's default prompt caching, most of a multi-turn run's prompt lands in
+  `cached`, so `input` alone is a small fraction of the true prompt size.
+- The `gemini` harness reports `stats.input_tokens` as the *full* prompt count,
+  cached or not.
+
+So a raw `input`-token or derived-cost comparison between the two harnesses
+under-reports Claude. Treat per-harness token columns as within-harness
+measures, not cross-harness ones, until the row schema carries the cache
+buckets explicitly (the unified token-accounting work). (When the terminal
+`result` event is missing — e.g. a truncated pipe on older `claude` builds —
+the `claude` parser falls back to summing the per-turn assistant usage, so
+token counts survive even then.)
+
+## Trajectory contents
+
+The trajectory is an ordered list of tool calls (`{name, args, result, status}`)
+in emission order — the same tool-calls-only shape across every CLI harness. The
+`claude` stream carries `thinking` / `redacted_thinking` blocks; these are
+**dropped** by the parser rather than recorded as steps, so a Claude trajectory
+looks the same as a Gemini, OpenClaw, or Antigravity one.
 
 ## Adding your own harness
 
