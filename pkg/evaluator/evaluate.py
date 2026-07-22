@@ -497,19 +497,38 @@ def evaluate_documentation_grounding(documentation, all_test_case, judge_model, 
     scores["ParameterRecallAccuracy"] = recall_accuracy
 
 
+def _normalize_doc_url(url: str) -> str:
+    """Canonicalize a doc URL for host-tolerant substring matching.
+
+    Collapses the ``docs.cloud.google.com`` host onto ``cloud.google.com`` (the
+    Cloud docs site is served under both, and task mappings and retrieved URIs
+    disagree on the prefix), drops any ``#fragment``, and trims a trailing slash.
+    The scheme is kept so short URLs stay specific enough not to match unrelated
+    step text.
+    """
+    u = url.lower().split("#", 1)[0].replace("docs.cloud.google.com", "cloud.google.com")
+    return u.rstrip("/")
+
+
 def calculate_doc_retrieval_rate(documentation, trajectory) -> float:
     """Calculates the percentage of mapped documentation guides accessed in trajectory."""
     if not documentation:
         return 0.0
 
+    # Collapse the docs-host on each step so a mapping URL without the ``docs.``
+    # prefix still matches a retrieved URI that carries it.
+    step_strs = [
+        json.dumps(step).lower().replace("docs.cloud.google.com", "cloud.google.com")
+        for step in trajectory
+    ]
+
     accessed_docs = set()
     for doc in documentation:
         doc_name_lower = doc["doc_name"].lower()
-        url_lower = doc["url"].lower()
+        url_norm = _normalize_doc_url(doc["url"] or "")
         found_in_trajectory = False
-        for step in trajectory:
-            step_str = json.dumps(step).lower()
-            if doc_name_lower in step_str or (url_lower and url_lower in step_str):
+        for step_str in step_strs:
+            if doc_name_lower in step_str or (url_norm and url_norm in step_str):
                 found_in_trajectory = True
                 break
         if found_in_trajectory:

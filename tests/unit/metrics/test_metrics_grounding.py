@@ -71,6 +71,31 @@ def test_retrieval_rate_tolerates_missing_name_and_url():
     assert calculate_doc_retrieval_rate(docs, trajectory) == pytest.approx(1 / 3)
 
 
+def test_retrieval_rate_matches_across_docs_host_prefix():
+    # Mapping uses the bare ``cloud.google.com`` host; the retrieved URI carries
+    # the ``docs.`` prefix (and vice versa) — both must still match.
+    docs = [
+        {"doc_name": "GPU Setup", "url": "https://cloud.google.com/kubernetes-engine/docs/how-to/gpus"},
+        {"doc_name": "Fuse CSI", "url": "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/fuse"},
+    ]
+    trajectory = [
+        {"output": "see https://docs.cloud.google.com/kubernetes-engine/docs/how-to/gpus"},
+        {"output": "see https://cloud.google.com/kubernetes-engine/docs/how-to/fuse"},
+    ]
+    assert calculate_doc_retrieval_rate(docs, trajectory) == 1.0
+
+
+def test_retrieval_rate_ignores_url_fragment():
+    docs = [
+        {
+            "doc_name": "Quantization",
+            "url": "https://cloud.google.com/kubernetes-engine/docs/best-practices/inference#apply-quantization",
+        }
+    ]
+    trajectory = [{"output": "https://docs.cloud.google.com/kubernetes-engine/docs/best-practices/inference"}]
+    assert calculate_doc_retrieval_rate(docs, trajectory) == 1.0
+
+
 # --- evaluate_documentation_grounding (GEval mocked) --------------------------
 
 
