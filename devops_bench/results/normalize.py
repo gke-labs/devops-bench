@@ -209,10 +209,12 @@ def build_rows(records: Iterable[Mapping[str, Any]], manifest: Manifest) -> list
     for record in records:
         scores = record.get("scores")
         input_tokens, output_tokens = normalize_tokens(record.get("tokens"))
-        # turns = number of trajectory steps (tool calls + text turns). ``None``
-        # only when no trajectory was captured, distinct from an empty (0-step) run.
+        # turns = number of trajectory steps (tool calls + text turns). The record
+        # defaults ``trajectory`` to ``[]``, so an empty (or missing) trajectory
+        # reads as "not captured" -> ``None`` rather than a misleading 0; only a
+        # populated trajectory yields a count.
         trajectory = record.get("trajectory")
-        turns = len(trajectory) if isinstance(trajectory, list) else None
+        turns = len(trajectory) if isinstance(trajectory, list) and trajectory else None
         rows.append(
             ResultRow(
                 setup_id=manifest.setup_id,
