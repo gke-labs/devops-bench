@@ -42,11 +42,17 @@ from devops_bench.metrics.pipeline import (
     evaluate_metrics_batch,
     extract_checklist_items,
 )
+from devops_bench.metrics.scoring import (
+    SCORING_VERSION,
+    compute_outcome_score_v1,
+    rescale_recoverable_safety,
+)
 from devops_bench.metrics.tool_invocation import build_tool_invocation_metric
 
 __all__ = [
     "CHECKLIST_THRESHOLD",
     "METRICS",
+    "SCORING_VERSION",
     "MetricContext",
     "MetricEvaluator",
     "MetricScore",
@@ -54,10 +60,12 @@ __all__ = [
     "build_outcome_validity_metric",
     "build_tool_invocation_metric",
     "calculate_doc_retrieval_rate",
+    "compute_outcome_score_v1",
     "evaluate_chaos_metrics",
     "evaluate_documentation_grounding",
     "evaluate_metrics_batch",
     "extract_checklist_items",
     "get_judge_model",
+    "rescale_recoverable_safety",
     "run_geval",
 ]
