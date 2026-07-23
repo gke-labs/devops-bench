@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import asyncio
 import shlex
+import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -30,14 +32,13 @@ from devops_bench.agents.api.mcp import MCPClient, extract_tool_text
 from devops_bench.agents.api.skills import (
     SkillToolInfo,
     discover_skill_tools,
-    read_skill_file,
 )
 from devops_bench.agents.base import AGENTS, AgentHarness
 from devops_bench.agents.config import AgentConfig
 from devops_bench.agents.result import AgentResult, ToolCall
 from devops_bench.core import get_logger
 from devops_bench.models import LLMClient, get_model
-from devops_bench.models.utils.loop import LoopResult, run_tool_loop
+from devops_bench.models.utils.loop import LoopResult, ToolDispatcher, run_tool_loop
 
 __all__ = ["ApiAgent", "fold_trajectory", "extract_tokens"]
 
@@ -53,7 +54,10 @@ def fold_trajectory(contents: list[dict]) -> list[dict]:
     """Fold a :class:`LoopResult.contents` history into canonical trajectory entries.
 
     Each assistant tool call is paired by ``tool_call_id`` with its tool result
-    and emitted as one :class:`ToolCall`.
+    and emitted as one :class:`ToolCall`. Calls with no id — Gemini emits every
+    function call with ``id=None`` — are paired FIFO with the id-less results,
+    which is exact under :func:`run_tool_loop`'s contract of appending one
+    result per dispatched call in call order.
 
     Args:
         contents: The conversation history produced by :func:`run_tool_loop`.
@@ -82,20 +86,27 @@ def _fold_with_extraction_errors(
         A ``(trajectory, orphan_errors)`` tuple. ``orphan_errors`` lists one
         message per unpaired ``role: tool`` entry; empty on a clean fold.
     """
-    # Index assistant call ids first so we can detect orphans on the result pass.
+    # Index assistant call ids first so we can detect orphans on the result
+    # pass; id-less calls (Gemini emits every function call with ``id=None``)
+    # are counted so their results can be paired FIFO instead of dropped.
     assistant_call_ids: set[str] = set()
+    unkeyed_call_count = 0
     for msg in contents:
         if msg.get("role") != "assistant":
             continue
         for call in msg.get("tool_calls") or []:
             cid = call.get("id")
-            if cid is not None:
+            if cid is None:
+                unkeyed_call_count += 1
+            else:
                 assistant_call_ids.add(str(cid))
 
     # Pre-build call-id → (text, is_error) map so an out-of-order or absent
     # result still leaves the call as ``status="called"``/``result=None`` rather
-    # than crashing on a lookup.
+    # than crashing on a lookup. Id-less results queue up FIFO — exact pairing
+    # under run_tool_loop's append-one-result-per-call-in-order contract.
     results_by_id: dict[str, tuple[str, bool]] = {}
+    unkeyed_results: deque[tuple[str, bool]] = deque()
     orphan_errors: list[str] = []
     for msg in contents:
         if msg.get("role") != "tool":
@@ -104,6 +115,9 @@ def _fold_with_extraction_errors(
         text = msg.get("content")
         text_str = text if isinstance(text, str) else "" if text is None else str(text)
         is_error = isinstance(text, str) and text.startswith("Error: ")
+        if call_id is None and len(unkeyed_results) < unkeyed_call_count:
+            unkeyed_results.append((text_str, is_error))
+            continue
         if call_id is None or str(call_id) not in assistant_call_ids:
             # Drop the orphan from the trajectory but surface it for diagnostics.
             preview = text_str[:80].replace("\n", " ")
@@ -132,10 +146,12 @@ def _fold_with_extraction_errors(
             )
             if call_id is not None:
                 hit = results_by_id.get(str(call_id))
-                if hit is not None:
-                    text, is_error = hit
-                    entry.result = text
-                    entry.status = "error" if is_error else "completed"
+            else:
+                hit = unkeyed_results.popleft() if unkeyed_results else None
+            if hit is not None:
+                text, is_error = hit
+                entry.result = text
+                entry.status = "error" if is_error else "completed"
             trajectory.append(entry)
 
     return [entry.to_dict() for entry in trajectory], orphan_errors
@@ -214,7 +230,7 @@ def _build_dispatch(
     mcp_client: MCPClient | None,
     skill_resources: dict[str, str],
     errors: list[str],
-):
+) -> ToolDispatcher:
     """Build the dispatcher passed to :func:`run_tool_loop`.
 
     Wraps each tool call in its own ``try/except`` because ``run_tool_loop``
@@ -225,8 +241,9 @@ def _build_dispatch(
 
     Args:
         mcp_client: Active :class:`MCPClient`, or ``None`` when MCP is off.
-        skill_resources: Map of skill tool name to local file path; populated
-            by :func:`devops_bench.agents.api.skills.discover_skill_tools`.
+        skill_resources: Map of skill tool name to the skill file's content
+            (captured at discovery); populated by
+            :func:`devops_bench.agents.api.skills.discover_skill_tools`.
         errors: Errors list to mutate when a dispatch raises.
 
     Returns:
@@ -237,11 +254,11 @@ def _build_dispatch(
     async def dispatch(name: str, args: Any, call_id: str | None) -> str:
         try:
             # Skill tools take priority — they are advertised in the same tool
-            # list but are served locally without round-tripping the MCP server.
+            # list but are served locally from the content captured at
+            # discovery, without round-tripping the MCP server or the disk.
             if name in skill_resources:
-                file_path = skill_resources[name]
-                _log.info("Calling skill tool %s for file %s", name, file_path)
-                return await asyncio.to_thread(read_skill_file, file_path)
+                _log.info("Serving skill tool %s from discovery-time content", name)
+                return skill_resources[name]
             if mcp_client is None:
                 msg = (
                     f"Error: tool {name!r} requested but no MCP server is "
@@ -251,7 +268,16 @@ def _build_dispatch(
                 return msg
             arg_dict = args if isinstance(args, dict) else {}
             tool_result = await mcp_client.call_tool(name, arg_dict)
-            return extract_tool_text(tool_result)
+            text = extract_tool_text(tool_result)
+            # MCP servers report tool failure via ``isError`` rather than
+            # raising; surface it through the same error protocol as a raised
+            # dispatch so the fold and metrics see the failure mode.
+            if getattr(tool_result, "isError", False):
+                msg = f"Error calling tool {name}: {text}"
+                _log.warning(msg)
+                errors.append(msg)
+                return text if text.startswith("Error: ") else f"Error: {text}"
+            return text
         except Exception as exc:  # noqa: BLE001 - one tool failure must not abort the run
             msg = f"Error calling tool {name}: {exc}"
             _log.warning(msg)
@@ -400,10 +426,20 @@ class ApiAgent(AgentHarness):
         Returns:
             An :class:`AgentResult` whose ``trajectory`` is a list of canonical
             :class:`ToolCall` entries, ``output`` is :attr:`LoopResult.final_text`,
-            and ``tokens`` / ``latency`` carry the loop's accumulated values.
+            and ``latency`` carries the loop's accumulated wall-clock.
+            ``tokens`` reflects the final provider turn only — per-turn
+            accumulation is a pending ``run_tool_loop`` follow-up.
         """
         llm_client = get_model(self.config.provider, self.config.model)
-        max_turns = self.config.max_turns or _DEFAULT_MAX_TURNS
+        max_turns = (
+            self.config.max_turns if self.config.max_turns is not None else _DEFAULT_MAX_TURNS
+        )
+        mcp_servers = self.config.capabilities.mcp_servers
+        if len(mcp_servers) > 1:
+            _log.warning(
+                "API agent honors only the first MCP binding; ignoring %d additional server(s)",
+                len(mcp_servers) - 1,
+            )
         mcp_binding = self.config.capabilities.mcp
         # Only open an MCPClient when an MCP binding carries a launch command;
         # an empty-command binding is treated as "no MCP". ``shlex.join``
@@ -415,21 +451,33 @@ class ApiAgent(AgentHarness):
         skills_paths = self.config.capabilities.skills.paths
         rules_text = self.config.capabilities.rules.text
 
+        run_coro = _run_async(
+            llm_client,
+            prompt,
+            mcp_server_path,
+            skills_paths,
+            rules_text,
+            max_turns,
+        )
+        # Honor the config's wall-clock budget over the whole run (MCP session
+        # + every provider turn), matching the CLI harnesses' whole-call
+        # timeout semantics. ``wait_for`` with ``timeout=None`` imposes none.
+        timeout = self.config.timeout_sec
+        start = time.monotonic()
         try:
             loop_result, dispatch_errors, skill_names = asyncio.run(
-                _run_async(
-                    llm_client,
-                    prompt,
-                    mcp_server_path,
-                    skills_paths,
-                    rules_text,
-                    max_turns,
-                )
+                asyncio.wait_for(run_coro, timeout=timeout)
             )
-        except ValueError as exc:
-            # E.g. empty MCP server command; surface as a clean errored result
-            # rather than letting it bubble through the base safety net.
-            return AgentResult.errored(str(exc))
+        except TimeoutError:
+            # ``wait_for``'s TimeoutError can only fire once the deadline has
+            # elapsed (and never with ``timeout=None``) — anything earlier came
+            # from inside the run (e.g. a provider socket timeout;
+            # socket.timeout is TimeoutError since 3.10). Re-raise those so the
+            # base safety net logs the traceback instead of relabeling them.
+            elapsed = time.monotonic() - start
+            if timeout is None or elapsed < timeout:
+                raise
+            return AgentResult.errored(f"API agent timed out after {timeout}s", latency=elapsed)
 
         trajectory, orphan_errors = _fold_with_extraction_errors(loop_result.contents)
         tokens = extract_tokens(loop_result.response)

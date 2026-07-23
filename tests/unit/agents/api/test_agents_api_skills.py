@@ -20,7 +20,6 @@ from devops_bench.agents.api.skills import (
     SkillToolInfo,
     discover_skill_tools,
     parse_skill_md,
-    read_skill_file,
 )
 
 
@@ -83,14 +82,17 @@ def test_discover_skill_tools_missing_path_is_skipped(tmp_path):
 def test_discover_skill_tools_normalizes_dashes_to_underscores(tmp_path):
     skill = tmp_path / "first" / "SKILL.md"
     skill.parent.mkdir(parents=True)
-    skill.write_text('---\nname: "my-cool-skill"\ndescription: ok\n---\nbody\n')
+    body = '---\nname: "my-cool-skill"\ndescription: ok\n---\nbody\n'
+    skill.write_text(body)
 
     tools, resources, names = discover_skill_tools((str(tmp_path),))
     assert len(tools) == 1
     assert isinstance(tools[0], SkillToolInfo)
     assert tools[0].name == "skill_my_cool_skill"
     assert tools[0].description == "ok"
-    assert resources == {"skill_my_cool_skill": str(skill)}
+    # Resources carry the file *content* captured at discovery, so dispatch
+    # serves exactly what was advertised with no re-read / TOCTOU window.
+    assert resources == {"skill_my_cool_skill": body}
     assert names == ["my-cool-skill"]
 
 
@@ -121,16 +123,42 @@ def test_discover_skill_tools_skips_empty_path_strings(tmp_path):
     assert tools == []
 
 
-def test_read_skill_file_returns_contents(tmp_path):
-    f = tmp_path / "SKILL.md"
-    f.write_text("hello, skill")
-    assert read_skill_file(str(f)) == "hello, skill"
+def test_skill_tool_info_defaults_to_empty_object_schema():
+    """``inputSchema`` must never be ``None`` — the Anthropic/OpenAI-style
+    adapters forward the attribute verbatim and those APIs reject a null
+    schema (regression for the review finding that broke every skills-enabled
+    Anthropic run on turn 1)."""
+    tool = SkillToolInfo(name="skill_x", description="d")
+    assert tool.inputSchema == {"type": "object", "properties": {}}
+    # Fresh dict per instance — no shared mutable default.
+    assert SkillToolInfo(name="skill_y", description="d").inputSchema is not tool.inputSchema
 
 
-def test_read_skill_file_returns_error_message_when_missing():
-    out = read_skill_file("/no/such/file")
-    assert out.startswith("Error reading skill file")
-    assert "/no/such/file" in out
+def test_discover_skill_tools_expands_user_home(tmp_path, monkeypatch):
+    """A ``~/...`` skills path must work — the shared walk expanduser-expands it
+    (previously the API agent warned-and-skipped where CLI agents loaded it)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    skill = tmp_path / "sk" / "demo" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text('---\nname: "home-skill"\ndescription: d\n---\nbody\n')
+    tools, _resources, names = discover_skill_tools(("~/sk",))
+    assert [t.name for t in tools] == ["skill_home_skill"]
+    assert names == ["home-skill"]
+
+
+def test_discover_skill_tools_dedupes_duplicate_names_first_wins(tmp_path):
+    """Duplicate skill names are first-wins in sorted order (shared-walk
+    semantics) — previously both were advertised and the resources map was
+    last-wins, nondeterministically."""
+    for d, desc in [("a", "first"), ("b", "second")]:
+        f = tmp_path / d / "SKILL.md"
+        f.parent.mkdir(parents=True)
+        f.write_text(f'---\nname: "dup"\ndescription: {desc}\n---\nbody-{d}\n')
+    tools, resources, names = discover_skill_tools((str(tmp_path),))
+    assert len(tools) == 1
+    assert tools[0].description == "first"
+    assert resources["skill_dup"].endswith("body-a\n")
+    assert names == ["dup"]
 
 
 def test_skills_module_pulls_no_heavy_dependencies():
