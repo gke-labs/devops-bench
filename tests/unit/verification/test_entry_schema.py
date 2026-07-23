@@ -16,7 +16,7 @@
 
 Critical regression: the only real task with a verification_spec
 (tasks/common/optimize-scale/task.yaml) must parse under the new typed
-list[VerificationEntry] schema and its entries must default to role='correctness'.
+list[VerificationEntry] schema and its entries must default to role='objective'.
 This test makes that claim explicit so the renovation cannot silently break it.
 """
 
@@ -34,16 +34,23 @@ from devops_bench.verification.entry import VerificationEntry
 # -- VerificationEntry model --------------------------------------------------
 
 
-def test_entry_defaults_role_to_correctness():
+def test_entry_defaults_role_to_objective():
     entry = VerificationEntry(name="check-pods", spec={"type": "pod_healthy", "selector": "app=x"})
 
-    assert entry.role == "correctness"
+    assert entry.role == "objective"
+    assert entry.severity is None
 
 
-def test_entry_accepts_all_roles():
-    for role in ("correctness", "safety", "catastrophic"):
-        entry = VerificationEntry(name="check", role=role, spec={})
-        assert entry.role == role
+def test_entry_accepts_objective_role():
+    entry = VerificationEntry(name="check", role="objective", spec={})
+    assert entry.role == "objective"
+
+
+def test_entry_accepts_safeguard_roles_with_severity():
+    for severity in ("recoverable", "catastrophic"):
+        entry = VerificationEntry(name="check", role="safeguard", severity=severity, spec={})
+        assert entry.role == "safeguard"
+        assert entry.severity == severity
 
 
 def test_entry_rejects_unknown_role():
@@ -51,11 +58,26 @@ def test_entry_rejects_unknown_role():
         VerificationEntry(name="check", role="unknown", spec={})
 
 
+def test_entry_rejects_safeguard_without_severity():
+    with pytest.raises(ValidationError, match="severity is required"):
+        VerificationEntry(name="check", role="safeguard", spec={})
+
+
+def test_entry_rejects_objective_with_severity():
+    with pytest.raises(ValidationError, match="severity must be None"):
+        VerificationEntry(name="check", role="objective", severity="recoverable", spec={})
+
+
+def test_entry_rejects_unknown_severity():
+    with pytest.raises(ValidationError):
+        VerificationEntry(name="check", role="safeguard", severity="mild", spec={})
+
+
 def test_entry_rejects_unchanged_mode():
     with pytest.raises(ValidationError, match="unchanged"):
         VerificationEntry(
             name="check",
-            role="correctness",
+            role="objective",
             spec={"type": "scaling_complete", "deployment": "web", "mode": "unchanged"},
         )
 
@@ -64,7 +86,7 @@ def test_entry_rejects_unchanged_mode_nested_in_parallel():
     with pytest.raises(ValidationError, match="unchanged"):
         VerificationEntry(
             name="check",
-            role="correctness",
+            role="objective",
             spec={
                 "type": "parallel",
                 "checks": [
@@ -86,17 +108,20 @@ def test_entry_spec_can_be_none():
 
 def test_entry_name_is_required():
     with pytest.raises(ValidationError):
-        VerificationEntry(role="correctness", spec={})
+        VerificationEntry(role="objective", spec={})
 
 
 # -- Role type ----------------------------------------------------------------
 
 
 def test_role_literal_values():
-    valid = ["correctness", "safety", "catastrophic"]
-    for v in valid:
-        entry = VerificationEntry(name="x", role=v, spec={})
-        assert entry.role == v
+    entry = VerificationEntry(name="x", role="objective", spec={})
+    assert entry.role == "objective"
+
+    for severity in ("recoverable", "catastrophic"):
+        entry = VerificationEntry(name="x", role="safeguard", severity=severity, spec={})
+        assert entry.role == "safeguard"
+        assert entry.severity == severity
 
 
 # -- Critical regression: optimize-scale task parses under typed schema -------
@@ -126,7 +151,7 @@ def test_optimize_scale_verification_spec_parses_as_typed_entries():
     entry = task.verification_spec[0]
     assert isinstance(entry, VerificationEntry)
     assert entry.name == "Planned Load Spike Verification"
-    assert entry.role == "correctness"
+    assert entry.role == "objective"
 
     # The inner spec is kept raw (unsubstituted, unparsed) at task-load time.
     assert isinstance(entry.spec, dict)
@@ -165,7 +190,8 @@ def test_task_from_dict_with_list_of_entries():
         "verification_spec": [
             {
                 "name": "check-pods",
-                "role": "safety",
+                "role": "safeguard",
+                "severity": "recoverable",
                 "spec": {"type": "pod_healthy", "selector": "app=x"},
             },
         ],
@@ -175,7 +201,8 @@ def test_task_from_dict_with_list_of_entries():
     assert task.verification_spec is not None
     assert len(task.verification_spec) == 1
     assert task.verification_spec[0].name == "check-pods"
-    assert task.verification_spec[0].role == "safety"
+    assert task.verification_spec[0].role == "safeguard"
+    assert task.verification_spec[0].severity == "recoverable"
 
 
 def test_task_from_dict_with_entries_defaults_role():
@@ -189,4 +216,4 @@ def test_task_from_dict_with_entries_defaults_role():
     }
     task = Task.from_dict(raw)
 
-    assert task.verification_spec[0].role == "correctness"
+    assert task.verification_spec[0].role == "objective"

@@ -203,7 +203,8 @@ def test_verification_spec_parses_typed_entries():
         "verification_spec": [
             {
                 "name": "check",
-                "role": "safety",
+                "role": "safeguard",
+                "severity": "recoverable",
                 "spec": {"type": "pod_healthy", "selector": "app=web"},
             },
         ]
@@ -212,7 +213,8 @@ def test_verification_spec_parses_typed_entries():
     assert task.verification_spec is not None
     assert isinstance(task.verification_spec[0], VerificationEntry)
     assert task.verification_spec[0].name == "check"
-    assert task.verification_spec[0].role == "safety"
+    assert task.verification_spec[0].role == "safeguard"
+    assert task.verification_spec[0].severity == "recoverable"
 
 
 def test_to_dict_roundtrip_fields():

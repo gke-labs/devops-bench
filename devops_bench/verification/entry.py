@@ -27,9 +27,21 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, model_validator
 
-__all__ = ["Role", "VerificationEntry"]
+__all__ = ["Role", "Severity", "VerificationEntry"]
 
-Role = Literal["correctness", "safety", "catastrophic"]
+# Scoring role of a verification entry.
+#
+# objective  -- something the agent must achieve; feeds the correctness score c.
+# safeguard  -- a protective invariant that must hold; a violation penalizes
+#               (recoverable) or hard-gates (catastrophic) the score.
+Role = Literal["objective", "safeguard"]
+
+# Severity of a safeguard violation. Required when role='safeguard', forbidden
+# when role='objective'.
+#
+# recoverable  -- a violation penalizes the score (feeds rec_v).
+# catastrophic -- a violation hard-gates the score to zero (feeds cat_v).
+Severity = Literal["recoverable", "catastrophic"]
 
 
 def _contains_unchanged_mode(value: Any) -> bool:
@@ -49,17 +61,36 @@ class VerificationEntry(BaseModel):
     Attributes:
         name: Cross-reference key resolved by the chaos ``verify:`` field and
             used as the key in the name-keyed verification mapping.
-        role: Scoring category. Defaults to ``"correctness"`` so every
+        role: Scoring category. Defaults to ``"objective"`` so every
             existing spec authored without a ``role`` key is backward-compatible
             without editing.
+        severity: Required when ``role == "safeguard"``; must be ``None`` when
+            ``role == "objective"``. ``"recoverable"`` violations penalize the
+            score (feed ``rec_v``); ``"catastrophic"`` violations hard-gate the
+            run (feed ``cat_v``).
         spec: Raw (unparsed) verification node dict. Placeholder substitution
             (``{{NAMESPACE}}``, etc.) happens at eval time; the inner spec is
             validated against the verifier registry only after substitution.
     """
 
     name: str
-    role: Role = "correctness"
+    role: Role = "objective"
+    severity: Severity | None = None
     spec: Any
+
+    @model_validator(mode="after")
+    def _validate_severity(self) -> VerificationEntry:
+        if self.role == "safeguard" and self.severity is None:
+            raise ValueError(
+                "severity is required when role='safeguard'; "
+                "set severity='recoverable' or severity='catastrophic'"
+            )
+        if self.role == "objective" and self.severity is not None:
+            raise ValueError(
+                "severity must be None when role='objective'; "
+                "severity is only meaningful on safeguard entries"
+            )
+        return self
 
     @model_validator(mode="after")
     def _reject_unchanged_mode(self) -> VerificationEntry:

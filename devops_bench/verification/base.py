@@ -98,9 +98,9 @@ class BaseVerifier(BaseModel, ABC):
             onto the :class:`VerificationResult` so the tree is self-describing.
         mode: Explicit execution mode. When ``None`` the runner derives the
             mode from the parent :class:`~devops_bench.verification.entry.Role`:
-            ``"correctness"`` -> ``"converge"``;
-            ``"safety"`` / ``"catastrophic"`` -> ``"assert"``. An explicit
-            ``mode`` always wins over the role-derived default.
+            ``"objective"`` -> ``"converge"``;
+            ``"safeguard"`` -> ``"assert"``. An explicit ``mode`` always wins
+            over the role-derived default.
         hold_window_sec: Duration of the hold-mode sampling window; meaningful
             only when ``mode="hold"``. Defaults to 30 s.
         hold_interval_sec: Pause between hold-mode samples; meaningful only
