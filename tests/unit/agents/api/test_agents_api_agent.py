@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -155,11 +154,11 @@ class _FakeMCPClient:
 # ---------------------------------------------------------------------------
 
 
-def test_api_agent_registered_under_canonical_key() -> None:
+def test_api_agent_registered_under_canonical_key():
     assert AGENTS.get("api") is ApiAgent
 
 
-def test_package_import_alone_registers_api_agent() -> None:
+def test_package_import_alone_registers_api_agent():
     """``import devops_bench.agents.api`` (no ``.agent`` submodule import) must
     register the harness — the documented consumer convention resolves via
     ``AGENTS.get`` after a package import. Runs in a fresh interpreter because
@@ -188,7 +187,7 @@ def test_package_import_alone_registers_api_agent() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_fold_trajectory_pairs_assistant_calls_with_tool_results() -> None:
+def test_fold_trajectory_pairs_assistant_calls_with_tool_results():
     contents = [
         {"role": "user", "content": "g"},
         {
@@ -209,7 +208,7 @@ def test_fold_trajectory_pairs_assistant_calls_with_tool_results() -> None:
     ]
 
 
-def test_fold_trajectory_marks_dispatcher_errors_as_error_status() -> None:
+def test_fold_trajectory_marks_dispatcher_errors_as_error_status():
     # The dispatcher returns ``"Error: ..."`` for a failed tool call (matching
     # the agent's _build_dispatch contract) — folding must surface that as the
     # ``"error"`` status so metrics see the failure mode, not a clean call.
@@ -229,7 +228,7 @@ def test_fold_trajectory_marks_dispatcher_errors_as_error_status() -> None:
     ]
 
 
-def test_fold_trajectory_leaves_unmatched_call_as_called_status() -> None:
+def test_fold_trajectory_leaves_unmatched_call_as_called_status():
     # If a result never lands (e.g. dispatch raised before appending), the call
     # entry survives with ``status="called"`` and ``result=None`` rather than
     # being silently dropped.
@@ -246,7 +245,7 @@ def test_fold_trajectory_leaves_unmatched_call_as_called_status() -> None:
     ]
 
 
-def test_fold_trajectory_skips_text_only_turns() -> None:
+def test_fold_trajectory_skips_text_only_turns():
     contents = [
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": "hello"},
@@ -255,7 +254,7 @@ def test_fold_trajectory_skips_text_only_turns() -> None:
     assert fold_trajectory(contents) == []
 
 
-def test_fold_trajectory_handles_none_args_and_none_call_id() -> None:
+def test_fold_trajectory_handles_none_args_and_none_call_id():
     # Defensive: missing ``args`` becomes ``{}``; an entry with no ``id`` is
     # emitted as ``status="called"`` (no result to pair with).
     contents = [
@@ -270,7 +269,7 @@ def test_fold_trajectory_handles_none_args_and_none_call_id() -> None:
     ]
 
 
-def test_fold_trajectory_pairs_unkeyed_gemini_style_calls_fifo() -> None:
+def test_fold_trajectory_pairs_unkeyed_gemini_style_calls_fifo():
     """Gemini emits every function call with ``id=None`` and ``run_tool_loop``
     appends one result per call in order — the fold must pair them FIFO
     instead of dropping every result as an orphan (review finding: the default
@@ -299,7 +298,7 @@ def test_fold_trajectory_pairs_unkeyed_gemini_style_calls_fifo() -> None:
     ]
 
 
-def test_fold_trajectory_extra_unkeyed_result_is_still_an_orphan() -> None:
+def test_fold_trajectory_extra_unkeyed_result_is_still_an_orphan():
     """Id-less results beyond the number of id-less calls stay orphans —
     FIFO pairing must not absorb genuinely unmatched results."""
     contents = [
@@ -319,7 +318,7 @@ def test_fold_trajectory_extra_unkeyed_result_is_still_an_orphan() -> None:
     assert "stray" in orphans[0]
 
 
-def test_fold_trajectory_drops_unpaired_tool_results_silently_from_trajectory() -> None:
+def test_fold_trajectory_drops_unpaired_tool_results_silently_from_trajectory():
     """An orphan ``role: tool`` (no matching assistant call_id) is dropped from
     the canonical trajectory — synthesizing a free-floating entry would break
     the "every trajectory item is a real ToolCall the model issued" invariant
@@ -334,7 +333,7 @@ def test_fold_trajectory_drops_unpaired_tool_results_silently_from_trajectory() 
     assert fold_trajectory(contents) == []
 
 
-def test_fold_with_extraction_errors_surfaces_orphan_results() -> None:
+def test_fold_with_extraction_errors_surfaces_orphan_results():
     from devops_bench.agents.api.agent import _fold_with_extraction_errors
 
     contents = [
@@ -353,7 +352,7 @@ def test_fold_with_extraction_errors_surfaces_orphan_results() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_extract_tokens_reads_usage_metadata() -> None:
+def test_extract_tokens_reads_usage_metadata():
     usage = SimpleNamespace(prompt_token_count=3, candidates_token_count=5, total_token_count=8)
     response = SimpleNamespace(usage_metadata=usage)
     assert extract_tokens(response) == {
@@ -363,7 +362,7 @@ def test_extract_tokens_reads_usage_metadata() -> None:
     }
 
 
-def test_extract_tokens_falls_back_to_usage_attribute() -> None:
+def test_extract_tokens_falls_back_to_usage_attribute():
     usage = SimpleNamespace(prompt_token_count=1, candidates_token_count=2, total_token_count=3)
     # No ``usage_metadata``; the function should still find ``usage``.
     response = SimpleNamespace(usage=usage)
@@ -374,12 +373,12 @@ def test_extract_tokens_falls_back_to_usage_attribute() -> None:
     }
 
 
-def test_extract_tokens_returns_empty_dict_when_no_usage() -> None:
+def test_extract_tokens_returns_empty_dict_when_no_usage():
     assert extract_tokens(SimpleNamespace()) == {}
     assert extract_tokens(None) == {}
 
 
-def test_extract_tokens_defaults_missing_counts_to_zero() -> None:
+def test_extract_tokens_defaults_missing_counts_to_zero():
     """Missing counts default to 0; if the source provided no total but the
     other two fields are non-zero, the helper computes prompt+candidates so a
     non-empty run never shows ``total_tokens: 0`` in results.json."""
@@ -393,7 +392,7 @@ def test_extract_tokens_defaults_missing_counts_to_zero() -> None:
     }
 
 
-def test_extract_tokens_reads_anthropic_input_output_shape() -> None:
+def test_extract_tokens_reads_anthropic_input_output_shape():
     """Anthropic emits ``usage.input_tokens`` / ``usage.output_tokens`` and **no**
     aggregated total. The helper must map both onto the legacy keys and compute
     the total so non-Google providers do not silently drop tokens.
@@ -411,7 +410,7 @@ def test_extract_tokens_reads_anthropic_input_output_shape() -> None:
     }
 
 
-def test_extract_tokens_reads_openai_ollama_shape() -> None:
+def test_extract_tokens_reads_openai_ollama_shape():
     """OpenAI / Ollama emit ``usage.prompt_tokens`` / ``completion_tokens`` /
     ``total_tokens``. The helper must map ``completion_tokens`` → the legacy
     ``candidates_tokens`` slot and pass ``total_tokens`` through verbatim.
@@ -428,7 +427,7 @@ def test_extract_tokens_reads_openai_ollama_shape() -> None:
     }
 
 
-def test_extract_tokens_google_total_passes_through_when_present() -> None:
+def test_extract_tokens_google_total_passes_through_when_present():
     """When the provider supplies its own total it wins over the computed sum."""
     usage = SimpleNamespace(prompt_token_count=5, candidates_token_count=7, total_token_count=99)
     response = SimpleNamespace(usage_metadata=usage)
@@ -438,7 +437,7 @@ def test_extract_tokens_google_total_passes_through_when_present() -> None:
     assert extract_tokens(response)["total_tokens"] == 99
 
 
-def test_extract_tokens_preserves_legacy_on_disk_key_scheme() -> None:
+def test_extract_tokens_preserves_legacy_on_disk_key_scheme():
     """The on-disk dict shape must stay ``{prompt_tokens, candidates_tokens,
     total_tokens}`` for D3 (results.json stability) — three keys, exactly.
     """
@@ -452,9 +451,7 @@ def test_extract_tokens_preserves_legacy_on_disk_key_scheme() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_execute_runs_with_no_tools_when_capabilities_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_runs_with_no_tools_when_capabilities_default(monkeypatch):
     """Default capabilities (no MCP binding, no skills) → loop runs tool-less.
 
     Renamed from ``..._when_target_unset`` because the MCP gate is no longer
@@ -493,9 +490,7 @@ def test_execute_runs_with_no_tools_when_capabilities_default(
     assert fake.calls[0]["tools"] == ("formatted", ())
 
 
-def test_execute_passes_explicit_provider_and_model_to_get_model(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_passes_explicit_provider_and_model_to_get_model(monkeypatch):
     captured: dict[str, Any] = {}
 
     def fake_get_model(provider, model):
@@ -509,9 +504,7 @@ def test_execute_passes_explicit_provider_and_model_to_get_model(
     assert captured == {"provider": "anthropic", "model": "claude-3-5"}
 
 
-def test_execute_records_anthropic_tokens_through_to_agentresult(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_records_anthropic_tokens_through_to_agentresult(monkeypatch):
     """End-to-end: an Anthropic-shaped usage object surfaces on
     ``AgentResult.tokens`` under the legacy key scheme — regression for the
     blocking bug where non-Google providers silently logged zero tokens."""
@@ -533,9 +526,7 @@ def test_execute_records_anthropic_tokens_through_to_agentresult(
     }
 
 
-def test_execute_records_openai_tokens_through_to_agentresult(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_records_openai_tokens_through_to_agentresult(monkeypatch):
     """End-to-end: an OpenAI/Ollama-shaped usage object surfaces under the
     legacy key scheme."""
     fake = _FakeLLMClient(
@@ -561,9 +552,7 @@ def test_execute_records_openai_tokens_through_to_agentresult(
 # ---------------------------------------------------------------------------
 
 
-def test_execute_folds_assistant_tool_pairs_into_canonical_trajectory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_folds_assistant_tool_pairs_into_canonical_trajectory(monkeypatch):
     """End-to-end: an MCP tool turn followed by a finishing turn → one ToolCall."""
     fc = [{"name": "do_thing", "args": {"a": 1}, "id": "call-1"}]
     fake = _FakeLLMClient(
@@ -614,9 +603,7 @@ def test_execute_folds_assistant_tool_pairs_into_canonical_trajectory(
 # ---------------------------------------------------------------------------
 
 
-def test_execute_dispatch_error_lands_in_errors_and_continues(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_dispatch_error_lands_in_errors_and_continues(monkeypatch):
     """A tool call that raises must surface on errors, not crash the agent."""
 
     class _ExplodingMCP(_FakeMCPClient):
@@ -645,7 +632,7 @@ def test_execute_dispatch_error_lands_in_errors_and_continues(
     ]
 
 
-def test_execute_marks_mcp_iserror_result_as_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_marks_mcp_iserror_result_as_error(monkeypatch):
     """An MCP server reporting failure via ``CallToolResult.isError`` (rather
     than raising) must fold as ``status="error"`` and land on ``errors`` —
     previously the flag was ignored and failures scored as completed (review
@@ -675,9 +662,7 @@ def test_execute_marks_mcp_iserror_result_as_error(monkeypatch: pytest.MonkeyPat
     ]
 
 
-def test_execute_records_missing_mcp_when_tool_requested_without_server(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_records_missing_mcp_when_tool_requested_without_server(monkeypatch):
     """No MCP server, but the model still requests a tool → recorded, not crashed."""
     fc = [{"name": "ghost", "args": {}, "id": "c2"}]
     fake = _FakeLLMClient(
@@ -707,9 +692,7 @@ def test_execute_records_missing_mcp_when_tool_requested_without_server(
 # ---------------------------------------------------------------------------
 
 
-def test_execute_skills_discover_without_mcp(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_execute_skills_discover_without_mcp(monkeypatch, tmp_path):
     """Skills must be loadable on the MCP-off path, not gated on MCP being on."""
     skill_dir = tmp_path / "skills"
     skill = skill_dir / "demo" / "SKILL.md"
@@ -748,7 +731,7 @@ def test_execute_skills_discover_without_mcp(
     assert fake.format_tools_calls[0][0].name == "skill_demo_skill"
 
 
-def test_execute_no_skills_no_mcp_runs_tool_less(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_no_skills_no_mcp_runs_tool_less(monkeypatch):
     """Empty skills + no target → loop seen no tools, no metadata noise."""
     fake = _FakeLLMClient([_Turn(text="hi")])
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
@@ -763,7 +746,7 @@ def test_execute_no_skills_no_mcp_runs_tool_less(monkeypatch: pytest.MonkeyPatch
 # ---------------------------------------------------------------------------
 
 
-def test_execute_lets_value_error_reach_base_safety_net(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_lets_value_error_reach_base_safety_net(monkeypatch):
     """A ``ValueError`` raised inside the run (MCP setup, provider adapter,
     anywhere) must bubble to :meth:`AgentHarness.run`'s safety net, which logs
     the full traceback and converts to an errored result tagged with the
@@ -797,7 +780,7 @@ def test_execute_lets_value_error_reach_base_safety_net(monkeypatch: pytest.Monk
     assert result.output.startswith("Error: ")
 
 
-def test_execute_times_out_via_config_timeout_sec(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_times_out_via_config_timeout_sec(monkeypatch):
     """``AgentConfig.timeout_sec`` must bound the whole run — a hanging MCP
     server or provider call converts to an errored result at the deadline
     instead of wedging the benchmark (review finding: the field was ignored)."""
@@ -813,7 +796,7 @@ def test_execute_times_out_via_config_timeout_sec(monkeypatch: pytest.MonkeyPatc
     assert "timed out after 0.05s" in result.errors[0]
 
 
-def test_execute_reraises_internal_timeout_before_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_reraises_internal_timeout_before_deadline(monkeypatch):
     """A ``TimeoutError`` from inside the run (e.g. a provider socket timeout —
     ``socket.timeout`` is ``TimeoutError`` since 3.10) raised well before the
     configured deadline must not be relabeled as the agent-level timeout: it
@@ -831,7 +814,7 @@ def test_execute_reraises_internal_timeout_before_deadline(monkeypatch: pytest.M
     assert result.errors[0] == "TimeoutError: socket read timed out"
 
 
-def test_execute_honors_max_turns_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_honors_max_turns_zero(monkeypatch):
     """``max_turns=0`` means zero model turns — it must not be silently
     replaced by the 50-turn default via a falsy-``or`` (review finding)."""
     fake = _FakeLLMClient([_Turn(text="never called")])
@@ -842,9 +825,7 @@ def test_execute_honors_max_turns_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.output == ""
 
 
-def test_execute_warns_when_extra_mcp_servers_dropped(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_execute_warns_when_extra_mcp_servers_dropped(monkeypatch, caplog):
     """Only the first MCP binding is honored (documented aggregate behavior);
     dropping servers 2..N must at least be visible in the logs."""
     fake = _FakeLLMClient([_Turn(text="ok")])
@@ -867,7 +848,7 @@ def test_execute_warns_when_extra_mcp_servers_dropped(
 # ---------------------------------------------------------------------------
 
 
-def test_execute_ignores_bench_use_mcp_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_ignores_bench_use_mcp_env(monkeypatch):
     """Setting BENCH_USE_MCP must not change the agent's behavior.
 
     The MCP on/off gate is ``config.capabilities.mcp`` (a binding with a
@@ -881,7 +862,7 @@ def test_execute_ignores_bench_use_mcp_env(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.output == "ok"
 
 
-def test_agent_source_has_no_bench_use_mcp_or_environ_reads() -> None:
+def test_agent_source_has_no_bench_use_mcp_or_environ_reads():
     """Statically verify the agents/api source carries no env-smuggling.
 
     The conventions doc forbids agents from reading ``BENCH_USE_MCP`` (the
@@ -970,7 +951,7 @@ def test_agent_source_has_no_bench_use_mcp_or_environ_reads() -> None:
                 )
 
 
-def test_api_package_does_not_expose_legacy_context_or_system_instruction() -> None:
+def test_api_package_does_not_expose_legacy_context_or_system_instruction():
     """The PR2 contract drops the ``context``/``system_instruction`` grab-bag.
 
     No symbol or kwarg with that name should remain in the public surface.
@@ -990,7 +971,7 @@ def test_api_package_does_not_expose_legacy_context_or_system_instruction() -> N
 
 
 @pytest.mark.parametrize("method_name", ["_execute"])
-def test_execute_is_synchronous_and_safe_for_harness_invocation(method_name: str) -> None:
+def test_execute_is_synchronous_and_safe_for_harness_invocation(method_name):
     """The harness calls ``run(prompt)`` synchronously; ``_execute`` must be sync too."""
     import inspect
 
@@ -1006,7 +987,7 @@ def test_execute_is_synchronous_and_safe_for_harness_invocation(method_name: str
 # ---------------------------------------------------------------------------
 
 
-def test_api_agent_satisfies_all_three_capability_protocols() -> None:
+def test_api_agent_satisfies_all_three_capability_protocols():
     """``isinstance`` against each Protocol is how the harness negotiates
     capabilities before granting a binding (handoff §6). ApiAgent declares
     every capability it can drive — MCP, skills, rules — so an instance must
@@ -1017,7 +998,7 @@ def test_api_agent_satisfies_all_three_capability_protocols() -> None:
     assert isinstance(agent, SupportsRules)
 
 
-def test_api_agent_mirrors_capability_bindings_onto_mixin_attributes() -> None:
+def test_api_agent_mirrors_capability_bindings_onto_mixin_attributes():
     """The structural-Protocol attributes (``mcp_servers``/``skills``/``rules``)
     must reflect the bindings the orchestrator granted; otherwise capability
     negotiation would see the mixin defaults instead of the live config."""
@@ -1038,7 +1019,7 @@ def test_api_agent_mirrors_capability_bindings_onto_mixin_attributes() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_execute_runs_with_mcp_only_no_skills(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_runs_with_mcp_only_no_skills(monkeypatch):
     """MCP binding present, skills binding empty → MCP path opens, no skills loaded."""
     fc = [{"name": "do_thing", "args": {}, "id": "c1"}]
     fake = _FakeLLMClient([_Turn(text="working", calls=fc), _Turn(text="done")])
@@ -1053,9 +1034,7 @@ def test_execute_runs_with_mcp_only_no_skills(monkeypatch: pytest.MonkeyPatch) -
     assert "skills_loaded" not in result.metadata  # SkillBinding stayed empty
 
 
-def test_execute_runs_with_both_mcp_and_skills(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_execute_runs_with_both_mcp_and_skills(monkeypatch, tmp_path):
     """Both bindings populated → MCP session is opened *and* skills are discovered."""
     skill_dir = tmp_path / "skills"
     (skill_dir / "demo").mkdir(parents=True)
@@ -1079,7 +1058,7 @@ def test_execute_runs_with_both_mcp_and_skills(
     assert result.metadata["skills_loaded"] == ["demo"]
 
 
-def test_execute_runs_with_neither_mcp_nor_skills(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_runs_with_neither_mcp_nor_skills(monkeypatch):
     """Default capabilities → tool-less run, no MCP session, no skills loaded."""
     fake = _FakeLLMClient([_Turn(text="bare")])
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
@@ -1098,9 +1077,7 @@ def test_execute_runs_with_neither_mcp_nor_skills(monkeypatch: pytest.MonkeyPatc
 # ---------------------------------------------------------------------------
 
 
-def test_execute_threads_rules_text_into_system_instruction(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_threads_rules_text_into_system_instruction(monkeypatch):
     """Non-empty rules text must ride on the provider's ``system_instruction``."""
     fake = _FakeLLMClient([_Turn(text="ok")])
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
@@ -1109,9 +1086,7 @@ def test_execute_threads_rules_text_into_system_instruction(
     assert fake.calls[0]["system_instruction"] == "be careful"
 
 
-def test_execute_empty_rules_text_yields_none_system_instruction(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_empty_rules_text_yields_none_system_instruction(monkeypatch):
     """Empty rules text → ``system_instruction=None`` (the loop's "no preamble")."""
     fake = _FakeLLMClient([_Turn(text="ok")])
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
@@ -1125,7 +1100,7 @@ def test_execute_empty_rules_text_yields_none_system_instruction(
 # ---------------------------------------------------------------------------
 
 
-def test_execute_skips_mcp_when_binding_has_no_command(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_execute_skips_mcp_when_binding_has_no_command(monkeypatch):
     """A binding with no launch command (CLI-agent shape) → API agent runs MCP-off."""
     fake = _FakeLLMClient([_Turn(text="ok")])
     monkeypatch.setattr(agent_mod, "get_model", lambda *a, **kw: fake)
@@ -1139,9 +1114,7 @@ def test_execute_skips_mcp_when_binding_has_no_command(monkeypatch: pytest.Monke
     assert result.output == "ok"
 
 
-def test_execute_preserves_spaced_command_token_through_shlex_roundtrip(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_execute_preserves_spaced_command_token_through_shlex_roundtrip(monkeypatch):
     """A spaced argv token (``("uv run", "mcp-server")``) must reach MCPClient
     intact: ``shlex.join`` quotes it on the way in, ``MCPClient``'s
     ``shlex.split`` recovers the original parts on the way out.

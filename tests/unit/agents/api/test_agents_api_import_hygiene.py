@@ -21,7 +21,7 @@ import sys
 import textwrap
 
 
-def test_agents_api_package_import_pulls_no_sdk_or_mcp() -> None:
+def test_agents_api_package_import_pulls_no_sdk_or_mcp():
     """A fresh interpreter import of ``devops_bench.agents.api`` is mcp/SDK-free."""
     script = textwrap.dedent(
         """
@@ -37,13 +37,13 @@ def test_agents_api_package_import_pulls_no_sdk_or_mcp() -> None:
         """
     )
     result = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True, check=False, timeout=30
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "OK" in result.stdout
 
 
-def test_agents_api_agent_module_import_pulls_no_sdk_or_mcp() -> None:
+def test_agents_api_agent_module_import_pulls_no_sdk_or_mcp():
     """Importing the concrete agent module must not eagerly load mcp / deepeval.
 
     Even the module that holds the registered :class:`ApiAgent` must keep the
@@ -66,7 +66,7 @@ def test_agents_api_agent_module_import_pulls_no_sdk_or_mcp() -> None:
         """
     )
     result = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True, check=False, timeout=30
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "OK" in result.stdout
