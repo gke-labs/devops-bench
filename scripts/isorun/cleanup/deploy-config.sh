@@ -8,5 +8,9 @@ set -euo pipefail
 : "${REGION:=us-central1}"
 : "${NAMESPACE:=default}"
 
-echo "==> deploy-config cleanup: deleting hypercomputer-d1-vllm-server deploy/svc/hpa in namespace 'default' (cluster: $CLUSTER)"
-kubectl -n default delete deploy/hypercomputer-d1-vllm-server svc/hypercomputer-d1-vllm-service hpa/hypercomputer-d1-vllm-hpa --ignore-not-found
+# Uses $NAMESPACE (not a hardcoded literal) so this cleanup step, the seed's
+# own reset, and the preflight's namespace-match check all target the same
+# namespace end to end; see preflight/deploy-config.sh for why any value
+# other than "default" is refused before the agent runs.
+echo "==> deploy-config cleanup: deleting hypercomputer-d1-vllm-server deploy/svc/hpa in namespace '$NAMESPACE' (cluster: $CLUSTER)"
+kubectl -n "$NAMESPACE" delete deploy/hypercomputer-d1-vllm-server svc/hypercomputer-d1-vllm-service hpa/hypercomputer-d1-vllm-hpa --ignore-not-found

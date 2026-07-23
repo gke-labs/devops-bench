@@ -8,6 +8,11 @@ set -euo pipefail
 : "${REGION:=us-central1}"
 : "${NAMESPACE:=}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/isorun/_guards.sh
+source "$SCRIPT_DIR/../_guards.sh"
+iso_refuse_protected_namespace team-alpha team-beta team-gamma
+
 echo "==> opa-remediation cleanup: deleting namespaces team-alpha, team-beta, team-gamma (cluster: $CLUSTER)"
 kubectl delete namespace team-alpha team-beta team-gamma --ignore-not-found --wait=true --timeout=120s
 # Leave the kyverno namespace (and its controllers) alone.

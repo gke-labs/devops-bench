@@ -1,0 +1,103 @@
+# Derived from: tf/prebuilt/optimize-scale, default variables (no seed_mode
+# knob on this stack; it always seeds the same pre-agent state). This is a
+# hand-maintained copy for fast local iteration against an already-standing
+# cluster (no tofu, no cluster build). Tofu remains the source of truth for
+# real graded runs; this file can drift from it and is not re-generated
+# automatically. If tf/prebuilt/optimize-scale/main.tf changes (names, image,
+# ports), update this file to match by hand.
+#
+# Literals resolved from variables.tf defaults, which match what
+# tasks/common/optimize-scale/task.yaml pins under infrastructure.variables:
+#   var.namespace              = "default"
+#   var.target_deployment_name = "scale-target"
+#   spec.replicas              = 1              (main.tf:74, literal)
+#   container name / image     = "web" / "python:3.11-slim" (main.tf:91-92)
+#   container/service port     = 8080           (main.tf:122-123, 152-154)
+#   Service type                = LoadBalancer  (main.tf:166, infra_provider == "gcp")
+#
+# THIS IS THE STATE BEFORE THE AGENT ACTS:
+#   - exactly 1 replica
+#   - NO resources.requests / resources.limits on the container
+#   - NO HorizontalPodAutoscaler (create none here; the agent creates it)
+#
+# node_count and machine_type are cluster-module inputs with no in-cluster
+# representation; they cannot be reproduced by a manifest at all, and do not
+# apply to a standing cluster you did not build with this stack.
+#
+# WARNING, GKE AUTOPILOT: on Autopilot the resources-set objective can pass
+# the instant this manifest is applied, before the agent does anything.
+# Autopilot's resource-defaulting webhook mutates the workload's
+# spec.template.spec.containers[0].resources.requests/limits on admission, and
+# the objective is a bare "exists" check. The preflight guard in
+# scripts/isorun/preflight/optimize-scale.sh is what catches this: it re-reads
+# the object back from the API after apply and aborts if requests/limits are
+# already present. If it aborts for this reason, this fixture is not usable
+# on that cluster; use a Standard-mode cluster instead, matching what
+# tf/modules/cluster/gke actually builds.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scale-target
+  namespace: default
+  labels:
+    app: scale-target
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scale-target
+  template:
+    metadata:
+      labels:
+        app: scale-target
+    spec:
+      containers:
+        - name: web
+          image: python:3.11-slim
+          # CPU-burn HTTP server on port 8080. The chaos harness port-forwards
+          # deployment/scale-target to a fixed remote port 8080, so the workload
+          # must listen on 8080 or the generated load never reaches it.
+          command:
+            - python3
+            - -c
+          args:
+            - |
+              import http.server, socketserver
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      total = 0
+                      for i in range(3_000_000):
+                          total += i * i
+                      self.send_response(200)
+                      self.end_headers()
+                      self.wfile.write(b"ok\n")
+                  def log_message(self, *a):
+                      pass
+              class Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+              Server(("", 8080), Handler).serve_forever()
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          # NO resources block, on purpose. Adding requests/limits is the
+          # agent's job and is what the resources-set objective grades.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scale-target
+  namespace: default
+spec:
+  # Real stack: LoadBalancer on GCP, ClusterIP on KinD. Provisions a real
+  # external network LB + external IP on GKE. Switch to ClusterIP below if you
+  # do not want that on your standing cluster; the harness then falls back to
+  # port-forward, which can drop connections under sustained load.
+  type: LoadBalancer
+  selector:
+    app: scale-target
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP

@@ -1,0 +1,73 @@
+# Derived from: tf/prebuilt/hypercomputer-d1, seed_mode = "broken-frontend".
+# This is a hand-maintained copy for fast local iteration against an
+# already-standing cluster (no tofu, no cluster build). Tofu remains the
+# source of truth for real graded runs; this file can drift from it and is
+# not re-generated automatically. If tf/prebuilt/hypercomputer-d1/main.tf
+# changes (names, env vars, ports), update this file to match by hand.
+#
+# seed_mode=broken-frontend evaluates to (main.tf locals, lines 44-46):
+#   local.seed_frontend     = true   -> the frontend Deployment IS created
+#   local.seed_vllm_backend = false  -> vllm Deployment / Service / HPA are NOT created
+#   local.use_gemini_api    = "true" -> the misconfiguration the agent must repair
+#     (tasks/gcp/fix-config/task.yaml grades USE_GEMINI_API == "false")
+#
+# Namespace is var.namespace, default "default" (variables.tf:27-31).
+#
+# OMITTED vs the real tofu stack (GCP-side, cannot exist on a standing
+# cluster with no matching cloud project):
+#   - metadata.annotations["iam.gke.io/gcp-service-account"] on the
+#     ServiceAccount below. Real tofu sets it to google_service_account.vllm_gsa.email,
+#     which does not exist here and is per-run random in the real stack anyway.
+#     Not needed: the frontend pod never calls a GCP API, and fix-config's
+#     verification_entries only read the Deployment spec, never pod status.
+#   - the GCS bucket, its objectViewer binding, and the workloadIdentityUser
+#     binding. Not referenced by anything the frontend Deployment spec needs.
+#
+# The Deployment will likely never become Ready on an arbitrary standing
+# cluster (image pull, and no vLLM backend service under broken-frontend).
+# That is fine and matches the real stack: main.tf sets wait_for_rollout =
+# false for exactly this reason, and every verification_entries check reads
+# spec fields via the API, never pod/rollout status.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hypercomputer-d1-vllm-sa
+  namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hypercomputer-d1-frontend
+  namespace: default
+  labels:
+    app: hypercomputer-d1-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hypercomputer-d1-frontend
+  template:
+    metadata:
+      labels:
+        app: hypercomputer-d1-frontend
+    spec:
+      serviceAccountName: hypercomputer-d1-vllm-sa
+      automountServiceAccountToken: true
+      containers:
+        - name: frontend
+          image: gcr.io/gke-e2e-images/hypercomputer:v1.10
+          env:
+            - name: APP_VERSION
+              value: "v1.10"
+            - name: VLLM_API_URL
+              value: "http://hypercomputer-d1-vllm-service:8000/v1/chat/completions"
+            - name: MODEL_NAME
+              value: "google-gemma-3-12b-it"
+            # BROKEN VALUE, on purpose. Real value under seed_mode=broken-frontend
+            # per main.tf:44-46. The agent's job is to flip this to "false".
+            - name: USE_GEMINI_API
+              value: "true"
+          ports:
+            - containerPort: 8080
+              protocol: TCP

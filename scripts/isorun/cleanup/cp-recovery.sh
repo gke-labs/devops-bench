@@ -9,6 +9,11 @@ set -euo pipefail
 
 NS="${NAMESPACE:-cp-recovery}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/isorun/_guards.sh
+source "$SCRIPT_DIR/../_guards.sh"
+iso_refuse_protected_namespace "$NS"
+
 echo "==> cp-recovery cleanup: deleting namespace '$NS' (cluster: $CLUSTER)"
 kubectl delete namespace "$NS" --ignore-not-found --wait=true --timeout=120s
 

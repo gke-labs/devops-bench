@@ -10,5 +10,9 @@ set -euo pipefail
 
 # The tofu seed re-creates this deployment (broken) under --infra; under
 # --no-infra reuse of an ambient cluster, deleting it resets the fixture.
-echo "==> fix-config cleanup: deleting deploy/hypercomputer-d1-frontend in namespace 'default' (cluster: $CLUSTER)"
-kubectl -n default delete deploy/hypercomputer-d1-frontend --ignore-not-found
+# Uses $NAMESPACE (not a hardcoded literal) so this cleanup step, the seed's
+# own reset, and the preflight's namespace-match check all target the same
+# namespace end to end; see preflight/fix-config.sh for why any value other
+# than "default" is refused before the agent runs.
+echo "==> fix-config cleanup: deleting deploy/hypercomputer-d1-frontend in namespace '$NAMESPACE' (cluster: $CLUSTER)"
+kubectl -n "$NAMESPACE" delete deploy/hypercomputer-d1-frontend --ignore-not-found

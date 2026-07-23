@@ -62,3 +62,42 @@ iso_auth_oc() {
 iso_stage_ws() {
   mktemp -d -t dvb-iso.XXXX
 }
+
+# Aborts unless the ambient kubectl context corresponds to $1 (the CLUSTER
+# this run intends to seed/grade). Call before any cleanup or seed step: a
+# context mismatch means seeding one cluster and grading another, silently.
+#
+# GKE contexts are named gke_PROJECT_REGIONORZONE_CLUSTER (four underscore-
+# delimited fields: literal "gke", then project id, then region or zone, then
+# cluster name). GCP project ids and GKE cluster names cannot themselves
+# contain underscores (RFC1035 / GCP naming rules), so splitting on "_" is
+# unambiguous; match on the trailing cluster-name component rather than
+# requiring exact equality against the whole context string.
+#
+# kind contexts are named kind-CLUSTER (see tf/modules/cluster/kind/main.tf),
+# so a leading "kind-" is stripped the same way; CLUSTER itself is the bare
+# cluster name in that case, not a kind-prefixed one. Only an exact "kind-"
+# prefix is stripped (not a bare substring match), so e.g. ctx "my-cluster-2"
+# with expected "my-cluster" still correctly falls through to the mismatch
+# check below rather than passing.
+iso_verify_cluster_context() {
+  local expected="$1"
+  local ctx
+  ctx="$(kubectl config current-context 2>/dev/null || true)"
+  if [[ -z "$ctx" ]]; then
+    echo "ABORT: no active kubectl context (kubectl config current-context returned nothing). Point kubeconfig at the cluster named '$expected' before running." >&2
+    exit 1
+  fi
+
+  local ctx_cluster="$ctx"
+  if [[ "$ctx" == gke_* ]]; then
+    ctx_cluster="${ctx#gke_*_*_}"
+  elif [[ "$ctx" == kind-* ]]; then
+    ctx_cluster="${ctx#kind-}"
+  fi
+
+  if [[ "$ctx_cluster" != "$expected" ]]; then
+    echo "ABORT: kubectl context '$ctx' (cluster component: '$ctx_cluster') does not match CLUSTER='$expected'. Switch context with 'kubectl config use-context', or fix CLUSTER, before running: seeding/grading against the wrong cluster produces a meaningless result." >&2
+    exit 1
+  fi
+}
