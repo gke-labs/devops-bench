@@ -59,6 +59,40 @@ def test_leaf_spec_dispatches_to_verify():
     assert 25.0 < calls[0] <= 30.0
 
 
+def test_runner_stamps_configured_weight_onto_leaf_result():
+    """The runner is authoritative for weight, even if ``verify`` forgets it.
+
+    A custom verifier that builds its ``VerificationResult`` directly (bypassing
+    ``_poll_to_result``) and omits ``weight`` would otherwise leave the default
+    1.0 on the result. The runner re-stamps the leaf's configured weight so the
+    scoring rollup cannot silently lose it.
+    """
+
+    def forgetful_verify(self: Any, timeout_sec: float) -> VerificationResult:
+        # Deliberately omit ``weight`` — the default 1.0 would be wrong.
+        return VerificationResult(success=True, elapsed_time=0.0, reason="ok")
+
+    spec = VerificationSpec({"type": "pod_healthy", "selector": "app=web", "weight": 3.0})
+    with patch.object(PodHealthyVerifier, "verify", forgetful_verify):
+        result = VerifierAgent().wait_for_condition(spec, timeout_sec=30)
+
+    assert result.success is True
+    assert result.weight == 3.0
+
+
+def test_runner_preserves_default_weight_when_unset():
+    """A leaf with no configured weight keeps the default 1.0."""
+
+    def fake_verify(self: Any, timeout_sec: float) -> VerificationResult:
+        return VerificationResult(success=True, elapsed_time=0.0, reason="ok")
+
+    spec = VerificationSpec({"type": "pod_healthy", "selector": "app=web"})
+    with patch.object(PodHealthyVerifier, "verify", fake_verify):
+        result = VerifierAgent().wait_for_condition(spec, timeout_sec=30)
+
+    assert result.weight == 1.0
+
+
 def test_sequence_runs_children_in_order_and_aggregates():
     order: list[str] = []
     verify_calls: dict[str, float] = {}

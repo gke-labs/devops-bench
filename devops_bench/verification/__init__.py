@@ -19,11 +19,15 @@ This package exposes the verification spec model
 typed outcome (:class:`VerificationResult`), the registry-driven extension
 surface (:data:`VERIFIERS`, :func:`parse_node`), and the deadline-based
 :class:`VerifierAgent` that evaluates them. Importing the package pulls no
-heavy SDKs — concrete leaf verifiers register via this package's submodules
+heavy SDKs -- concrete leaf verifiers register via this package's submodules
 only.
+
+The entry-level schema (:class:`VerificationEntry`, :data:`Role`) is available
+via direct submodule imports or from this package.
 """
 
-from devops_bench.verification.base import VERIFIERS, BaseVerifier, VerificationResult
+from devops_bench.verification.base import VERIFIERS, BaseVerifier, Mode, VerificationResult
+from devops_bench.verification.entry import Role, VerificationEntry
 from devops_bench.verification.runner import VerifierAgent
 from devops_bench.verification.spec import (
     ParallelSpec,
@@ -36,9 +40,12 @@ from devops_bench.verification.spec import (
 
 __all__ = [
     "BaseVerifier",
+    "Mode",
     "ParallelSpec",
+    "Role",
     "SequenceSpec",
     "VERIFIERS",
+    "VerificationEntry",
     "VerificationNode",
     "VerificationResult",
     "VerificationSpec",

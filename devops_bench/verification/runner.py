@@ -119,11 +119,23 @@ class VerifierAgent:
         Short-circuits when the remaining budget is below
         :data:`_MIN_LEAF_BUDGET_SECONDS` so we never issue a useless
         sub-second ``kubectl wait`` at the tail of the deadline.
+
+        The verifier's configured ``weight`` is stamped onto the returned result
+        here, authoritatively: the leaf is the single source of truth for its
+        weight, so a custom ``verify()`` that builds a
+        :class:`VerificationResult` directly (bypassing ``_poll_to_result``) can
+        never silently drop it. When the node carries no ``weight`` attribute
+        (e.g. a compound spec reached as a leaf), the result's own weight is
+        left untouched.
         """
         remaining = deadline - time.monotonic()
         if remaining < _MIN_LEAF_BUDGET_SECONDS:
             return _timed_out(node, "deadline exhausted before evaluation")
-        return node.verify(remaining)
+        result = node.verify(remaining)
+        weight = getattr(node, "weight", None)
+        if weight is not None:
+            result.weight = weight
+        return result
 
     def _run_sequence(self, node: SequenceSpec, deadline: float) -> VerificationResult:
         """Run children in order; stop and skip the rest on the first failure."""

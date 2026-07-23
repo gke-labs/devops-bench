@@ -23,14 +23,23 @@ from __future__ import annotations
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from devops_bench.core import Registry
 from devops_bench.k8s import poll_until
 
-__all__ = ["VERIFIERS", "VerificationResult", "BaseVerifier"]
+__all__ = ["Mode", "VERIFIERS", "VerificationResult", "BaseVerifier"]
+
+# Execution mode for a leaf verifier.
+#
+# converge  -- verify(timeout_sec=N): keep polling until success or deadline.
+# assert    -- verify(timeout_sec=0): evaluate exactly once, never sleep.
+# hold      -- sample verify(0) repeatedly; every sample must pass.
+# unchanged -- NOT IMPLEMENTED: requires a pre-agent snapshot protocol.
+#              The first consumer (unchanged_outside) is not in this PR.
+Mode = Literal["converge", "assert", "unchanged", "hold"]
 
 # Registry keyed by the ``type`` discriminator literal. Entry-point discovery
 # lets external packages register a verifier without touching this tree.
@@ -53,6 +62,14 @@ class VerificationResult(BaseModel):
         name: Optional label echoed from the spec node, for result rendering.
         children: Per-member results from compound (sequence/parallel) nodes.
         raw: Leaf-only kubectl diagnostics or supporting data.
+        weight: Contribution weight used by the rollup; default 1.0. Echoed
+            from the originating leaf's :attr:`BaseVerifier.weight` so the
+            result tree is self-describing for downstream scoring. The runner
+            (:meth:`~devops_bench.verification.runner.VerifierAgent._run_leaf`)
+            stamps the leaf's configured weight onto the result after
+            evaluation, so a custom verifier that builds this result directly
+            (bypassing :meth:`BaseVerifier._poll_to_result`) does not need to
+            forward ``weight`` itself — the runner is authoritative.
     """
 
     success: bool
@@ -61,6 +78,7 @@ class VerificationResult(BaseModel):
     name: str | None = None
     children: list[VerificationResult] = Field(default_factory=list)
     raw: dict | None = None
+    weight: float = 1.0
 
 
 VerificationResult.model_rebuild()
@@ -77,10 +95,26 @@ class BaseVerifier(BaseModel, ABC):
         kubeconfig: Optional path to a kubeconfig file, forwarded to the
             ``devops_bench.k8s`` wrappers so a check can target a specific
             cluster. When ``None`` the wrappers use the ambient kubeconfig.
+        weight: Contribution weight used by the rollup when summing pass/fail
+            fractions across leaves. Default 1.0 (all leaves equal). Echoed
+            onto the :class:`VerificationResult` so the tree is self-describing.
+        mode: Explicit execution mode. When ``None`` the runner derives the
+            mode from the parent :class:`~devops_bench.verification.entry.Role`:
+            ``"objective"`` -> ``"converge"``;
+            ``"safeguard"`` -> ``"assert"``. An explicit ``mode`` always wins
+            over the role-derived default.
+        hold_window_sec: Duration of the hold-mode sampling window; meaningful
+            only when ``mode="hold"``. Defaults to 30 s.
+        hold_interval_sec: Pause between hold-mode samples; meaningful only
+            when ``mode="hold"``. Defaults to 5 s.
     """
 
     name: str | None = None
     kubeconfig: str | None = None
+    weight: float = 1.0
+    mode: Mode | None = None
+    hold_window_sec: float = 30.0
+    hold_interval_sec: float = 5.0
 
     @abstractmethod
     def verify(self, timeout_sec: float) -> VerificationResult:
@@ -133,4 +167,5 @@ class BaseVerifier(BaseModel, ABC):
             reason=last["reason"],
             name=self.name,
             raw=last["raw"],
+            weight=self.weight,
         )

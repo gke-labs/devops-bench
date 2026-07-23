@@ -19,6 +19,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from devops_bench.core import get_logger
+from devops_bench.verification.entry import VerificationEntry
 
 __all__ = ["Task", "DocumentationEntry", "Constraint"]
 
@@ -143,7 +144,7 @@ class Task(BaseModel):
     expected_output: str = ""
     retrieval_context: list[str] = Field(default_factory=list)
     chaos_spec: Any = None
-    verification_spec: Any = None
+    verification_spec: list[VerificationEntry] | None = None
     infrastructure: dict[str, Any] = Field(default_factory=dict)
     documentation: list[DocumentationEntry] = Field(default_factory=list)
     validated: bool = False

@@ -107,7 +107,9 @@ def _stub_task() -> Task:
             "expected_output": "exp",
             "retrieval_context": ["doc-a"],
             "chaos_spec": {"chaos": "yes"},
-            "verification_spec": {"verify": "yes"},
+            "verification_spec": [
+                {"name": "check", "spec": {"type": "pod_healthy", "selector": "app=demo"}}
+            ],
         }
     )
 

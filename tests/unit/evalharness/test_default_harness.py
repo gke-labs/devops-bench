@@ -391,3 +391,35 @@ def test_resolve_deployment_and_namespace_precedence_and_types(
     dep, ns = harness._resolve_deployment_and_namespace(task_non_str_vars)  # noqa: SLF001
     assert dep == "123"
     assert ns == "456"
+
+
+def test_empty_record_does_not_crash_when_verification_spec_holds_raw_dicts(
+    isolated_env: None,
+) -> None:
+    """``_empty_record`` must not crash when ``verification_spec`` contains raw dicts.
+
+    A test fixture or mock that bypasses ``Task.from_dict`` can produce a
+    ``Task`` whose ``verification_spec`` holds plain dicts instead of
+    ``VerificationEntry`` objects. The defensive ``hasattr`` guard in
+    ``_empty_record`` must absorb this without raising ``AttributeError``.
+    """
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
+
+    raw_spec = {"name": "check-a", "spec": {"type": "pod_healthy", "selector": "app=x"}}
+    task = Task.model_construct(
+        id="t",
+        name="demo",
+        folder="",
+        prompt="p",
+        expected_output="",
+        retrieval_context=[],
+        chaos_spec=None,
+        verification_spec=[raw_spec],
+        infrastructure={},
+        documentation=[],
+        validated=False,
+    )
+
+    record = harness._empty_record(task)  # noqa: SLF001
+
+    assert record["verification_spec"] == [raw_spec]
