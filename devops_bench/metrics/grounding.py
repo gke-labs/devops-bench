@@ -41,13 +41,36 @@ __all__ = [
 _log = get_logger("metrics.grounding")
 
 
+def _normalize_doc_url(url: str) -> str:
+    """Canonicalize a doc URL for host-tolerant substring matching.
+
+    Lowercases, collapses the ``docs.cloud.google.com`` host onto
+    ``cloud.google.com`` (the Cloud docs site is served under both, and task
+    mappings and retrieved URIs disagree on the prefix — e.g. a mapping of
+    ``https://cloud.google.com/...`` vs a retrieved ``docs.cloud.google.com/...``
+    URI otherwise never matches), drops any ``#fragment``, and trims a trailing
+    slash. The scheme is kept so short/toy URLs stay specific enough not to
+    match unrelated step text.
+
+    Args:
+        url: A raw documentation URL (may be empty).
+
+    Returns:
+        The normalized URL, or ``""`` for an empty input.
+    """
+    u = url.lower().split("#", 1)[0].replace("docs.cloud.google.com", "cloud.google.com")
+    return u.rstrip("/")
+
+
 def calculate_doc_retrieval_rate(
     documentation: list[dict[str, Any]], trajectory: list[Any]
 ) -> float:
     """Compute the fraction of mapped documentation guides seen in a trajectory.
 
-    A guide counts as accessed when its ``doc_name`` or ``url`` (case-insensitive)
-    appears anywhere in the JSON-serialized trajectory steps.
+    A guide counts as accessed when its ``doc_name`` (case-insensitive) or its
+    ``url`` (normalized via :func:`_normalize_doc_url` so scheme, the
+    ``docs.``-prefixed Cloud docs host, and ``#fragment`` differences don't
+    cause misses) appears anywhere in the JSON-serialized trajectory steps.
 
     Args:
         documentation: Mapped guides, each with ``doc_name`` and ``url`` keys.
@@ -62,19 +85,24 @@ def calculate_doc_retrieval_rate(
 
     # Serialize each step once up front rather than re-serializing the whole
     # trajectory for every documentation guide (it does not depend on the doc).
-    step_strs = [json.dumps(step).lower() for step in trajectory]
+    # Collapse the docs-host on each step too, so a mapping URL without the
+    # ``docs.`` prefix still matches a retrieved URI that carries it.
+    step_strs = [
+        json.dumps(step).lower().replace("docs.cloud.google.com", "cloud.google.com")
+        for step in trajectory
+    ]
 
     accessed_docs = set()
     for doc in documentation:
         doc_name = doc.get("doc_name") or ""
         doc_name_lower = doc_name.lower()
-        url_lower = (doc.get("url") or "").lower()
+        url_norm = _normalize_doc_url(doc.get("url") or "")
         found_in_trajectory = False
         for step_str in step_strs:
             # Guard both substrings on truthiness so a missing name/url (now "")
             # does not spuriously match every step (``"" in s`` is always True).
             if (doc_name_lower and doc_name_lower in step_str) or (
-                url_lower and url_lower in step_str
+                url_norm and url_norm in step_str
             ):
                 found_in_trajectory = True
                 break
