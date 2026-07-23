@@ -28,7 +28,8 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import NamedTuple
 
-import yaml
+from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
 
 from devops_bench.core import get_logger
 
@@ -39,6 +40,10 @@ _log = get_logger("agents.shared.skills")
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL | re.MULTILINE)
 
 _SKILL_FILE = "SKILL.md"
+
+# YAML 1.2 semantics (matching tasks/loader.py): only ``true``/``false`` are
+# booleans, so a description like ``yes`` stays a plain string.
+_yaml = YAML(typ="safe")
 
 
 class SkillFile(NamedTuple):
@@ -117,9 +122,9 @@ def iter_skills(paths: Iterable[str]) -> Iterator[SkillFile]:
 def parse_skill_md(file_path: str) -> tuple[str | None, str | None, str | None]:
     """Parse a ``SKILL.md`` file's YAML frontmatter.
 
-    The frontmatter block is parsed with :func:`yaml.safe_load`, so multi-line
-    block scalars (e.g. a ``description: >-`` spanning several lines) are read
-    in full rather than truncated to the first line.
+    The frontmatter block is parsed as safe YAML, so multi-line block scalars
+    (e.g. a ``description: >-`` spanning several lines) are read in full
+    rather than truncated to the first line.
 
     Args:
         file_path: Path to a skill markdown file.
@@ -141,8 +146,8 @@ def parse_skill_md(file_path: str) -> tuple[str | None, str | None, str | None]:
         return None, None, None
 
     try:
-        frontmatter = yaml.safe_load(match.group(1))
-    except yaml.YAMLError as exc:
+        frontmatter = _yaml.load(match.group(1))
+    except YAMLError as exc:
         _log.warning("Invalid YAML frontmatter in skill file %s: %s", file_path, exc)
         return None, None, content
 
