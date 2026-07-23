@@ -1,0 +1,8 @@
+{
+  "generated_by": "carbon-aware grid intensity feed",
+  "region": "us-central1",
+  "off_peak_window": "00:00-06:00 America/Chicago",
+  "currently_in_off_peak": true,
+  "grid_carbon_intensity_gco2eq_per_kwh": 430,
+  "node_power_draw_watts_avg": 250
+}
