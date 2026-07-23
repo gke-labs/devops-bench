@@ -54,12 +54,6 @@ NEVER_SYNC = [
     ".python-version",
     "LICENSE",
     "LICENSES/**",
-    # TEMPORARY — remove once the wave-5 metric families land upstream. The wave-3 metrics base
-    # PR ships a trimmed metrics/__init__.py (base surface only); each family PR re-adds its
-    # imports upstream. Until the two files converge, a back-sync of the trimmed init would break
-    # gke-labs (run.py and evalharness/default.py import the full package-root surface). Content
-    # parity already keeps suggest-flips from proposing the entry early; this guards a manual flip.
-    "devops_bench/metrics/__init__.py",
 ]
 
 def frontier_glob():
