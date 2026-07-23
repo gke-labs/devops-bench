@@ -81,13 +81,17 @@ MIGRATED = [
     "devops_bench/agents/cli/gemini_cli/**",
     "devops_bench/agents/cli/__init__.py",
     # "tests/unit/agents/test_agents_cli_gemini.py",
+    # PR: antigravity CLI agent (merged upstream from an older revision; flips once the
+    # newer gke-labs content is exported and reaches blob parity)
+    # "devops_bench/agents/cli/antigravity/**",
+    # "tests/unit/agents/test_agents_cli_antigravity.py",
     # PR: openclaw CLI agent + agents shared + chaos base
     # (chaos base replaces upstream agents/chaos/ — git rm the 3 superseded files in this PR)
     # "devops_bench/agents/cli/openclaw/**",
     # "tests/unit/agents/test_agents_cli_openclaw.py",
     # "tests/unit/agents/test_legacy_openclaw_tokens.py",
-    # "devops_bench/agents/shared/**",
-    # "tests/unit/agents/shared/**",
+    "devops_bench/agents/shared/**",
+    "tests/unit/agents/shared/**",
     # "devops_bench/chaos/base.py",
     # "devops_bench/chaos/agent.py",
     # "devops_bench/chaos/schema.py",
@@ -126,14 +130,14 @@ MIGRATED = [
 
     # --- Wave 5: concretes on the components (parallel; one batched PR per owner — pr-plan.md §3.2) ---
     # PR: API agent + MCP client (mcp.py's only importer is the API agent, so it travels here)
-    # "devops_bench/agents/api/agent.py",
-    # "devops_bench/agents/api/skills.py",
-    # "devops_bench/agents/api/mcp.py",
-    # "devops_bench/agents/api/__init__.py",
-    # "tests/unit/agents/api/test_agents_api_agent.py",
-    # "tests/unit/agents/api/test_agents_api_skills.py",
-    # "tests/unit/agents/api/test_agents_api_mcp.py",
-    # "tests/unit/agents/api/test_agents_api_import_hygiene.py",
+    "devops_bench/agents/api/agent.py",
+    "devops_bench/agents/api/skills.py",
+    "devops_bench/agents/api/mcp.py",
+    "devops_bench/agents/api/__init__.py",
+    "tests/unit/agents/api/test_agents_api_agent.py",
+    "tests/unit/agents/api/test_agents_api_skills.py",
+    "tests/unit/agents/api/test_agents_api_mcp.py",
+    "tests/unit/agents/api/test_agents_api_import_hygiene.py",
     # PR: chaos concretes (generate-load fault + time-delay trigger)
     # "devops_bench/chaos/faults/**",
     # "tests/unit/chaos/test_generate_load.py",
@@ -158,6 +162,10 @@ MIGRATED = [
     # "devops_bench/metrics/outcome_validity.py",
     # "devops_bench/metrics/chaos_metrics.py",
     # "tests/unit/metrics/test_metrics_chaos.py",
+    # PR: composite outcome score (added upstream first; no gke-labs copy predates it, so the
+    # back-sync materializes both files here)
+    "devops_bench/metrics/scoring.py",
+    "tests/unit/metrics/test_metrics_scoring.py",
 
     # --- Wave 6: harness base + scenario, and module docs/skills (each after its module lands) ---
     # "devops_bench/evalharness/base.py",
