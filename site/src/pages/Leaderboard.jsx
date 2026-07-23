@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { useBenchmark } from "../context/BenchmarkContext.jsx";
 import { buildFilterGroups, getFilteredSetups, emptyFilterState } from "../lib/filters.js";
 import { setupScore } from "../lib/accessors.js";
-import { availableMetrics } from "../lib/vocab.js";
+import { availableMetrics, metricDescription } from "../lib/vocab.js";
 import { FilterBar } from "../components/FilterBar.jsx";
 import { LeaderboardRow } from "../components/LeaderboardRow.jsx";
 import { MetricToggle } from "../components/MetricToggle.jsx";
@@ -15,7 +15,7 @@ import { EmptyState, LoadError, Loading } from "../components/States.jsx";
 
 export function Leaderboard() {
     const { models, harnesses, setups, loading, error } = useBenchmark();
-    const [metric, setMetric] = useState("pass1");
+    const [metric, setMetric] = useState("composite");
     const [filterState, setFilterState] = useState(emptyFilterState);
 
     const groups = useMemo(() => buildFilterGroups(models, harnesses, setups), [models, harnesses, setups]);
@@ -82,7 +82,7 @@ export function Leaderboard() {
                         </span>
                         <span>HARNESS <span className="text-slate-300 font-normal normal-case tracking-normal">&amp; config</span></span>
                     </div>
-                    <div className="col-span-5 sm:col-span-5 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
+                    <div className="col-span-5 sm:col-span-5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-x-4 sm:gap-y-2 pr-2">
                         <div className="flex items-center gap-1 min-w-[70px]">
                             <span>SCORE</span>
                             <div tabIndex={0} aria-label="Score Explanation" className="group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 rounded-full">
@@ -90,7 +90,7 @@ export function Leaderboard() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                                 <div role="tooltip" className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2.5 bg-slate-900 text-white text-[11px] font-normal tracking-normal rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shadow-lg z-20 leading-relaxed">
-                                    Calculated dynamically based on success rate metrics across all core task suites.
+                                    {metricDescription(metric)}
                                 </div>
                             </div>
                         </div>

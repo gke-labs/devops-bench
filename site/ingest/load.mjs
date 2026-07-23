@@ -86,6 +86,17 @@ export function validateRow(row) {
     intOrNull("inputTokens", nonNeg);
     intOrNull("outputTokens", nonNeg);
 
+    // Scoring-framework v1 fields — OPTIONAL (pre-v1 rows omit them). Validate the
+    // shape only when present so old runs still ingest.
+    if ("correctnessScore" in row) floatOrNull("correctnessScore", num01);
+    if ("recoverableSafetyScore" in row) floatOrNull("recoverableSafetyScore", num01);
+    if ("catastrophic" in row && typeof row.catastrophic !== "boolean") {
+        errs.push("catastrophic: must be a boolean");
+    }
+    if ("scoringVersion" in row && typeof row.scoringVersion !== "string") {
+        errs.push("scoringVersion: must be a string");
+    }
+
     return errs;
 }
 

@@ -4,7 +4,7 @@
 // pass5/passMax will return once the harness produces multi-iteration runs.
 // When omitted (or empty), every metric is enabled (back-compat).
 
-import { METRICS, METRIC_LABELS } from "../lib/vocab.js";
+import { METRICS, METRIC_LABELS, metricDescription } from "../lib/vocab.js";
 
 export function MetricToggle({ value, onChange, available }) {
     const hasFilter = Array.isArray(available) && available.length > 0;
@@ -26,8 +26,8 @@ export function MetricToggle({ value, onChange, available }) {
                         onClick={() => enabled && onChange(m)}
                         disabled={!enabled}
                         aria-pressed={active}
-                        title={enabled ? undefined : "Available once multi-iteration runs land"}
-                        className={`px-2.5 py-1 font-medium rounded-md transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed ${cls}`}
+                        title={enabled ? metricDescription(m) : "Available once multi-iteration runs land"}
+                        className={`px-2 py-1 font-medium rounded-md whitespace-nowrap transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed ${cls}`}
                     >
                         {METRIC_LABELS[m]}
                     </button>

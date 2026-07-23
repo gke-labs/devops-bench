@@ -74,7 +74,8 @@ describe("derive", () => {
         const latest = [...new Set(raw.filter(r => r.setupId === s.id).map(r => r.t))].sort().pop();
         const folder = s.tasks[0].folder;
         const cell = raw.filter(r => r.setupId === s.id && r.t === latest && r.taskFolder === folder);
-        const c = cell.filter(r => r.outcomeScore >= PASS_THRESHOLD).length;
+        // pass1 now thresholds on correctness `c` (not the composite outcomeScore).
+        const c = cell.filter(r => r.correctnessScore >= PASS_THRESHOLD).length;
         expect(s.tasks[0].scores.pass1).toBeCloseTo((100 * c) / cell.length, 1);
     });
 });

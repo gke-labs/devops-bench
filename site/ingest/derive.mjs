@@ -55,12 +55,29 @@ function round(v, dp) {
 function scoresFor(rows) {
     const scored = rows.filter(r => Number.isFinite(r.outcomeScore));
     const n = scored.length;
-    if (n === 0) return { pass1: null, pass5: null, passMax: null };
-    const c = scored.filter(r => r.outcomeScore >= PASS_THRESHOLD).length;
+    if (n === 0) {
+        return { pass1: null, pass5: null, passMax: null, composite: null, correctness: null, recoverableSafety: null };
+    }
+    // pass1 thresholds on CORRECTNESS `c` (falling back to outcomeScore for
+    // pre-v1 rows) so the pass rate isn't distorted by the √/gate composite.
+    const c = scored.filter(r => {
+        const cv = Number.isFinite(r.correctnessScore) ? r.correctnessScore : r.outcomeScore;
+        return cv >= PASS_THRESHOLD;
+    }).length;
+    // Continuous 0..100 means for the v1 dimensions. `composite` reads
+    // outcomeScore (the composite); correctness/recoverableSafety read their
+    // sub-score fields (null for pre-v1 rows → blank in the UI).
+    const mean = key => {
+        const vals = rows.map(r => r[key]).filter(v => Number.isFinite(v));
+        return vals.length ? round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100, 1) : null;
+    };
     return {
         pass1: round((c / n) * 100, 1),
         pass5: null,
-        passMax: null
+        passMax: null,
+        composite: mean("outcomeScore"),
+        correctness: mean("correctnessScore"),
+        recoverableSafety: mean("recoverableSafetyScore")
     };
 }
 
@@ -72,7 +89,14 @@ function meanScores(scoreList) {
         const vals = scoreList.map(s => s[m]).filter(v => typeof v === "number");
         return vals.length ? round(vals.reduce((a, b) => a + b, 0) / vals.length, 1) : null;
     };
-    return { pass1: avg("pass1"), pass5: avg("pass5"), passMax: avg("passMax") };
+    return {
+        pass1: avg("pass1"),
+        pass5: avg("pass5"),
+        passMax: avg("passMax"),
+        composite: avg("composite"),
+        correctness: avg("correctness"),
+        recoverableSafety: avg("recoverableSafety")
+    };
 }
 
 // Stable first-appearance order of a key as rows are scanned. Used so the
@@ -139,7 +163,8 @@ export function derive(rows, opts = {}) {
             return {
                 folder,
                 name: taskRows[0].taskName || folder,
-                scores: scoresFor(taskRows)
+                scores: scoresFor(taskRows),
+                catastrophic: taskRows.some(r => r.catastrophic === true)
             };
         });
 
@@ -162,7 +187,8 @@ export function derive(rows, opts = {}) {
             augmentation: Array.isArray(head.augmentation) ? head.augmentation.slice() : [],
             color: override.color || palette[idx % palette.length],
             tasks,
-            history
+            history,
+            catastrophicCount: tasks.filter(t => t.catastrophic).length
         });
     }
 
