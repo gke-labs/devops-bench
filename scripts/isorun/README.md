@@ -18,8 +18,11 @@ graded run, but it makes fast iteration painful: every `--infra` run pays for
 a fresh cluster build just to test a one-line change to a task's fixture or
 prompt.
 
-For fast iteration against an **already-standing** cluster, three tasks
-(`fix-config`, `deploy-config`, `optimize-scale`) bypass tofu entirely:
+For fast iteration against an **already-standing** cluster, five tasks bypass
+tofu entirely: `fix-config`, `deploy-config`, and `optimize-scale` (GKE-backed),
+plus `ledger-read-facade` and `checkout-multi-service-outage` (kind-backed,
+against a standing `prebuilt/kind` cluster built with
+`install_ingress_nginx = true`):
 
 1. Stand up a cluster once, by hand or with a one-off `tofu apply` of the
    matching stack, and export `CLUSTER` / `PROJECT` / `REGION` / `NAMESPACE`
@@ -86,8 +89,9 @@ always runs, regardless of `--no-seed`.
 ## Fixtures, seed hooks, and preflight guards
 
 These three directories only exist for the tasks in the fast-iteration loop
-(`fix-config`, `deploy-config`, `optimize-scale`); other tasks are unaffected
-and behave exactly as before.
+(`fix-config`, `deploy-config`, `optimize-scale`, `ledger-read-facade`,
+`checkout-multi-service-outage`); other tasks are unaffected and behave
+exactly as before.
 
 - **`fixtures/<task-name>.yaml`**: standalone, kubectl-appliable manifests
   that recreate a tofu stack's in-cluster pre-agent state. Each file's header

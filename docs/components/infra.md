@@ -54,10 +54,10 @@ The env var outranks the config key so a task can pin a default `provider:` whil
 
 The OpenTofu stacks live under `tf/` (see `tf/README.md`):
 
-- `tf/modules/` — reusable building blocks, currently `gke` (a cluster) and `bastion`.
+- `tf/modules/` — reusable building blocks, currently `gke` (a cluster), `bastion`, and `ingress-nginx` (installs the ingress-nginx controller via Helm).
 - `tf/prebuilt/<stack>/` — standard, ready-to-use stacks. For example:
   - `minimum` — a small GKE cluster (a few `e2-standard-2` nodes), the everyday GCP starting point.
-  - `kind` — a local cluster for offline / no-cloud runs.
+  - `kind` — a local cluster for offline / no-cloud runs. Set the `install_ingress_nginx` variable to `true` to also install the ingress-nginx controller (as a `ClusterIP` Service, so in-cluster `http_probe` checks can reach it by FQDN with no LoadBalancer) via the `tf/modules/ingress-nginx` module; `ingress_service_type` and `ingress_chart_version` pass through the module's Service type and pinned chart version. Used by tasks like `ledger-read-facade` and `checkout-multi-service-outage`.
   - Plus task-specific stacks (e.g. `secret-rotation`, `multi-region-failover`) that build on the modules.
 
 Every stack root that `TFDeployer` drives must output `cluster_name` and `cluster_location` — that's the contract the deployer reads back.
