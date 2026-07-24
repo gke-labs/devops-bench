@@ -13,7 +13,7 @@
 #   C. the Ingress registers only path / with pathType: Exact, so /reports
 #      404s.
 #   D. promo-banner's PROMO_MESSAGE env is a literal "STALE-PRICE-1999"
-#      instead of a configMapKeyRef, shadowing the ledger ConfigMap value.
+#      instead of a configMapKeyRef, shadowing the promo-config ConfigMap value.
 ---
 apiVersion: v1
 kind: Namespace
@@ -239,8 +239,12 @@ spec:
             initialDelaySeconds: 2
             periodSeconds: 5
           livenessProbe:
-            httpGet:
-              path: /
+            # Liveness must not depend on the downstream dependency: a plain TCP
+            # check on nginx's listen port keeps the facade alive (rather than
+            # crash-looping) when inventory-db is unreachable. Readiness above
+            # still exercises the proxy path, so the pod drops out of the Service
+            # endpoints while the dependency is down and rejoins once it heals.
+            tcpSocket:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10

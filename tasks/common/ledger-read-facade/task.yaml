@@ -50,8 +50,15 @@ verification_entries:
             path: 'spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem', op: eq, value: true }
         - { type: resource_property, kind: deployment, selector: "app=ledger-facade", namespace: ledger,
             path: 'spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation', op: eq, value: false }
-        - { type: resource_property, kind: deployment, selector: "app=ledger-facade", namespace: ledger,
-            path: 'spec.template.spec.containers[0].securityContext.runAsNonRoot', op: eq, value: true }
+        # runAsNonRoot is valid at either the pod or the container securityContext
+        # level; the seeded facade declares it at the pod level. Accept either so a
+        # solution is graded on the outcome (pod runs as non-root), not the level.
+        - type: any
+          checks:
+            - { type: resource_property, kind: deployment, selector: "app=ledger-facade", namespace: ledger,
+                path: 'spec.template.spec.containers[0].securityContext.runAsNonRoot', op: eq, value: true }
+            - { type: resource_property, kind: deployment, selector: "app=ledger-facade", namespace: ledger,
+                path: 'spec.template.spec.securityContext.runAsNonRoot', op: eq, value: true }
   - name: restart-count-flat
     role: objective
     mode: hold
