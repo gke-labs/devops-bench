@@ -21,16 +21,14 @@ from typing import Any
 
 from deepeval.test_case import LLMTestCase
 
-from devops_bench.core import get_bool, get_logger, score_keys
+from devops_bench.core import get_bool, get_logger
 
 # Imported for their @METRICS.register side effects.
 from devops_bench.metrics import (
     chaos_metrics,  # noqa: F401
     grounding,  # noqa: F401
     outcome_validity,  # noqa: F401
-    safety,  # noqa: F401
     tool_invocation,  # noqa: F401
-    verification,  # noqa: F401
 )
 from devops_bench.metrics.base import (
     METRICS,
@@ -43,15 +41,9 @@ from devops_bench.metrics.checklist import (
     ChecklistMetric,
     extract_checklist_items,
 )
-from devops_bench.metrics.scoring import (
-    SCORING_VERSION,
-    compute_outcome_score_v1,
-    rescale_recoverable_safety,
-)
 
 __all__ = [
     "CHECKLIST_THRESHOLD",
-    "OUTCOME_SCORE_KEY",
     "ChecklistMetric",
     "evaluate_metrics_batch",
     "extract_checklist_items",
@@ -59,40 +51,13 @@ __all__ = [
 
 _log = get_logger("metrics.pipeline")
 
-#: ``res["scores"]`` key carrying the v1 composite outcome score. Assembled from
-#: the sub-scores after all metrics run (see :func:`_finalize_outcome_score`);
-#: the flat leaderboard row reads its ``outcomeScore`` from this key.
-OUTCOME_SCORE_KEY = score_keys.OUTCOME_SCORE_KEY
-
-# Sub-score keys read to assemble the composite, in preference order. Sourced
-# from ``core.score_keys`` so the emitters, this assembly, and
-# ``results.normalize`` share one definition; reading them by name still keeps
-# the assembly from importing the metric modules that emit them.
-#
-# Deterministic signals win over judged ones for the same quantity: a task that
-# expresses a check in its ``verification_spec`` has said what it means exactly,
-# so a judge's reading of prose should not override it. No task declares both
-# today; if one ever does, this is the rule it follows.
-_CORRECTNESS_KEYS = (
-    score_keys.VERIFICATION_CORRECTNESS_KEY,
-    score_keys.CHECKLIST_SCORE_KEY,
-    score_keys.OUTCOME_VALIDITY_KEY,
-)
-_RECOVERABLE_KEYS = (
-    score_keys.VERIFICATION_RECOVERABLE_KEY,
-    score_keys.JUDGED_RECOVERABLE_KEY,
-)
-_CATASTROPHIC_KEY = score_keys.VERIFICATION_CATASTROPHIC_KEY
-
 # Order in which builtin metric keys appear in results.json.
 _BUILTIN_METRIC_KEYS: tuple[str, ...] = (
     "outcome_validity",
     "tool_invocation",
     "checklist",
-    "safety",
     "grounding",
     "chaos",
-    "verification",
 )
 
 
@@ -111,84 +76,6 @@ def _canonical_tool_name(name: str) -> str:
     if not isinstance(name, str):
         return name
     return name.split("__", 1)[1] if "__" in name else name
-
-
-def _score_value(entry: Any) -> float | None:
-    """Return the numeric score from a ``res["scores"]`` entry, or ``None``.
-
-    Handles both shapes ``MetricScore.to_entry`` produces: a bare number or a
-    ``{"score": ...}`` dict. A boolean is treated as absent so a flag never
-    masquerades as a 0/1 score.
-    """
-    if isinstance(entry, dict):
-        entry = entry.get("score")
-    if isinstance(entry, bool):
-        return None
-    return float(entry) if isinstance(entry, (int, float)) else None
-
-
-def _first_score(scores: dict[str, Any], keys: tuple[str, ...]) -> float | None:
-    """Return the score under the first key in ``keys`` that carries one.
-
-    Args:
-        scores: The per-metric score map for one record.
-        keys: Candidate score keys in preference order.
-
-    Returns:
-        The first numeric score found, or ``None`` when no key carries one.
-    """
-    for key in keys:
-        value = _score_value(scores.get(key))
-        if value is not None:
-            return value
-    return None
-
-
-def _finalize_outcome_score(scores: dict[str, Any]) -> None:
-    """Assemble the v1 composite ``OutcomeScore`` from the sub-scores, in place.
-
-    Each signal is taken from the first key present in its preference chain, so
-    a deterministic verification score wins over the judged equivalent. Both
-    recoverable sources emit a raw pass fraction; the ``[0.1, 1.0]`` rescale is
-    applied here so the floor lives in one place regardless of which produced
-    it. Records with no correctness signal at all (e.g. failed runs with empty
-    scores) get no composite, leaving ``outcomeScore`` null downstream.
-
-    Args:
-        scores: The per-metric score map for one record, mutated to add
-            :data:`OUTCOME_SCORE_KEY`.
-    """
-    correctness = _first_score(scores, _CORRECTNESS_KEYS)
-    if correctness is None:
-        return
-
-    catastrophic_score = _score_value(scores.get(_CATASTROPHIC_KEY))
-    catastrophic = catastrophic_score == 0.0 if catastrophic_score is not None else False
-
-    # Read the gate before rescaling. ``compute_outcome_score_v1`` deliberately
-    # short-circuits a catastrophic run before validating its other inputs, so
-    # rescaling first would raise on a malformed value the short-circuit is
-    # meant to tolerate, and the record would lose the catastrophic signal too.
-    recoverable = None
-    if not catastrophic:
-        raw_recoverable = _first_score(scores, _RECOVERABLE_KEYS)
-        if raw_recoverable is not None:
-            recoverable = rescale_recoverable_safety(raw_recoverable)
-
-    outcome = compute_outcome_score_v1(
-        correctness=correctness,
-        recoverable_safety=recoverable,
-        catastrophic=catastrophic,
-    )
-    scores[OUTCOME_SCORE_KEY] = {
-        "score": outcome,
-        "version": SCORING_VERSION,
-        "reason": (
-            f"c={correctness:.3f}, "
-            f"rec_v={'n/a' if recoverable is None else format(recoverable, '.3f')}, "
-            f"cat_v={0 if catastrophic else 1}"
-        ),
-    }
 
 
 def _build_context(res: dict[str, Any], judge_model: Any, use_mcp: bool) -> MetricContext:
@@ -330,13 +217,4 @@ def evaluate_metrics_batch(
                     getattr(ev, "name", ev),
                     res.get("name"),
                 )
-        # Assemble the versioned composite from the sub-scores once every metric
-        # has run, so it can read the checklist / safety outputs above. Guarded
-        # like the metric loop: a malformed sub-score raises out of the scoring
-        # formula, and must cost this record its composite rather than abort the
-        # remaining records in the batch.
-        try:
-            _finalize_outcome_score(scores)
-        except Exception:  # noqa: BLE001 - one record must not abort the batch
-            _log.exception("composite outcome score failed for %s", res.get("name"))
         res["scores"] = scores
