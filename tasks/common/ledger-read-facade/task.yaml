@@ -107,9 +107,9 @@ verification_entries:
     check:
       { type: resource_property, kind: job, name: ledger-migrate-once, namespace: ledger, op: exists }
 
-# controls: INERT documentation for manual oracle validation (Task 5). Not a
-# consumed Task field (dropped by extra="ignore"); kept here so the expected
-# control scores travel with the task.
+# controls: INERT documentation for manual oracle validation (Task 5). These
+# lines are YAML comments, so they are never parsed as Task fields at all;
+# kept here so the expected control scores travel with the task.
 #   noop:    expect c=0.0
 #   partial: facade made Ready but hardening stripped or netpol/pdb skipped -> expect c approx 0.45
 #   oracle:  expect c=1.0, rec_v=1.0, cat_v=1
