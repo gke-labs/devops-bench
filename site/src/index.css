@@ -3,6 +3,18 @@
 @tailwind utilities;
 
 /* Custom styles ported from the old style.css. */
+
+/* color-scheme tells the browser to render its own UI (scrollbars, form
+   controls, spellcheck underlines) for the active theme — the part `dark:`
+   utilities can't reach, in every engine rather than just WebKit/Blink. */
+:root {
+    color-scheme: light;
+}
+
+.dark {
+    color-scheme: dark;
+}
+
 body {
     font-family: 'Inter', sans-serif;
     background-color: #f8fafc; /* slate-50 — matches the App shell, avoids flash */
@@ -16,6 +28,18 @@ body {
     transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Standard scrollbar properties (Firefox + modern WebKit/Blink). */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9; /* thumb, track */
+}
+
+.dark * {
+    scrollbar-color: #475569 #1e293b;
+}
+
+/* -webkit-* kept for older Chrome/Safari, which ignore the properties above and
+   are the only engines that can size the bar this precisely. */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

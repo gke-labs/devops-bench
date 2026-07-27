@@ -2,7 +2,9 @@
 // Tailwind's darkMode:"class" keys off. Resolution order: the user's saved
 // choice, then the OS preference.
 
-const KEY = "theme";
+/** localStorage key holding the persisted choice; also the `storage` event key. */
+export const THEME_KEY = "theme";
+const KEY = THEME_KEY;
 
 /** @returns {"light" | "dark"} */
 export function getInitialTheme() {

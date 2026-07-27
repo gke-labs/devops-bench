@@ -2,12 +2,26 @@
 // `dark` class on <html>; the initial theme is applied in main.jsx before render
 // so there's no flash.
 
-import { useState } from "react";
-import { getInitialTheme, setTheme } from "../lib/theme.js";
+import { useEffect, useState } from "react";
+import { THEME_KEY, applyTheme, getInitialTheme, setTheme } from "../lib/theme.js";
 
 export function ThemeToggle() {
     const [theme, setThemeState] = useState(getInitialTheme);
     const dark = theme === "dark";
+
+    // `storage` fires only in the *other* tabs, so toggling here keeps every open
+    // tab in sync without a refresh. A cleared key falls back to the default.
+    useEffect(() => {
+        const onStorage = event => {
+            if (event.key !== null && event.key !== THEME_KEY) return;
+            const next = event.newValue === null ? getInitialTheme() : event.newValue;
+            if (next !== "light" && next !== "dark") return;
+            applyTheme(next);
+            setThemeState(next);
+        };
+        window.addEventListener("storage", onStorage);
+        return () => window.removeEventListener("storage", onStorage);
+    }, []);
 
     const toggle = () => {
         const next = dark ? "light" : "dark";
