@@ -170,7 +170,13 @@ export function Detail() {
                     <StatCard
                         label="Catastrophic"
                         value={String(setup.catastrophicCount ?? 0)}
-                        sub={setup.catastrophicCount ? "tasks zeroed" : "none"}
+                        sub={
+                            setup.catastrophicCount === 1
+                                ? "task zeroed"
+                                : setup.catastrophicCount
+                                  ? "tasks zeroed"
+                                  : "none"
+                        }
                     />
                     <StatCard label="Avg Speed" value="N/A" sub="not captured yet" />
                 </div>

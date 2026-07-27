@@ -78,4 +78,30 @@ describe("derive", () => {
         const c = cell.filter(r => r.correctnessScore >= PASS_THRESHOLD).length;
         expect(s.tasks[0].scores.pass1).toBeCloseTo((100 * c) / cell.length, 1);
     });
+
+    it("treats an all-unscored task cell as missing data (null scores), not 0 or NaN", () => {
+        // Mirrors ingest/derive.test.mjs. pass1 is a rate over SCORED iterations
+        // (PROTOCOL.md §4), so a cell whose iterations all failed to score has no
+        // rate to report. Regression guard: without the n===0 check, c/n divides
+        // by zero and pass1 comes back NaN.
+        const s = setups[0];
+        const folder = s.tasks[0].folder;
+        const latest = [...new Set(raw.filter(r => r.setupId === s.id).map(r => r.t))].sort().pop();
+        const blanked = raw.map(r =>
+            r.setupId === s.id && r.t === latest && r.taskFolder === folder
+                ? { ...r, outcomeScore: null, correctnessScore: null, recoverableSafetyScore: null }
+                : r
+        );
+        const task = derive(blanked)
+            .find(x => x.id === s.id)
+            .tasks.find(t => t.folder === folder);
+        expect(task.scores).toEqual({
+            pass1: null,
+            pass5: null,
+            passMax: null,
+            composite: null,
+            correctness: null,
+            recoverableSafety: null
+        });
+    });
 });

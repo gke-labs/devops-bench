@@ -86,7 +86,7 @@ function scoresFor(rows) {
 /** @returns {Scores} */
 function meanScores(scoreList) {
     const avg = m => {
-        const vals = scoreList.map(s => s[m]).filter(v => typeof v === "number");
+        const vals = scoreList.map(s => s[m]).filter(v => Number.isFinite(v));
         return vals.length ? round(vals.reduce((a, b) => a + b, 0) / vals.length, 1) : null;
     };
     return {

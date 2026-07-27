@@ -251,18 +251,25 @@ export function passAtK(n, c, k) {
 // the harness produces multi-iteration runs — passAtK() and K are kept
 // (re-enable here when that lands; nothing about the formula needs to change).
 function scoresFor(rows) {
-    const n = rows.length;
+    // pass1 is a rate over the run's SCORED iterations (PROTOCOL.md §4), so an
+    // unscored row is missing data — not a failure — and never reaches the
+    // denominator. With nothing scored there is no rate to report: null, not NaN.
+    const scored = rows.filter(r => Number.isFinite(r.outcomeScore));
+    const n = scored.length;
+    if (n === 0) {
+        return { pass1: null, pass5: null, passMax: null, composite: null, correctness: null, recoverableSafety: null };
+    }
     // pass1 thresholds on CORRECTNESS `c` (falling back to outcomeScore for
     // pre-v1 rows), so the pass rate isn't distorted by the √/gate composite.
-    const c = rows.filter(r => {
-        const cv = r.correctnessScore != null ? r.correctnessScore : r.outcomeScore;
-        return cv != null && cv >= PASS_THRESHOLD;
+    const c = scored.filter(r => {
+        const cv = Number.isFinite(r.correctnessScore) ? r.correctnessScore : r.outcomeScore;
+        return cv >= PASS_THRESHOLD;
     }).length;
     // Continuous 0..100 means for the v1 dimensions. `composite` reads
     // outcomeScore (the composite); correctness/recoverableSafety read their
     // sub-score fields (null for pre-v1 rows → blank in the UI).
     const mean = key => {
-        const vals = rows.map(r => r[key]).filter(v => v != null);
+        const vals = rows.map(r => r[key]).filter(v => Number.isFinite(v));
         return vals.length ? round((vals.reduce((s, v) => s + v, 0) / vals.length) * 100, 1) : null;
     };
     return {
@@ -275,11 +282,11 @@ function scoresFor(rows) {
     };
 }
 
-// Mean over a list of score objects, per metric. Skips nulls so a metric with
-// no scored entries comes back as null instead of NaN.
+// Mean over a list of score objects, per metric. Skips non-numeric entries so a
+// metric with no scored entries comes back as null instead of NaN.
 function meanScores(scoreList) {
     const avg = m => {
-        const vals = scoreList.map(x => x[m]).filter(v => v != null);
+        const vals = scoreList.map(x => x[m]).filter(v => Number.isFinite(v));
         return vals.length ? round(vals.reduce((s, v) => s + v, 0) / vals.length, 1) : null;
     };
     return {
