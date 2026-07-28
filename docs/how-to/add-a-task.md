@@ -6,6 +6,9 @@ This guide walks you through the schema, the placeholders the harness fills in, 
 
 For background terms, see the [glossary](../components/glossary.md). For how deployers and stacks fit together, see [infrastructure](../components/infra.md).
 
+> [!TIP]
+> This guide assumes your task lives in this repo under `tasks/`. It doesn't have to — a task and its OpenTofu stack can live in your own repo, and the harness will run it from there. Everything below still applies; see [out-of-tree tasks](./out-of-tree-tasks.md) for the extra steps.
+
 ## The task schema
 
 Every field below maps to an attribute on `Task`. Fields marked "required" must produce a usable value — the harness validates types strictly (no string-to-bool coercion) and ignores unknown keys, so a typo'd field name is silently dropped rather than flagged. Author carefully.

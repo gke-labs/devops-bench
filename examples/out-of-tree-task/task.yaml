@@ -1,0 +1,70 @@
+# An out-of-tree task that provisions its OWN Terraform, from its own repo.
+#
+# Everything here — this file and the tf/ directory beside it — lives outside
+# devops-bench. You point the harness at the file and it does the rest:
+#
+#   python -m devops_bench --project "" --cluster oot-demo /abs/path/to/task.yaml
+#
+# Before running, set `stack:` below to the absolute path of the tf/ directory
+# next to this file. It is left as a placeholder because OpenTofu stack paths
+# cannot be relative to the task file (see the note on `stack:`).
+
+task_id: "oot-example"
+name: "out-of-tree-example"
+
+infrastructure:
+  deployer: "tofu"
+
+  # REQUIRED for an external stack. Provider deduction from the stack name only
+  # applies to in-repo (relative) stacks; `_select_provider` in
+  # devops_bench/deployers/factory.py raises a ConfigError rather than guessing
+  # for an absolute path. Omit this and the run fails immediately with:
+  #   external stack '...' requires an explicit provider
+  provider: "kind"
+
+  # An absolute path (or one starting with ~) is used as-is. A relative value
+  # would instead be resolved under <devops-bench>/tf, which is not what you
+  # want for an external stack. Set this to the tf/ dir beside this file.
+  stack: "/ABSOLUTE/PATH/TO/examples/out-of-tree-task/tf"
+
+  teardown: true
+
+  # Passed to tofu as -var flags. Every key here must be declared in the stack;
+  # an undeclared one is a hard ConfigError, not a warning — see tf/variables.tf.
+  variables:
+    kubeconfig_path: "~/.kube/config"
+
+prompt: |
+  Deploy the nginx web server to cluster {{GKE_CLUSTER_NAME}} in namespace
+  {{NAMESPACE}}. Run 3 replicas and make it reachable from inside the cluster
+  on port 80. Apply the manifests to the cluster; do not just print them.
+
+expected_output: |
+  critical requirements:
+
+  - An nginx Deployment is running in the cluster with 3 ready replicas.
+  - The pods carry the label app=nginx.
+  - A readiness probe is configured on the nginx container.
+  - A ClusterIP Service selects those pods and exposes port 80.
+
+# Deterministic cluster assertions, checked after the agent finishes. Leaf
+# verifier types come from the VERIFIERS registry
+# (devops_bench/verification/verifiers/); `sequence` and `parallel` compose
+# them. You can add your own verifier out-of-tree via the
+# `devops_bench.verifiers` entry-point group.
+verification_spec:
+  - name: "Nginx Rollout Verification"
+    spec:
+      type: pod_healthy
+      name: nginx_pods_ready
+      selector: "app=nginx"
+      namespace: "{{NAMESPACE}}"
+
+documentation:
+  - doc_name: "Configure Liveness, Readiness and Startup Probes"
+    url: "https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/"
+    constraints:
+      - text: "readinessProbe on the nginx container"
+        critical: true
+
+validated: false

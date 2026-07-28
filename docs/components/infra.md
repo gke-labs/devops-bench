@@ -48,7 +48,7 @@ Both are listed in the `PROVIDERS` registry.
 The env var outranks the config key so a task can pin a default `provider:` while runs stay overridable from the environment (the same way `TARGET_DEPLOYMENT_NAME` and `NAMESPACE` resolve).
 
 > [!IMPORTANT]
-> Deduction only applies to in-repo (relative) stacks. An absolute or external stack path **must** name its provider explicitly (via `provider:` or `INFRA_PROVIDER`) — the harness will not guess. An unknown provider name is a configuration error.
+> Deduction only applies to in-repo (relative) stacks. An absolute or external stack path **must** name its provider explicitly (via `provider:` or `INFRA_PROVIDER`) — the harness will not guess. An unknown provider name is a configuration error. See [out-of-tree tasks](../how-to/out-of-tree-tasks.md) for running a stack from outside the repo.
 
 ## What the Terraform provisions
 
@@ -122,3 +122,5 @@ Subclass `Provider` in `devops_bench/providers/<cloud>.py`, decorate it with `@P
 
 > [!NOTE]
 > Under parallel runs, each run gets an isolated OpenTofu data directory (a private copy of the `tf/` tree, with per-run state) and a run-unique cluster name, so concurrent stacks don't collide on lock files or state. If you author a task stack, make any **global** resource names (Artifact Registry repos, GCS buckets, IAM bindings, and the like) run-scoped, and clean them up on `destroy`. See [run-evals.md](../how-to/run-evals.md) for how the parallel matrix is driven.
+>
+> The private-copy step covers in-repo stacks only — an external (absolute-path) stack cannot be relocated safely, so concurrent runs share its working directory. See [out-of-tree tasks](../how-to/out-of-tree-tasks.md#2-external-stacks-do-not-get-per-run-isolation).

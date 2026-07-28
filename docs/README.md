@@ -26,6 +26,7 @@ and [glossary](./components/glossary.md).
 
 - [Run evals](./how-to/run-evals.md) — single runs and parallel matrices.
 - [Add a task](./how-to/add-a-task.md) — author a new benchmark task.
+- [Out-of-tree tasks](./how-to/out-of-tree-tasks.md) — keep your tasks and Terraform in your own repo.
 - [Add a model provider](./how-to/add-a-model-provider.md) — wire up a new LLM backend.
 - [Add an agent harness](./how-to/add-an-agent-harness.md) — plug in a new agent under test.
 - [Leaderboard](./how-to/leaderboard.md) — how the leaderboard works and how to ingest results.

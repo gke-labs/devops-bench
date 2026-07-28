@@ -10,4 +10,5 @@ A task is `tasks/<provider>/<name>/task.yaml` — the typed eval contract.
   its verification/chaos specs.
 - Run the **task-review** skill before submitting.
 
-Deeper guide: `../docs/how-to/add-a-task.md`.
+Deeper guide: `../docs/how-to/add-a-task.md`. Tasks do not have to live here — to keep yours
+in your own repo, see `../docs/how-to/out-of-tree-tasks.md`.

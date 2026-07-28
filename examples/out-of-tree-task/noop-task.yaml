@@ -1,0 +1,46 @@
+# The zero-dependency out-of-tree task: no cloud, no credentials, no Docker.
+# Run it from anywhere on disk to prove the wiring works:
+#
+#   BENCH_NO_INFRA=true python -m devops_bench --no-infra /abs/path/to/noop-task.yaml
+#
+# `deployer: noop` also covers Pradeep's option 2 — infrastructure you set up
+# out of band. The harness will not create or destroy anything; it runs the
+# agent against whatever your current kubeconfig points at.
+
+task_id: "oot-example-noop"
+name: "out-of-tree-noop-example"
+
+infrastructure:
+  deployer: "noop"
+
+prompt: |
+  Generate a Kubernetes manifest that deploys the nginx web server to cluster
+  {{GKE_CLUSTER_NAME}} in namespace {{NAMESPACE}}. It should run 3 replicas and
+  be reachable from inside the cluster on port 80.
+
+expected_output: |
+  critical requirements:
+
+  - A Deployment running the nginx image with 3 replicas.
+  - A readiness probe so traffic is only sent to serving pods.
+  - CPU and memory resource requests set on the container.
+  - A ClusterIP Service selecting the Deployment's pods and exposing port 80.
+
+# Optional. Grounds scoring against authoritative docs and enables the
+# GroundingAccuracy / ParameterRecallAccuracy / DocRetrievalRate metrics.
+# See docs/components/metrics.md.
+documentation:
+  - doc_name: "Configure Liveness, Readiness and Startup Probes"
+    url: "https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/"
+    constraints:
+      - text: "readinessProbe on the nginx container"
+        critical: true
+  - doc_name: "Resource Management for Pods and Containers"
+    url: "https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/"
+    constraints:
+      - text: "resources.requests for cpu and memory"
+        critical: false
+
+# Leave false until a human has vetted the task. Only meaningful if you intend
+# to publish to the shared leaderboard; private evals can ignore it.
+validated: false
