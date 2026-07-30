@@ -23,26 +23,47 @@ heavy SDKs — concrete leaf verifiers register via this package's submodules
 only.
 """
 
-from devops_bench.verification.base import VERIFIERS, BaseVerifier, VerificationResult
+from devops_bench.verification.base import (
+    MIN_LEAF_BUDGET_SECONDS,
+    VERIFIERS,
+    BaseVerifier,
+    VerificationResult,
+    VerificationStatus,
+)
+from devops_bench.verification.rollup import RollupScores, rollup
 from devops_bench.verification.runner import VerifierAgent
 from devops_bench.verification.spec import (
+    AllSpec,
+    AnySpec,
+    NoneSpec,
     ParallelSpec,
     SequenceSpec,
+    VerificationEntry,
     VerificationNode,
     VerificationSpec,
     json_schema,
+    parse_entries,
     parse_node,
 )
 
 __all__ = [
+    "AllSpec",
+    "AnySpec",
     "BaseVerifier",
+    "MIN_LEAF_BUDGET_SECONDS",
+    "NoneSpec",
     "ParallelSpec",
+    "RollupScores",
     "SequenceSpec",
     "VERIFIERS",
+    "VerificationEntry",
     "VerificationNode",
     "VerificationResult",
     "VerificationSpec",
+    "VerificationStatus",
     "VerifierAgent",
     "json_schema",
+    "parse_entries",
     "parse_node",
+    "rollup",
 ]
