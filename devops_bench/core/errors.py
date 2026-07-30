@@ -24,6 +24,7 @@ __all__ = [
     "ConfigError",
     "RegistryError",
     "AlreadyRegisteredError",
+    "InvalidKeyError",
     "NotRegisteredError",
     "MissingDependencyError",
     "SubprocessError",
@@ -49,6 +50,16 @@ class AlreadyRegisteredError(RegistryError):
         self.registry_name = registry_name
         self.key = key
         super().__init__(f"{key!r} is already registered in the {registry_name!r} registry")
+
+
+class InvalidKeyError(RegistryError):
+    """Raised when a key violates the key policy of a registry."""
+
+    def __init__(self, registry_name: str, key: str, reason: str) -> None:
+        self.registry_name = registry_name
+        self.key = key
+        self.reason = reason
+        super().__init__(f"{key!r} is not a valid key for the {registry_name!r} registry: {reason}")
 
 
 class NotRegisteredError(RegistryError):
