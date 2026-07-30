@@ -20,6 +20,7 @@ from devops_bench.core.errors import (
     AlreadyRegisteredError,
     ConfigError,
     DevOpsBenchError,
+    InvalidKeyError,
     MissingDependencyError,
     NotRegisteredError,
     RegistryError,
@@ -33,6 +34,7 @@ from devops_bench.core.errors import (
         ConfigError,
         RegistryError,
         AlreadyRegisteredError,
+        InvalidKeyError,
         NotRegisteredError,
         MissingDependencyError,
         SubprocessError,
@@ -44,7 +46,18 @@ def test_all_errors_derive_from_base(error_cls):
 
 def test_registry_errors_share_registry_base():
     assert issubclass(AlreadyRegisteredError, RegistryError)
+    assert issubclass(InvalidKeyError, RegistryError)
     assert issubclass(NotRegisteredError, RegistryError)
+
+
+def test_invalid_key_error_message_and_fields() -> None:
+    err = InvalidKeyError("agents", "Gemini", "agent keys must be lowercase")
+    assert err.registry_name == "agents"
+    assert err.key == "Gemini"
+    assert err.reason == "agent keys must be lowercase"
+    assert "Gemini" in str(err)
+    assert "agents" in str(err)
+    assert "agent keys must be lowercase" in str(err)
 
 
 def test_already_registered_error_message_and_fields():

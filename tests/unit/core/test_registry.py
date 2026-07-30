@@ -18,9 +18,17 @@ import threading
 import time
 
 import pytest
+from pytest_mock import MockerFixture
 
-from devops_bench.core.errors import AlreadyRegisteredError, NotRegisteredError
+from devops_bench.core.errors import AlreadyRegisteredError, InvalidKeyError, NotRegisteredError
 from devops_bench.core.registry import Registry
+
+
+def _reject_uppercase(key: str) -> str | None:
+    """Sample key policy: lowercase keys only."""
+    if key != key.lower():
+        return "keys must be lowercase"
+    return None
 
 
 class _FakeEntryPoint:
@@ -126,6 +134,47 @@ def test_failing_entry_point_is_skipped(mocker):
     assert reg.get("good") == "ok"
     with pytest.raises(NotRegisteredError):
         reg.get("bad")
+
+
+def test_no_key_validator_accepts_any_key() -> None:
+    reg: Registry[int] = Registry("nums")
+    reg.register("MixedCase")(1)
+    assert reg.get("MixedCase") == 1
+
+
+def test_key_validator_rejects_explicit_registration() -> None:
+    reg: Registry[int] = Registry("nums", key_validator=_reject_uppercase)
+    with pytest.raises(InvalidKeyError) as exc_info:
+        reg.register("Nope")(1)
+    assert "keys must be lowercase" in str(exc_info.value)
+    assert "Nope" not in reg
+
+
+def test_key_validator_accepts_valid_registration() -> None:
+    reg: Registry[int] = Registry("nums", key_validator=_reject_uppercase)
+    reg.register("fine")(1)
+    assert reg.get("fine") == 1
+
+
+def test_key_validator_skips_rejected_entry_point(
+    mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    bad = _FakeEntryPoint("Nope", "rejected")
+    good = _FakeEntryPoint("fine", "ok")
+    mocker.patch("devops_bench.core.registry.metadata.entry_points", return_value=[bad, good])
+    reg: Registry[str] = Registry(
+        "plugins",
+        entry_point_group="devops_bench.plugins",
+        key_validator=_reject_uppercase,
+    )
+
+    with caplog.at_level("WARNING"):
+        assert reg.get("fine") == "ok"
+    # Rejected outright: never loaded, never registered, and reported.
+    assert bad.loaded is False
+    with pytest.raises(NotRegisteredError):
+        reg.get("Nope")
+    assert "Nope" in caplog.text
 
 
 def test_entry_points_loaded_once_under_concurrency(mocker):
