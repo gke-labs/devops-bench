@@ -21,7 +21,12 @@ from typing import Any, Literal
 
 from devops_bench.core import SubprocessError, get_logger
 from devops_bench.k8s import get_resource, wait
-from devops_bench.verification.base import VERIFIERS, BaseVerifier, VerificationResult
+from devops_bench.verification.base import (
+    VERIFIERS,
+    BaseVerifier,
+    VerificationResult,
+    single_call_timeout,
+)
 
 __all__ = ["PodHealthyVerifier"]
 
@@ -62,7 +67,7 @@ class PodHealthyVerifier(BaseVerifier):
                 "pod",
                 selector=self.selector,
                 for_condition="condition=Ready",
-                timeout_sec=timeout_sec,
+                timeout_sec=single_call_timeout(timeout_sec),
                 namespace=self.namespace,
                 kubeconfig=self.kubeconfig,
             )
@@ -93,6 +98,19 @@ class PodHealthyVerifier(BaseVerifier):
                 )
 
             stderr = (exc.stderr or "").strip()
+            if "error" in raw:
+                # The fallback fetch itself failed, so the condition was never
+                # observed one way or the other; this is a check error, not a
+                # pod found unhealthy.
+                return VerificationResult(
+                    success=False,
+                    status="error",
+                    elapsed_time=elapsed,
+                    reason=f"kubectl wait failed or timed out: {stderr}; "
+                    f"fallback fetch also failed: {raw['error']}",
+                    name=self.name,
+                    raw=raw,
+                )
             return VerificationResult(
                 success=False,
                 elapsed_time=elapsed,
@@ -109,7 +127,7 @@ class PodHealthyVerifier(BaseVerifier):
                 selector=self.selector,
                 namespace=self.namespace,
                 kubeconfig=self.kubeconfig,
-                timeout=timeout_sec,
+                timeout=single_call_timeout(timeout_sec),
             )
         except Exception as exc:  # noqa: BLE001 - diagnostics path, never raises
             _log.warning("Failed to fetch pod details for selector %s: %s", self.selector, exc)
