@@ -23,6 +23,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from devops_bench.core import SubprocessError
 from devops_bench.verification.verifiers import PodHealthyVerifier
 
@@ -78,7 +80,27 @@ def test_fallback_reports_failure_when_no_pods_match() -> None:
         result = PodHealthyVerifier(selector="app=ghost").verify(timeout_sec=5)
 
     assert result.success is False
+    assert result.status == "fail"
     assert "no match" in result.reason
+
+
+def test_fallback_fetch_failure_is_an_error_not_a_fail() -> None:
+    # The fallback get_resource call itself failing means the condition was
+    # never observed, unlike no pods matching (a real, observed answer).
+    with (
+        patch(
+            "devops_bench.verification.verifiers.pod_healthy.wait",
+            side_effect=SubprocessError(["kubectl"], returncode=1, stderr="timeout"),
+        ),
+        patch(
+            "devops_bench.verification.verifiers.pod_healthy.get_resource",
+            side_effect=RuntimeError("connection refused"),
+        ),
+    ):
+        result = PodHealthyVerifier(selector="app=web").verify(timeout_sec=5)
+
+    assert result.success is False
+    assert result.status == "error"
 
 
 def test_null_status_does_not_crash_phase_check() -> None:
@@ -192,6 +214,46 @@ def test_elapsed_time_includes_fallback_fetch_duration() -> None:
         result = PodHealthyVerifier(selector="app=web").verify(timeout_sec=10)
 
     assert result.elapsed_time >= 5.0
+
+
+@pytest.mark.parametrize(
+    ("timeout_sec", "expected_timeout"), [(0.0, 30.0), (5.0, 5.0), (60.0, 60.0)]
+)
+def test_kubectl_wait_is_called_with_a_floored_timeout(
+    timeout_sec: float, expected_timeout: float
+) -> None:
+    # An assert-mode single_shot call passes timeout_sec=0.0, which as a
+    # literal ``kubectl wait --timeout`` would mean "give up immediately";
+    # the floor is what actually bounds the underlying kubectl call.
+    completed = SimpleNamespace(stdout="pod/web condition met\n")
+    with patch(
+        "devops_bench.verification.verifiers.pod_healthy.wait",
+        return_value=completed,
+    ) as mock_wait:
+        PodHealthyVerifier(selector="app=web").verify(timeout_sec=timeout_sec)
+
+    assert mock_wait.call_args.kwargs["timeout_sec"] == expected_timeout
+
+
+@pytest.mark.parametrize(
+    ("timeout_sec", "expected_timeout"), [(0.0, 30.0), (5.0, 5.0), (60.0, 60.0)]
+)
+def test_fallback_get_resource_is_called_with_a_floored_timeout(
+    timeout_sec: float, expected_timeout: float
+) -> None:
+    with (
+        patch(
+            "devops_bench.verification.verifiers.pod_healthy.wait",
+            side_effect=SubprocessError(["kubectl"], returncode=1, stderr="timeout"),
+        ),
+        patch(
+            "devops_bench.verification.verifiers.pod_healthy.get_resource",
+            return_value={"items": []},
+        ) as mock_get,
+    ):
+        PodHealthyVerifier(selector="app=web").verify(timeout_sec=timeout_sec)
+
+    assert mock_get.call_args.kwargs["timeout"] == expected_timeout
 
 
 def test_name_is_echoed_onto_result() -> None:
