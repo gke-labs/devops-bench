@@ -20,7 +20,7 @@ import threading
 from collections.abc import Callable, ItemsView, Iterator, KeysView, ValuesView
 from importlib import metadata
 
-from devops_bench.core.errors import AlreadyRegisteredError, NotRegisteredError
+from devops_bench.core.errors import AlreadyRegisteredError, InvalidKeyError, NotRegisteredError
 from devops_bench.core.logging import get_logger
 
 __all__ = ["Registry"]
@@ -35,6 +35,14 @@ class Registry[T]:
         name: Registry name, used in error messages.
         entry_point_group: Entry-point group scanned lazily for plugins; when
             None, only explicit registrations are available.
+        key_validator: Optional key policy for this axis. Called with a
+            candidate key; returns None to accept it, or a human-readable
+            reason to reject it. A rejected explicit :meth:`register` raises
+            :class:`~devops_bench.core.errors.InvalidKeyError` — an in-tree
+            programming error should fail loudly. A rejected *discovered*
+            entry point is skipped with a warning instead, so one mispackaged
+            third-party plugin never aborts a run. When None, any key is
+            accepted.
 
     Example:
         >>> AGENTS: Registry[type] = Registry("agents")
@@ -44,9 +52,16 @@ class Registry[T]:
         True
     """
 
-    def __init__(self, name: str, *, entry_point_group: str | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        entry_point_group: str | None = None,
+        key_validator: Callable[[str], str | None] | None = None,
+    ) -> None:
         self._name = name
         self._entry_point_group = entry_point_group
+        self._key_validator = key_validator
         self._items: dict[str, T] = {}
         self._entry_points_loaded = False
         self._lock = threading.Lock()
@@ -65,10 +80,15 @@ class Registry[T]:
             A decorator that registers and returns the object it decorates.
 
         Raises:
+            InvalidKeyError: If ``key`` is rejected by this registry's key
+                policy.
             AlreadyRegisteredError: If ``key`` is already registered.
         """
 
         def decorator(obj: T) -> T:
+            reason = self._rejection_reason(key)
+            if reason is not None:
+                raise InvalidKeyError(self._name, key, reason)
             if key in self._items:
                 raise AlreadyRegisteredError(self._name, key)
             self._items[key] = obj
@@ -127,6 +147,12 @@ class Registry[T]:
         self._ensure_entry_points_loaded()
         return self._items.values()
 
+    def _rejection_reason(self, key: str) -> str | None:
+        """Return why ``key`` violates this registry's key policy, else None."""
+        if self._key_validator is None:
+            return None
+        return self._key_validator(key)
+
     def _ensure_entry_points_loaded(self) -> None:
         if self._entry_points_loaded or self._entry_point_group is None:
             return
@@ -135,6 +161,18 @@ class Registry[T]:
                 return
             for entry_point in metadata.entry_points(group=self._entry_point_group):
                 if entry_point.name in self._items:
+                    continue
+                # A key the policy rejects could never be looked up anyway, so
+                # skip it loudly here rather than admitting a dead entry that
+                # only shows up as noise in a later "available:" listing.
+                reason = self._rejection_reason(entry_point.name)
+                if reason is not None:
+                    _log.warning(
+                        "skipping entry point %r for %r registry: %s",
+                        entry_point.name,
+                        self._name,
+                        reason,
+                    )
                     continue
                 try:
                     loaded = entry_point.load()
