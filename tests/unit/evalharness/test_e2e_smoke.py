@@ -92,11 +92,11 @@ def _fake_inject(
 
 def _fake_verification_result(
     self: VerifierAgent,
-    spec: Any,
+    entry: Any,
     timeout_sec: float = 120,
 ) -> VerificationResult:
     """Fake verifier that mimics a successful end-to-end check."""
-    del spec, timeout_sec
+    del entry, timeout_sec
     return VerificationResult(
         success=True,
         elapsed_time=12.0,
@@ -217,7 +217,7 @@ def test_optimize_scale_smoke_end_to_end(
         # Inject without driving a real LLM / fortio binary.
         patch.object(GenerateLoadFault, "inject", _fake_inject),
         # Verification: typed result returned without touching k8s.
-        patch.object(VerifierAgent, "wait_for_condition", _fake_verification_result),
+        patch.object(VerifierAgent, "run_entry", _fake_verification_result),
         # Metrics: registry-driven loop replaced with the fake scorer so the
         # smoke does not pull deepeval / a real judge.
         patch(
@@ -338,7 +338,7 @@ def test_smoke_uses_workspace_path_for_artifact_diff(
     with (
         patch.object(TimeTrigger, "wait", lambda self, ctx: None),
         patch.object(GenerateLoadFault, "inject", _fake_inject),
-        patch.object(VerifierAgent, "wait_for_condition", _fake_verification_result),
+        patch.object(VerifierAgent, "run_entry", _fake_verification_result),
         patch(
             "devops_bench.metrics.evaluate_metrics_batch",
             _fake_evaluate_metrics,

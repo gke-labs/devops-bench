@@ -41,8 +41,11 @@ chaos_spec:
     # Cross-reference: matched against ``verification_spec[*].name`` below.
     verify: "Planned Load Spike Verification"
 verification_spec:
+  # role/severity is the scoring vocabulary: an objective feeds the correctness
+  # score c. `check:` replaced the old `spec:` key when entries became typed.
   - name: "Planned Load Spike Verification"
-    spec:
+    role: objective
+    check:
       type: parallel
       name: "Planned Load Spike Verification"
       checks:

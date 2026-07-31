@@ -31,14 +31,6 @@ from devops_bench.chaos.faults.generate_load import GenerateLoadFault
 from devops_bench.chaos.triggers.time_delay import TimeTrigger
 from devops_bench.evalharness.default import DefaultEvalHarness
 from devops_bench.tasks import FileSystemTaskLoader
-from devops_bench.verification import (
-    ParallelSpec,
-    VerificationSpec,
-)
-from devops_bench.verification.verifiers import (
-    PodHealthyVerifier,
-    ScalingCompleteVerifier,
-)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _TASK_DIR = _REPO_ROOT / "tasks" / "common" / "optimize-scale"
@@ -65,99 +57,6 @@ def test_optimize_scale_chaos_parses_through_harness() -> None:
     # native YAML (Decision D2 — values migrated, field name kept).
     assert "{{" not in spec.action.target.service_url
     assert spec.verify == "Planned Load Spike Verification"
-
-
-def test_optimize_scale_verification_mapping_keys_typed_specs() -> None:
-    """``_build_verification_mapping`` returns ``(mapping, errors)`` with typed specs.
-
-    The errors list is empty on the canonical optimize-scale shape; a
-    separate test exercises the loud-fail path.
-    """
-    raw = yaml.safe_load(_TASK_YAML.read_text())
-    mapping, errors = _harness()._build_verification_mapping(  # noqa: SLF001
-        raw["verification_spec"], cluster_name="c"
-    )
-
-    assert errors == []
-    assert set(mapping.keys()) == {"Planned Load Spike Verification"}
-    node = mapping["Planned Load Spike Verification"]
-    assert isinstance(node, VerificationSpec)
-    root = node.root
-    assert isinstance(root, ParallelSpec)
-    leaf_types = [type(leaf) for leaf in root.checks]
-    assert PodHealthyVerifier in leaf_types
-    assert ScalingCompleteVerifier in leaf_types
-
-
-def test_verification_mapping_canonical_wrapped_shape() -> None:
-    """The canonical ``[{name, spec: <typed-node>}]`` shape parses end-to-end."""
-    raw = [
-        {
-            "name": "all-healthy",
-            "spec": {
-                "type": "parallel",
-                "checks": [
-                    {
-                        "type": "pod_healthy",
-                        "selector": "app=demo",
-                        "namespace": "default",
-                    }
-                ],
-            },
-        }
-    ]
-    mapping, errors = _harness()._build_verification_mapping(  # noqa: SLF001
-        raw, cluster_name="c"
-    )
-    assert errors == []
-    assert set(mapping.keys()) == {"all-healthy"}
-    assert isinstance(mapping["all-healthy"], VerificationSpec)
-
-
-def test_verification_mapping_bare_node_compat_shape_still_parses() -> None:
-    """Legacy bare-node entries (no ``spec:`` wrapper) still parse.
-
-    Pins the back-compat branch — the entry mapping itself acts as the
-    typed verification node when no ``spec`` key is present. Documented
-    explicitly in :meth:`_build_verification_mapping` so reviewers can
-    spot the two-shape acceptance.
-    """
-    raw = [
-        {
-            "name": "pods",
-            "type": "pod_healthy",
-            "selector": "app=demo",
-            "namespace": "default",
-        }
-    ]
-    mapping, errors = _harness()._build_verification_mapping(  # noqa: SLF001
-        raw, cluster_name="c"
-    )
-    assert errors == []
-    assert set(mapping.keys()) == {"pods"}
-
-
-def test_verification_mapping_surfaces_validation_failures() -> None:
-    """A malformed entry never silently disappears — it lands on ``errors``."""
-    raw = [
-        {"name": "good", "spec": {"type": "pod_healthy", "selector": "app=x"}},
-        # Missing ``type`` discriminator — pydantic rejects.
-        {"name": "bad", "spec": {"selector": "app=y"}},
-        # Missing ``name`` — skipped + recorded as an authoring error.
-        {"spec": {"type": "pod_healthy", "selector": "app=z"}},
-        # Non-mapping entry — skipped + recorded.
-        "not a mapping",
-    ]
-    mapping, errors = _harness()._build_verification_mapping(  # noqa: SLF001
-        raw, cluster_name="c"
-    )
-    assert set(mapping.keys()) == {"good"}
-    # Every authoring failure shows up — operator sees the broken entries
-    # on the run record, not just a log line.
-    error_names = {e["name"] for e in errors}
-    assert "bad" in error_names
-    # Index-keyed labels for the unnamed / non-mapping entries.
-    assert any(name.startswith("<index ") for name in error_names)
 
 
 def test_legacy_json_in_yaml_chaos_spec_still_parses() -> None:

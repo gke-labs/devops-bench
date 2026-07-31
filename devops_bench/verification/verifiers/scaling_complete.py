@@ -18,9 +18,17 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from pydantic import model_validator
+
 from devops_bench.core import SubprocessError, get_logger
 from devops_bench.k8s import get_resource
-from devops_bench.verification.base import VERIFIERS, BaseVerifier, VerificationResult
+from devops_bench.verification.base import (
+    VERIFIERS,
+    BaseVerifier,
+    VerificationResult,
+    VerificationStatus,
+    single_call_timeout,
+)
 
 __all__ = ["ScalingCompleteVerifier"]
 
@@ -45,6 +53,10 @@ class ScalingCompleteVerifier(BaseVerifier):
         max_replicas: Optional maximum ready replicas allowed for success; when
             ``None`` only the lower bound is enforced.
         namespace: Optional namespace; defaults to the active one.
+
+    Raises:
+        pydantic.ValidationError: If ``min_replicas`` or ``max_replicas`` is
+            negative, or ``min_replicas`` exceeds ``max_replicas``.
     """
 
     type: Literal["scaling_complete"] = "scaling_complete"
@@ -52,6 +64,20 @@ class ScalingCompleteVerifier(BaseVerifier):
     min_replicas: int = 1
     max_replicas: int | None = None
     namespace: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_replica_bounds(self) -> ScalingCompleteVerifier:
+        if self.min_replicas < 0:
+            raise ValueError(f"min_replicas must be >= 0, got {self.min_replicas}")
+        if self.max_replicas is not None:
+            if self.max_replicas < 0:
+                raise ValueError(f"max_replicas must be >= 0, got {self.max_replicas}")
+            if self.min_replicas > self.max_replicas:
+                raise ValueError(
+                    f"min_replicas ({self.min_replicas}) must be <= "
+                    f"max_replicas ({self.max_replicas})"
+                )
+        return self
 
     def verify(self, timeout_sec: float) -> VerificationResult:
         """Poll the deployment until its ready replicas reach the target range.
@@ -63,13 +89,19 @@ class ScalingCompleteVerifier(BaseVerifier):
             A result reflecting the last observed scaling state; successful once
             ready replicas fall within ``[min_replicas, max_replicas]``.
         """
-        return self._poll_to_result(self._check_scaling, timeout_sec)
+        return self._poll_to_result(lambda: self._check_scaling(timeout_sec), timeout_sec)
 
-    def _check_scaling(self) -> tuple[bool, str, dict[str, Any] | None]:
+    def _check_scaling(
+        self, timeout_sec: float
+    ) -> tuple[VerificationStatus, str, dict[str, Any] | None]:
         """Read the deployment once and compare ready replicas to the target.
 
+        Args:
+            timeout_sec: Seconds before the ``kubectl get`` call is killed, so
+                a single hung API request cannot block the whole poll.
+
         Returns:
-            A ``(success, reason, raw)`` triple. ``raw`` carries the raw
+            A ``(status, reason, raw)`` triple. ``raw`` carries the raw
             deployment document once one could be read, else ``None``.
         """
         try:
@@ -78,24 +110,28 @@ class ScalingCompleteVerifier(BaseVerifier):
                 self.deployment,
                 namespace=self.namespace,
                 kubeconfig=self.kubeconfig,
+                timeout=single_call_timeout(timeout_sec),
             )
         except SubprocessError as exc:
             stderr = (exc.stderr or "").strip()
             _log.warning("Failed to get deployment %s: %s", self.deployment, stderr)
-            return False, f"Failed to get deployment: {stderr}", None
+            return "error", f"Failed to get deployment: {stderr}", None
         except ValueError:
             _log.warning("Failed to parse deployment JSON for %s", self.deployment)
-            return False, "Failed to parse deployment JSON", None
+            return "error", "Failed to parse deployment JSON", None
 
-        # ``status`` may be explicitly null before the controller populates it.
-        ready_replicas = (dep_data.get("status") or {}).get("readyReplicas", 0)
+        # ``status`` may be explicitly null before the controller populates it,
+        # and ``readyReplicas`` may itself be present but explicitly null
+        # (rather than absent); ``or 0`` covers both, where ``.get(..., 0)``
+        # alone only covers the key being absent.
+        ready_replicas = (dep_data.get("status") or {}).get("readyReplicas") or 0
         raw = {"deployment": dep_data}
         if ready_replicas < self.min_replicas:
             reason = f"Ready replicas ({ready_replicas}) < min replicas ({self.min_replicas})"
-            return False, reason, raw
+            return "fail", reason, raw
         if self.max_replicas is not None and ready_replicas > self.max_replicas:
             reason = f"Ready replicas ({ready_replicas}) > max replicas ({self.max_replicas})"
-            return False, reason, raw
+            return "fail", reason, raw
         if self.max_replicas is None:
             reason = f"Ready replicas ({ready_replicas}) >= min replicas ({self.min_replicas})"
         else:
@@ -103,4 +139,4 @@ class ScalingCompleteVerifier(BaseVerifier):
                 f"Ready replicas ({ready_replicas}) within bounds "
                 f"[{self.min_replicas}, {self.max_replicas}]"
             )
-        return True, reason, raw
+        return "pass", reason, raw

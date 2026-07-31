@@ -18,11 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from devops_bench.core import get_logger
-
 __all__ = ["Task", "DocumentationEntry", "Constraint"]
-
-_log = get_logger("tasks.schema")
 
 # Strict validation: reject implicit type coercion (e.g. the string ``"yes"``
 # is not a bool), and ignore unknown keys in source specs.
@@ -46,6 +42,30 @@ def _text(value: Any) -> Any:
     return value.strip() if isinstance(value, str) else value
 
 
+def _coalesce_none(data: Any, defaults: dict[str, Any]) -> Any:
+    """Coalesce empty (``None``) mapping keys to field defaults.
+
+    An empty YAML block (``key:`` with no value) parses to ``None``; treat it as
+    the field's empty default rather than rejecting it under strict validation.
+    Only ``None`` values are coalesced, so genuinely wrong types still fail.
+
+    Args:
+        data: The raw value passed to a model validator.
+        defaults: Field-name to empty-default mapping to apply.
+
+    Returns:
+        ``data`` with each listed ``None`` field replaced by its default;
+        returned unchanged when it is not a mapping.
+    """
+    if not isinstance(data, dict):
+        return data
+    coalesced = dict(data)
+    for key, default in defaults.items():
+        if key in coalesced and coalesced[key] is None:
+            coalesced[key] = default
+    return coalesced
+
+
 class Constraint(BaseModel):
     """A single documented requirement the agent's solution must satisfy.
 
@@ -62,19 +82,8 @@ class Constraint(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _coalesce_empty(cls, data: Any) -> Any:
-        """Coalesce empty (``None``) nested YAML keys to field defaults.
-
-        Only ``None`` values are coalesced; other values pass through so strict
-        validation still rejects genuinely wrong types (e.g. ``critical: "yes"``).
-        """
-        if not isinstance(data, dict):
-            return data
-        coalesced = dict(data)
-        if "text" in coalesced and coalesced["text"] is None:
-            coalesced["text"] = ""
-        if "critical" in coalesced and coalesced["critical"] is None:
-            coalesced["critical"] = False
-        return coalesced
+        """Coalesce empty (``None``) keys to defaults (e.g. ``critical:`` alone)."""
+        return _coalesce_none(data, {"text": "", "critical": False})
 
 
 class DocumentationEntry(BaseModel):
@@ -95,21 +104,8 @@ class DocumentationEntry(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _coalesce_empty(cls, data: Any) -> Any:
-        """Coalesce empty (``None``) nested YAML keys to field defaults.
-
-        Only ``None`` values are coalesced; other values pass through so strict
-        validation still rejects genuinely wrong types.
-        """
-        if not isinstance(data, dict):
-            return data
-        coalesced = dict(data)
-        if "doc_name" in coalesced and coalesced["doc_name"] is None:
-            coalesced["doc_name"] = ""
-        if "url" in coalesced and coalesced["url"] is None:
-            coalesced["url"] = ""
-        if "constraints" in coalesced and coalesced["constraints"] is None:
-            coalesced["constraints"] = []
-        return coalesced
+        """Coalesce empty (``None``) keys to defaults (e.g. ``constraints:`` alone)."""
+        return _coalesce_none(data, {"doc_name": "", "url": "", "constraints": []})
 
 
 class Task(BaseModel):
@@ -125,8 +121,12 @@ class Task(BaseModel):
         retrieval_context: Supporting passages for retrieval-based scoring.
         chaos_spec: Opaque chaos-injection specification parsed by the chaos
             subsystem; may be a mapping, list, or raw JSON string.
-        verification_spec: Opaque verification specification parsed by the
-            verification subsystem; may be a mapping, list, or raw JSON string.
+        verification_spec: A list of verification entry mappings, validated
+            per entry downstream by ``parse_entries``.
+        recoverable_safety: "Must-not-do" constraints whose violation is contained
+            /reversible; judged like the correctness checklist and rolled into
+            ``rec_v``. Catastrophic safeguards have no judged form and are
+            declared deterministically in ``verification_spec`` instead.
         infrastructure: Deployer and stack settings for the task environment.
         documentation: Documentation entries, each with per-constraint criticality.
         validated: Whether the task has been vetted as correct and is eligible to
@@ -143,10 +143,36 @@ class Task(BaseModel):
     expected_output: str = ""
     retrieval_context: list[str] = Field(default_factory=list)
     chaos_spec: Any = None
-    verification_spec: Any = None
+    verification_spec: list[dict[str, Any]] | None = None
+    recoverable_safety: list[str] = Field(default_factory=list)
     infrastructure: dict[str, Any] = Field(default_factory=dict)
     documentation: list[DocumentationEntry] = Field(default_factory=list)
     validated: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coalesce_empty(cls, data: Any) -> Any:
+        """Coalesce empty (``None``) keys to field defaults.
+
+        Mirrors the defaulting in :meth:`from_dict` so a task built directly via
+        ``model_validate``/``__init__`` handles empty blocks (e.g. ``documentation:``
+        with no value) the same way, covering every scalar and collection field.
+        """
+        return _coalesce_none(
+            data,
+            {
+                "id": "",
+                "name": "",
+                "folder": "",
+                "prompt": "",
+                "expected_output": "",
+                "retrieval_context": [],
+                "recoverable_safety": [],
+                "infrastructure": {},
+                "documentation": [],
+                "validated": False,
+            },
+        )
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any], *, name_default: str = "", folder: str = "") -> "Task":
@@ -179,31 +205,24 @@ class Task(BaseModel):
         if prompt is None:
             prompt = raw.get("input")
         retrieval = raw.get("retrieval_context", [])
+        recoverable_safety = raw.get("recoverable_safety", [])
         infrastructure = raw.get("infrastructure", {})
         documentation = raw.get("documentation", [])
         validated = raw.get("validated", False)
 
-        expected_output = _text(raw.get("expected_output", ""))
-        if not expected_output:
-            task_name = name or name_default or str(raw_id or "")
-            _log.warning(
-                "Task %r has an empty expected_output. If this is a judged task, "
-                "this may skew the evaluation scores.",
-                task_name,
-            )
-
         return cls.model_validate(
             {
-                "id": "" if raw_id is None else str(raw_id),
-                "name": name_default if name is None else name,
+                "id": "" if raw_id is None else _text(str(raw_id)),
+                "name": _text(name_default if name is None else name),
                 "folder": folder,
                 "prompt": _text(prompt),
-                "expected_output": expected_output,
+                "expected_output": _text(raw.get("expected_output", "")),
                 # An empty YAML block (``key:`` with no value) parses to None;
                 # treat it as the field's empty default rather than rejecting it.
                 "retrieval_context": [] if retrieval is None else retrieval,
                 "chaos_spec": raw.get("chaos_spec"),
                 "verification_spec": raw.get("verification_spec"),
+                "recoverable_safety": ([] if recoverable_safety is None else recoverable_safety),
                 "infrastructure": {} if infrastructure is None else infrastructure,
                 "documentation": [] if documentation is None else documentation,
                 "validated": False if validated is None else validated,

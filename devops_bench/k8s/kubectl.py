@@ -18,14 +18,13 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import subprocess
 import time
 from collections.abc import Iterator
 from typing import Any, Protocol
 
 from devops_bench.core import get_logger
-from devops_bench.core.subprocess import CompletedProcess, run
+from devops_bench.core.subprocess import CompletedProcess, _build_env, run
 
 __all__ = [
     "apply",
@@ -39,6 +38,9 @@ _log = get_logger("k8s.kubectl")
 
 # Seconds to let ``kubectl port-forward`` establish the tunnel before yielding.
 _PORT_FORWARD_SETTLE_SEC = 3
+
+# Grace period after SIGTERM before escalating to SIGKILL on teardown.
+_PORT_FORWARD_TERM_GRACE_SEC = 5
 
 
 class KubeconfigProvider(Protocol):
@@ -137,6 +139,7 @@ def get_resource(
     selector: str | None = None,
     namespace: str | None = None,
     kubeconfig: KubeconfigSource = None,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
     """Fetch a resource (or list) as parsed JSON via ``kubectl get -o json``.
 
@@ -146,6 +149,9 @@ def get_resource(
         selector: Optional label selector (``-l``).
         namespace: Optional namespace (``-n``).
         kubeconfig: Kubeconfig path or context-like object.
+        timeout: Optional seconds before the subprocess is killed. ``None``
+            (the default) blocks indefinitely, so pass one whenever the API
+            server might accept a connection and never respond.
 
     Returns:
         The parsed JSON document.
@@ -164,7 +170,7 @@ def get_resource(
         "json",
         *_namespace_args(namespace),
     ]
-    completed = _run_kubectl(argv, kubeconfig)
+    completed = _run_kubectl(argv, kubeconfig, timeout=timeout)
     return json.loads(completed.stdout)
 
 
@@ -267,7 +273,11 @@ def port_forward(
         *_namespace_args(namespace),
     ]
     path = _resolve_kubeconfig(kubeconfig)
-    env = {**os.environ, "KUBECONFIG": path} if path else None
+    # Reuse core.subprocess env semantics so this Popen path never drifts from
+    # the shared ``run`` helper. ``_build_env`` overlays KUBECONFIG on a full
+    # copy of the parent environment (what Popen needs), and returns None when
+    # no path is supplied so the child inherits the parent environment.
+    env = _build_env(None, {"KUBECONFIG": path} if path else None)
 
     _log.info("establishing port-forward to %s on port %d...", target, local_port)
     process = subprocess.Popen(
@@ -294,5 +304,15 @@ def port_forward(
     finally:
         _log.info("terminating port-forward to %s...", target)
         process.terminate()
-        process.wait()
+        try:
+            process.wait(timeout=_PORT_FORWARD_TERM_GRACE_SEC)
+        except subprocess.TimeoutExpired:
+            _log.warning("port-forward ignored SIGTERM, escalating to SIGKILL")
+            process.kill()
+            try:
+                process.wait(timeout=_PORT_FORWARD_TERM_GRACE_SEC)
+            except subprocess.TimeoutExpired:
+                # A process wedged in uninterruptible sleep can outlast even
+                # SIGKILL; abandon it rather than block the ``with`` exit forever.
+                _log.error("port-forward (pid %s) survived SIGKILL; abandoning it", process.pid)
         _log.info("port-forward to %s terminated.", target)

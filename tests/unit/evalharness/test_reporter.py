@@ -70,6 +70,9 @@ _RESULTS_JSON_REQUIRED_KEYS: frozenset[str] = frozenset(
         "documentation",
         "capabilities_granted",
         "verification_parse_errors",
+        "verification_report",
+        "verification_status",
+        "recoverable_safety",
         "generation_only",
         "validated",
     }
@@ -107,7 +110,7 @@ def _stub_task() -> Task:
             "expected_output": "exp",
             "retrieval_context": ["doc-a"],
             "chaos_spec": {"chaos": "yes"},
-            "verification_spec": {"verify": "yes"},
+            "verification_spec": [{"name": "v", "spec": {"type": "pod_healthy"}}],
         }
     )
 
@@ -190,6 +193,7 @@ def test_write_run_artifacts_emits_rows_and_manifest(
             "latency": 12.0,
             "tokens": {"input": 100, "output": 20},
             "scores": {
+                "OutcomeScore": {"score": 0.9, "version": "v1", "reason": "c=0.900"},
                 "OutcomeValidity": {"score": 0.9, "success": True, "reason": "ok"},
                 "ToolInvocation": {"score": 0.6, "success": True, "reason": "ok"},
             },
@@ -346,17 +350,6 @@ def test_success_and_failed_records_have_identical_top_level_keys(
     assert set(success.keys()) == set(failed.keys())
     # And both equal the pinned golden union.
     assert set(success.keys()) == _RESULTS_JSON_REQUIRED_KEYS
-
-
-def test_record_keys_class_constant_matches_golden(isolated_env: None) -> None:
-    """The harness's :attr:`_RECORD_KEYS` constant is the authoritative source.
-
-    Pinning it here means a future contributor who adds a record field
-    (and updates ``_RECORD_KEYS`` + both builders) must also update the
-    golden constant in this test file — a single coordinated edit catches
-    drift in either direction.
-    """
-    assert DefaultEvalHarness._RECORD_KEYS == _RESULTS_JSON_REQUIRED_KEYS  # noqa: SLF001
 
 
 def test_verification_parse_errors_flow_into_success_record(

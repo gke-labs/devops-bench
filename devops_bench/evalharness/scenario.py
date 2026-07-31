@@ -24,12 +24,13 @@ verification mapping supplied by the caller.
 from __future__ import annotations
 
 import contextlib
+import copy
 import socket
 import threading
 import time
 from typing import Any
 
-from devops_bench.chaos import ChaosSpec
+from devops_bench.chaos import ChaosResult, ChaosSpec
 from devops_bench.chaos.faults.generate_load import (
     _ENV_LOCAL_PORT,
     _ENV_SKIP_PORT_FORWARD,
@@ -40,19 +41,34 @@ from devops_bench.chaos.faults.generate_load import (
 from devops_bench.core import get_logger
 from devops_bench.core.context import RunContext
 from devops_bench.k8s import get_resource, poll_until
-from devops_bench.verification import VerifierAgent
+from devops_bench.verification import VerificationEntry, VerifierAgent
 
-__all__ = ["ScenarioManager", "VERIFICATION_TIMEOUT_SEC", "pick_free_port"]
+__all__ = [
+    "ScenarioManager",
+    "VERIFICATION_TIMEOUT_SEC",
+    "VERIFICATION_TOTAL_BUDGET_SEC",
+    "pick_free_port",
+]
 
 _log = get_logger("evalharness.scenario")
 
-# Verification budget shared across the (possibly nested) checks.
+# Per-entry budget for a converging entry: how long a single entry's (possibly
+# nested) checks may poll before giving up. Assert-mode entries ignore this,
+# since single_shot always evaluates once with a zero budget regardless.
 VERIFICATION_TIMEOUT_SEC = 120
 
+# Total wall-clock budget for the whole post-run verification pass, across
+# every entry. Without a cap, a task with many failing converge objectives
+# burns entries x VERIFICATION_TIMEOUT_SEC (12 entries x 120s is 22+ minutes);
+# this bounds the pass as a whole. Assert-mode entries still always run, since
+# a safeguard that goes unchecked defeats the point of having it.
+VERIFICATION_TOTAL_BUDGET_SEC = 600
+
 # Seconds to wait for the target Service's external LoadBalancer IP to be
-# assigned by GKE. LB provisioning typically completes within a minute but can
-# lag — bound it so a stuck assignment falls back to the port-forward path
-# instead of stalling the run.
+# assigned by the cloud provider's load balancer controller. LB provisioning
+# typically completes within a minute but can lag, so this bounds the wait
+# so a stuck assignment falls back to the port-forward path instead of
+# stalling the run.
 _LB_IP_TIMEOUT_SEC = 180
 
 
@@ -80,9 +96,11 @@ class ScenarioManager:
     :class:`~devops_bench.chaos.base.Fault` (via ``action.inject``) to inject
     the planned disruption, then resolves the spec's ``verify:`` key against the
     per-task verification mapping and runs
-    :meth:`~devops_bench.verification.VerifierAgent.wait_for_condition` on the
-    resolved node. The load fault reaches its target through the target
-    Service's external LoadBalancer IP — the manager resolves it from the
+    :meth:`~devops_bench.verification.VerifierAgent.run_entry` on the resolved
+    entry, so the entry's resolved mode (``converge`` vs ``assert``) governs
+    whether the check polls or evaluates once, exactly as it does in the
+    post-run verification pass. The load fault reaches its target through the
+    target Service's external LoadBalancer IP — the manager resolves it from the
     Service status and rewrites the action's load URL before injection — so the
     fortio spike works from any runner location (in-VPC bastion or off-VPC
     local). The ``kubectl port-forward`` the fault still owns is kept as a
@@ -95,11 +113,12 @@ class ScenarioManager:
             onto ``ctx.env`` for the fault's port-forward fallback.
         namespace: Namespace the deployment / Service lives in; threaded onto
             ``ctx.env``.
-        verification_mapping: Name-keyed mapping of verification specs the
-            chaos ``verify:`` reference is resolved against. The mapping carries
-            already-validated :class:`VerificationSpec` instances (or any value
-            ``VerifierAgent.wait_for_condition`` accepts); the manager never
-            re-validates. Empty mapping disables verification lookups.
+        verification_mapping: Name-keyed mapping of
+            :class:`~devops_bench.verification.spec.VerificationEntry` the
+            chaos ``verify:`` reference is resolved against. The manager looks
+            up the entry by name and hands it directly to
+            ``VerifierAgent.run_entry``, so the entry's resolved mode governs
+            the check. Empty mapping disables verification lookups.
         skip_port_forward: When True, the fault runs without resolving an LB IP
             and without opening a ``kubectl port-forward``. The E2E smoke
             harness (against :class:`~devops_bench.deployers.NoOpDeployer`)
@@ -116,14 +135,14 @@ class ScenarioManager:
         self,
         target_deployment: str,
         namespace: str,
-        verification_mapping: dict[str, Any] | None = None,
+        verification_mapping: dict[str, VerificationEntry] | None = None,
         *,
         skip_port_forward: bool = False,
         local_port: int | None = None,
     ) -> None:
         self.target_deployment = target_deployment
         self.namespace = namespace
-        self.verification_mapping: dict[str, Any] = dict(verification_mapping or {})
+        self.verification_mapping: dict[str, VerificationEntry] = dict(verification_mapping or {})
         self.skip_port_forward = skip_port_forward
         # Per-run local port for the fault's port-forward; None keeps the
         # fault's default. Parallel runs pass a free port to avoid contention.
@@ -136,6 +155,10 @@ class ScenarioManager:
         }
         self.start_time: float | None = None
         self._aborted = threading.Event()
+        # Guards writes to ``result_holder`` against a concurrent snapshot in
+        # ``get_reports`` — the reader can run while this thread is still writing
+        # (the timeout path in the harness drains reports without a completed join).
+        self._report_lock = threading.Lock()
 
     def run_chaos_and_verification(
         self,
@@ -153,19 +176,24 @@ class ScenarioManager:
 
         # Record initial chaos metadata before injection begins, so a crash
         # mid-injection still produces a partial report rather than silence.
-        self.result_holder["chaos_report"] = {
-            "injected_fault": spec.action.type,
-            "name": spec.name,
-            "status": "initiated",
-        }
+        with self._report_lock:
+            self.result_holder["chaos_report"] = {
+                "injected_fault": spec.action.type,
+                "name": spec.name,
+                "status": "initiated",
+            }
 
         try:
             chaos_result = self._inject_chaos(spec, ctx)
-            self.result_holder["chaos_report"] = self._chaos_report_from_result(spec, chaos_result)
+            with self._report_lock:
+                self.result_holder["chaos_report"] = self._chaos_report_from_result(
+                    spec, chaos_result
+                )
         except Exception as exc:  # noqa: BLE001 - surface failure into the report
             _log.error("error running scenario: %s", exc)
-            self.result_holder["chaos_report"]["status"] = "failed"
-            self.result_holder["chaos_report"]["error"] = str(exc)
+            with self._report_lock:
+                self.result_holder["chaos_report"]["status"] = "failed"
+                self.result_holder["chaos_report"]["error"] = str(exc)
             # Unblock the main thread immediately: it waits on this event to
             # learn the disruption is active, and a failed injection never sets
             # it via the fault, so without this it stalls for the full
@@ -176,8 +204,8 @@ class ScenarioManager:
         if self._aborted.is_set():
             return
 
-        verification_node = self._resolve_verification(spec.verify)
-        if verification_node is None:
+        verification_entry = self._resolve_verification(spec.verify)
+        if verification_entry is None:
             # No verification scheduled (``verify`` was None) — leave the
             # chaos_report alone. An UNKNOWN key, on the other hand, has
             # already stamped ``chaos_report["verification"]`` with the
@@ -187,23 +215,29 @@ class ScenarioManager:
 
         _log.info("starting planned verification using VerifierAgent...")
         try:
-            verification_result = self.verifier_agent.wait_for_condition(
-                verification_node, timeout_sec=VERIFICATION_TIMEOUT_SEC
+            verification_result = self.verifier_agent.run_entry(
+                verification_entry, timeout_sec=VERIFICATION_TIMEOUT_SEC
             )
             _log.info(
                 "verification completed: %s",
                 verification_result.model_dump_json(indent=2),
             )
-            self.result_holder["chaos_report"]["verification"] = verification_result.model_dump()
-            self.result_holder["perf_report"] = self._perf_from_verification(verification_result)
+            with self._report_lock:
+                self.result_holder["chaos_report"]["verification"] = (
+                    verification_result.model_dump()
+                )
+                self.result_holder["perf_report"] = self._perf_from_verification(
+                    verification_result
+                )
         except Exception as exc:  # noqa: BLE001 - surface failure into the report
             _log.error("verification failed with exception: %s", exc)
-            self.result_holder["chaos_report"]["verification"] = {
-                "success": False,
-                "reason": f"Verification exception: {exc}",
-            }
+            with self._report_lock:
+                self.result_holder["chaos_report"]["verification"] = {
+                    "success": False,
+                    "reason": f"Verification exception: {exc}",
+                }
 
-    def _inject_chaos(self, spec: ChaosSpec, ctx: RunContext):
+    def _inject_chaos(self, spec: ChaosSpec, ctx: RunContext) -> ChaosResult:
         """Wait on the trigger, then drive ``action.inject`` with the target env.
 
         The trigger is a typed node; wait through its own ``wait(ctx)`` rather
@@ -250,7 +284,7 @@ class ScenarioManager:
                 )
                 lb_ip = None
             else:
-                # Real-cluster path (GKE): resolve the external LB IP and rewrite the
+                # Real-cluster path: resolve the external LB IP and rewrite the
                 # action's load URL to point at it directly. Fall back to the
                 # port-forward path if resolution fails or times out — that way a
                 # delayed LB still produces a load attempt instead of an aborted
@@ -279,8 +313,8 @@ class ScenarioManager:
         Reads ``status.loadBalancer.ingress[0].ip`` (falling back to
         ``hostname`` when the cloud provider hands back a DNS name instead of an
         IP) and waits up to :data:`_LB_IP_TIMEOUT_SEC` for it to appear, since
-        GKE may take a minute or two to provision the underlying network LB
-        and firewall rule.
+        LoadBalancer provisioning may take a minute or two to set up the
+        underlying network LB and firewall rule.
 
         Args:
             service: Service name (the optimize-scale target Service is named
@@ -370,7 +404,7 @@ class ScenarioManager:
             "resource_utilization_efficiency": 1.0 if success else 0.0,
         }
 
-    def _resolve_verification(self, verify_ref: str | None) -> Any | None:
+    def _resolve_verification(self, verify_ref: str | None) -> VerificationEntry | None:
         """Resolve the chaos spec's opaque ``verify`` key against the mapping.
 
         Args:
@@ -378,18 +412,21 @@ class ScenarioManager:
                 ``None`` when the spec opts out of verification.
 
         Returns:
-            The mapped verification node (already validated) when the key is
-            present and known; ``None`` when the spec opts out **or** the
-            key is unknown. The unknown-key case is *not* silent — a
-            verification-failure entry is written into ``chaos_report``
-            naming the missing key + the available keys, so a typo'd
-            cross-reference shows up on the run record (not just in the
-            log).
+            The mapped :class:`~devops_bench.verification.spec.VerificationEntry`
+            (already validated) when the key is present and known; ``None``
+            when the spec opts out **or** the key is unknown. The caller hands
+            the entry to ``VerifierAgent.run_entry`` unmodified, so the
+            entry's resolved mode (``converge`` vs ``assert``) governs the
+            check rather than being decided here. The unknown-key case is
+            *not* silent — a verification-failure entry is written into
+            ``chaos_report`` naming the missing key + the available keys, so a
+            typo'd cross-reference shows up on the run record (not just in
+            the log).
         """
         if not verify_ref:
             return None
-        node = self.verification_mapping.get(verify_ref)
-        if node is None:
+        entry = self.verification_mapping.get(verify_ref)
+        if entry is None:
             known = sorted(self.verification_mapping.keys())
             reason = (
                 f"chaos verify reference {verify_ref!r} not found in "
@@ -401,27 +438,31 @@ class ScenarioManager:
             # just in the log. The shape mirrors the typed
             # VerificationResult dump (success/reason/name) so downstream
             # consumers don't need a special-case parse path.
-            self.result_holder["chaos_report"]["verification"] = {
-                "success": False,
-                "reason": reason,
-                "name": verify_ref,
-                "unresolved_reference": verify_ref,
-                "known_references": known,
-            }
+            with self._report_lock:
+                self.result_holder["chaos_report"]["verification"] = {
+                    "success": False,
+                    "reason": reason,
+                    "name": verify_ref,
+                    "unresolved_reference": verify_ref,
+                    "known_references": known,
+                }
             return None
-        return node
+        return entry
 
     def get_reports(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Return the aggregated chaos and performance reports.
 
         Returns:
             A ``(chaos_report, perf_report)`` pair derived from the most recent
-            scenario run; each is an empty dict before the run produces it.
+            scenario run; each is an empty dict before the run produces it. The
+            snapshot is a deep copy taken under the report lock, so a caller may
+            read it safely while the scenario thread is still writing.
         """
-        return (
-            self.result_holder.get("chaos_report", {}),
-            self.result_holder.get("perf_report", {}),
-        )
+        with self._report_lock:
+            return (
+                copy.deepcopy(self.result_holder.get("chaos_report", {})),
+                copy.deepcopy(self.result_holder.get("perf_report", {})),
+            )
 
     def stop(self) -> None:
         """Abort the scenario so a pending verification is skipped.

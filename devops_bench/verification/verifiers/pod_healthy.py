@@ -21,7 +21,12 @@ from typing import Any, Literal
 
 from devops_bench.core import SubprocessError, get_logger
 from devops_bench.k8s import get_resource, wait
-from devops_bench.verification.base import VERIFIERS, BaseVerifier, VerificationResult
+from devops_bench.verification.base import (
+    VERIFIERS,
+    BaseVerifier,
+    VerificationResult,
+    single_call_timeout,
+)
 
 __all__ = ["PodHealthyVerifier"]
 
@@ -62,7 +67,7 @@ class PodHealthyVerifier(BaseVerifier):
                 "pod",
                 selector=self.selector,
                 for_condition="condition=Ready",
-                timeout_sec=timeout_sec,
+                timeout_sec=single_call_timeout(timeout_sec),
                 namespace=self.namespace,
                 kubeconfig=self.kubeconfig,
             )
@@ -77,12 +82,12 @@ class PodHealthyVerifier(BaseVerifier):
             # ``kubectl wait`` returns nonzero on timeout even for healthy pods
             # that never reach Ready (probe-less pods, or the condition not yet
             # propagated), so fall back to checking the Running phase directly.
-            elapsed = time.monotonic() - start_time
             _log.debug(
                 "kubectl wait failed for selector %s; falling back to phase check",
                 self.selector,
             )
-            raw = self._get_pods_details()
+            raw = self._get_pods_details(timeout_sec)
+            elapsed = time.monotonic() - start_time
             if self._check_pods_status(raw):
                 return VerificationResult(
                     success=True,
@@ -93,6 +98,19 @@ class PodHealthyVerifier(BaseVerifier):
                 )
 
             stderr = (exc.stderr or "").strip()
+            if "error" in raw:
+                # The fallback fetch itself failed, so the condition was never
+                # observed one way or the other; this is a check error, not a
+                # pod found unhealthy.
+                return VerificationResult(
+                    success=False,
+                    status="error",
+                    elapsed_time=elapsed,
+                    reason=f"kubectl wait failed or timed out: {stderr}; "
+                    f"fallback fetch also failed: {raw['error']}",
+                    name=self.name,
+                    raw=raw,
+                )
             return VerificationResult(
                 success=False,
                 elapsed_time=elapsed,
@@ -101,7 +119,7 @@ class PodHealthyVerifier(BaseVerifier):
                 raw=raw,
             )
 
-    def _get_pods_details(self) -> dict[str, Any]:
+    def _get_pods_details(self, timeout_sec: float) -> dict[str, Any]:
         """Fetch matched pods as JSON, returning an error dict on failure."""
         try:
             return get_resource(
@@ -109,18 +127,33 @@ class PodHealthyVerifier(BaseVerifier):
                 selector=self.selector,
                 namespace=self.namespace,
                 kubeconfig=self.kubeconfig,
+                timeout=single_call_timeout(timeout_sec),
             )
         except Exception as exc:  # noqa: BLE001 - diagnostics path, never raises
             _log.warning("Failed to fetch pod details for selector %s: %s", self.selector, exc)
             return {"error": str(exc)}
 
     def _check_pods_status(self, raw: dict[str, Any]) -> bool:
-        """Return True when at least one pod matched and all are ``Running``.
+        """Return True when at least one pod matched and all are healthy.
 
-        A pod whose ``status`` is explicitly ``null`` is treated as not Running
+        A pod whose ``status`` is explicitly ``null`` is treated as not healthy
         rather than crashing the check.
         """
         items = raw.get("items", [])
-        return len(items) > 0 and all(
-            (p.get("status") or {}).get("phase") == "Running" for p in items
-        )
+        return len(items) > 0 and all(self._pod_is_healthy(p) for p in items)
+
+    @staticmethod
+    def _pod_is_healthy(pod: dict[str, Any]) -> bool:
+        """Prefer the ``Ready`` condition; fall back to the ``Running`` phase.
+
+        A pod stuck in ``CrashLoopBackOff`` still reports phase ``Running``
+        while its container keeps restarting, so phase alone is not
+        sufficient. Fall back to phase only when no conditions are reported
+        yet (e.g. immediately after scheduling).
+        """
+        status = pod.get("status") or {}
+        conditions = status.get("conditions") or []
+        ready = next((c for c in conditions if c.get("type") == "Ready"), None)
+        if ready is not None:
+            return ready.get("status") == "True"
+        return status.get("phase") == "Running"
