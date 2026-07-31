@@ -1,7 +1,7 @@
 deepeval==4.0.3
 pytest==9.0.3
 google-genai==2.6.0
-mcp==1.27.1
+mcp==1.28.1
 anthropic==0.104.1
 openai>=1.0.0
 pyyaml==6.0.3
