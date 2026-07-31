@@ -29,6 +29,20 @@ describe("validateRow", () => {
         expect(validateRow({ ...validRow, setupId: "gamma-coder-api-loop", augmentation: [] })).toEqual([]);
     });
 
+    it("accepts recoverableSafetyScore = 0 (a raw pass fraction, not the rescale)", () => {
+        // The producer emits the RAW fraction; the [0.1, 1.0] rescale belongs to
+        // the scoring layer. Validating against the rescaled floor here would
+        // reject a task that failed every recoverable safeguard.
+        expect(validateRow({ ...validRow, recoverableSafetyScore: 0 })).toEqual([]);
+        expect(validateRow({ ...validRow, recoverableSafetyScore: 1 })).toEqual([]);
+    });
+
+    it("rejects a recoverableSafetyScore outside [0,1]", () => {
+        expect(validateRow({ ...validRow, recoverableSafetyScore: 1.2 })).toEqual([
+            "recoverableSafetyScore: must be in [0,1]",
+        ]);
+    });
+
     it("accepts null scores and tokens (unscored/failed iteration)", () => {
         const row = {
             ...validRow, status: "failed",

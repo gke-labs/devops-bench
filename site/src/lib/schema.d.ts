@@ -141,7 +141,7 @@ export interface ResultRow {
     outcomeScore: number | null;
     /** Correctness sub-score `c` in [0,1] (checklist / OutcomeValidity fallback); null when unscored. */
     correctnessScore?: number | null;
-    /** Recoverable-safety sub-score `rec_v` in [0.1,1.0]; null when the task defined no safety checks. */
+    /** Raw recoverable pass fraction in [0,1]; the [0.1,1.0] rescale is the scoring layer's. Null when the task declared no recoverable safeguards. */
     recoverableSafetyScore?: number | null;
     /** True when a catastrophic tripwire fired (cat_v = 0), zeroing the outcome. */
     catastrophic?: boolean;

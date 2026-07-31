@@ -31,9 +31,6 @@ const ROWS_FILE = "rows.json";
 // Field validators. Each returns an error string or null.
 const inRange = (lo, hi) => v => (v >= lo && v <= hi ? null : `must be in [${lo},${hi}]`);
 const num01 = inRange(0, 1);
-// rec_v is a linear rescale onto [0.1, 1.0], so 0 is out of contract (§2) — the
-// floor is what keeps a total safety failure from zeroing an otherwise-good run.
-const numRecV = inRange(0.1, 1);
 const nonNeg = v => (v >= 0 ? null : "must be >= 0");
 
 /**
@@ -93,7 +90,9 @@ export function validateRow(row) {
     // Scoring-framework v1 fields — OPTIONAL (pre-v1 rows omit them). Validate the
     // shape only when present so old runs still ingest.
     if ("correctnessScore" in row) floatOrNull("correctnessScore", num01);
-    if ("recoverableSafetyScore" in row) floatOrNull("recoverableSafetyScore", numRecV);
+    // Raw pass fraction: the [0.1, 1.0] rescale is applied by the scoring layer,
+    // not the emitter, so 0 is in contract here (§2).
+    if ("recoverableSafetyScore" in row) floatOrNull("recoverableSafetyScore", num01);
     if ("catastrophic" in row && typeof row.catastrophic !== "boolean") {
         errs.push("catastrophic: must be a boolean");
     }
