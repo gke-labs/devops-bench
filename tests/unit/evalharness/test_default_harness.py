@@ -140,6 +140,98 @@ def test_default_target_deployment_and_namespace_are_ctor_args(
     assert resolved == "deploy=my-app ns=custom-ns"
 
 
+def test_success_record_carries_substituted_safety_checklists(isolated_env: None) -> None:
+    """Safety checklists get the same placeholder substitution as expected_output.
+
+    The judge reads these strings verbatim, so an unresolved
+    ``{{TARGET_DEPLOYMENT_NAME}}`` would be graded as literal text and the
+    constraint would never match what the agent actually did.
+    """
+    harness = DefaultEvalHarness(
+        project_id="p",
+        cluster_name="c",
+        default_target_deployment="my-app",
+        default_namespace="custom-ns",
+    )
+    task = Task(
+        name="t",
+        recoverable_safety=["kept {{TARGET_DEPLOYMENT_NAME}} available"],
+    )
+    substituted_recoverable = [
+        harness.replace_placeholders(item, cluster_name="cl") for item in task.recoverable_safety
+    ]
+
+    record = harness._build_success_record(  # noqa: SLF001 - testing the record shape
+        task=task,
+        prompt="p",
+        expected_output="e",
+        agent_res=_stub_agent_result(),
+        chaos_report={},
+        perf_report={},
+        recoverable_safety=substituted_recoverable,
+    )
+
+    assert record["recoverable_safety"] == ["kept my-app available"]
+
+
+def test_success_record_falls_back_to_raw_safety_checklists(isolated_env: None) -> None:
+    # Callers that pass nothing keep the raw task values seeded by _empty_record.
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
+    task = Task(name="t", recoverable_safety=["raw item"])
+
+    record = harness._build_success_record(  # noqa: SLF001
+        task=task,
+        prompt="p",
+        expected_output="e",
+        agent_res=_stub_agent_result(),
+        chaos_report={},
+        perf_report={},
+    )
+
+    assert record["recoverable_safety"] == ["raw item"]
+
+
+def test_failed_record_carries_substituted_safety_checklists(isolated_env: None) -> None:
+    """A run that dies mid-execution still records resolved checklists.
+
+    The checklists are substituted before the agent runs, so a failure carries
+    the same resolved strings a success would rather than raw ``{{...}}`` text
+    landing in results.json.
+    """
+    harness = DefaultEvalHarness(
+        project_id="p",
+        cluster_name="c",
+        default_target_deployment="my-app",
+        default_namespace="custom-ns",
+    )
+    task = Task(
+        name="t",
+        recoverable_safety=["kept {{TARGET_DEPLOYMENT_NAME}} available"],
+    )
+    substituted_recoverable = [
+        harness.replace_placeholders(item, cluster_name="cl") for item in task.recoverable_safety
+    ]
+
+    record = harness._build_failed_record(  # noqa: SLF001 - testing the record shape
+        task,
+        RuntimeError("agent died"),
+        recoverable_safety=substituted_recoverable,
+    )
+
+    assert record["status"] == "failed"
+    assert record["recoverable_safety"] == ["kept my-app available"]
+
+
+def test_failed_record_falls_back_to_raw_safety_checklists(isolated_env: None) -> None:
+    """A failure before substitution keeps the raw task values, never a KeyError."""
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
+    task = Task(name="t", recoverable_safety=["raw item"])
+
+    record = harness._build_failed_record(task, RuntimeError("infra died"))  # noqa: SLF001
+
+    assert record["recoverable_safety"] == ["raw item"]
+
+
 def test_granted_skill_paths_snapshot_captured_once(
     isolated_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -600,6 +692,7 @@ _RESULTS_JSON_REQUIRED_KEYS: frozenset[str] = frozenset(
         "retrieval_context",
         "chaos_spec",
         "verification_spec",
+        "recoverable_safety",
         "chaos_report",
         "perf_report",
         "documentation",

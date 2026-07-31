@@ -42,6 +42,10 @@ from devops_bench.metrics.pipeline import (
     evaluate_metrics_batch,
     extract_checklist_items,
 )
+from devops_bench.metrics.safety import (
+    JUDGED_RECOVERABLE_SCORE_KEY,
+    SafetyMetric,
+)
 from devops_bench.metrics.scoring import (
     SCORING_VERSION,
     compute_outcome_score_v1,
@@ -56,7 +60,9 @@ __all__ = [
     "MetricEvaluator",
     "MetricScore",
     "ModelLayerJudge",
+    "JUDGED_RECOVERABLE_SCORE_KEY",
     "SCORING_VERSION",
+    "SafetyMetric",
     "build_outcome_validity_metric",
     "build_tool_invocation_metric",
     "calculate_doc_retrieval_rate",
