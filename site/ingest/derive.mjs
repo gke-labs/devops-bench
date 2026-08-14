@@ -175,7 +175,7 @@ export function derive(rows, opts = {}) {
 // re-score every setup from the existing raw rows WITHOUT re-uploading. The
 // normal path (ingest.mjs) runs derive automatically after each upload.
 //
-//   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-demo \
+//   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
 //     node derive.mjs
 //   GCLOUD_PROJECT=devops-bench-shared FIRESTORE_DATABASE_ID=leaderboard-test \
 //     node derive.mjs

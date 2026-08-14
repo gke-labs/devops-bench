@@ -11,7 +11,7 @@
 // Two targets, selected by whether FIRESTORE_EMULATOR_HOST is set:
 //
 //   EMULATOR (default, no credentials needed):
-//     FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-demo \
+//     FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
 //       node seed.mjs                                  # → DB leaderboard-test
 //
 //   REAL Firestore (the shared TEST database — uses Application Default Creds;

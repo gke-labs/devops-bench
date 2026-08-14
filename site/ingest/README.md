@@ -88,11 +88,11 @@ brew install openjdk
 export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"
 
 # 2. Start the emulator (from site/, leave it running in another terminal):
-cd .. && npx -y firebase-tools emulators:start --only firestore --project devops-bench-demo
+cd .. && npx -y firebase-tools emulators:start --only firestore --project devops-bench-shared
 # Firestore on :8080, emulator UI on :4000
 
 # 3. Ingest against it (from site/ingest/):
-FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-demo \
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
   node ingest.mjs fixtures/
 ```
 
@@ -131,7 +131,7 @@ or `catalog.mjs` presentation? Re-score every setup from the **existing** raw
 rows — no re-upload (emulator from Option A still running, or ADC for real Firestore):
 
 ```bash
-FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-demo \
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
   node derive.mjs
 ```
 
