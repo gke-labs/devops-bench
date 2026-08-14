@@ -293,14 +293,25 @@ Needs **Java** for the Firestore emulator
 
 ```bash
 # 1. start the emulator (Firestore :8080, UI :4000)
-npx -y firebase-tools emulators:start --only firestore --project devops-bench-demo
+npx -y firebase-tools emulators:start --only firestore --project devops-bench-shared
 
 # 2. in another shell: seed the emulator (writes to the leaderboard-test DB)
-cd seed && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-demo npm run seed && cd ..
+cd seed && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared npm run seed && cd ..
 
 # 3. run the app — firebase.js auto-connects to the emulator on localhost
 npm run dev          # http://localhost:5173
 ```
+
+> **The project id must match `VITE_FIREBASE_PROJECT_ID` in `.env`** (that is
+> `devops-bench-shared`, the same project named at the top of this section). The
+> emulator keeps each project id in a **separate namespace**, so seeding one id
+> while the app reads another leaves the dashboard **silently empty** — no error,
+> just no rows. If that happens, check the id in all three places above, or query
+> the emulator directly to see which namespace the data landed in:
+>
+> ```bash
+> curl -s "http://127.0.0.1:8080/v1/projects/devops-bench-shared/databases/leaderboard-test/documents/setups" | head
+> ```
 
 ### B) Staging (real cloud DB, fabricated data)
 
