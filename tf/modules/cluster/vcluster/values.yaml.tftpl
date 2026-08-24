@@ -1,0 +1,92 @@
+# Copyright 2026 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+controlPlane:
+  service:
+    enabled: false
+  statefulSet:
+    enableServiceLinks: false
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+        ephemeral-storage: 2Gi
+      requests:
+        cpu: 200m
+        memory: 512Mi
+        ephemeral-storage: 1Gi
+    persistence:
+      volumeClaim:
+        enabled: false
+  proxy:
+    extraSANs:
+      - localhost
+      - 127.0.0.1
+      - kubernetes.default.svc
+      - ${replace(endpoint, "/:[0-9]+$/", "")}
+  advanced:
+    serviceAccount:
+      enabled: true
+
+exportKubeConfig:
+  server: "https://${endpoint}"
+
+# No compute quota inside the virtual cluster. A quota tracking limits.* or
+# requests.* makes the virtual API server reject any pod that omits those
+# fields — which breaks (a) Kyverno's upstream manifests (no CPU limits on its
+# controllers) and (b) any task that deliberately seeds limit-less or
+# request-less workloads as live violations (opa-remediation's web/worker have
+# no resources block at all). Capacity is enforced where it actually matters,
+# on the host namespace: its LimitRange injects default requests/limits into
+# every synced pod and its ResourceQuota counts them (see
+# this module's main.tf). A task that wants an in-cluster quota as part of
+# its scenario seeds one itself (e.g. the resource_quota_exhaustion fault).
+policies:
+  resourceQuota:
+    enabled: false
+
+rbac:
+  role:
+    enabled: true
+  clusterRole:
+    enabled: true
+    extraRules:
+      - apiGroups: [""]
+        resources: ["nodes", "persistentvolumes"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["storage.k8s.io"]
+        resources: ["storageclasses"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: ["networking.k8s.io"]
+        resources: ["servicecidrs"]
+        verbs: ["get", "list", "watch"]
+
+sync:
+  toHost:
+    persistentVolumes:
+      enabled: true
+    persistentVolumeClaims:
+      enabled: true
+  fromHost:
+    storageClasses:
+      enabled: true
+    nodes:
+      enabled: true
+      selector:
+        all: true
+
+%{ if service_cidr != "" ~}
+serviceCIDR: "${service_cidr}"
+%{ endif ~}
+
