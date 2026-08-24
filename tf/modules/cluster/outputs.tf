@@ -13,22 +13,22 @@
 # limitations under the License.
 
 output "cluster_name" {
-  value       = var.infra_provider == "gcp" ? try(module.gke[0].cluster_name, "") : try(module.kind[0].cluster_name, "")
+  value       = var.infra_provider == "gcp" ? try(module.gke[0].cluster_name, "") : (var.infra_provider == "kind" ? try(module.kind[0].cluster_name, "") : try(module.vcluster[0].cluster_name, ""))
   description = "The finalized name of the created cluster"
 }
 
 output "location" {
-  value       = var.infra_provider == "gcp" ? try(module.gke[0].cluster_location, "") : try(module.kind[0].cluster_location, "")
+  value       = var.infra_provider == "gcp" ? try(module.gke[0].cluster_location, "") : (var.infra_provider == "kind" ? try(module.kind[0].cluster_location, "") : try(module.vcluster[0].cluster_location, ""))
   description = "The region/zone or 'local'"
 }
 
 output "endpoint" {
-  value       = var.infra_provider == "gcp" ? try(module.gke[0].endpoint, "") : try(module.kind[0].endpoint, "")
+  value       = var.infra_provider == "gcp" ? try(module.gke[0].endpoint, "") : (var.infra_provider == "kind" ? try(module.kind[0].endpoint, "") : try(module.vcluster[0].external_endpoint, ""))
   description = "Cluster control plane endpoint"
 }
 
 output "cluster_ca_certificate" {
-  value       = var.infra_provider == "gcp" ? try(module.gke[0].cluster_ca_certificate, "") : try(module.kind[0].cluster_ca_certificate, "")
+  value       = var.infra_provider == "gcp" ? try(module.gke[0].cluster_ca_certificate, "") : (var.infra_provider == "kind" ? try(module.kind[0].cluster_ca_certificate, "") : "")
   description = "Cluster CA certificate"
 }
 
@@ -47,3 +47,9 @@ output "kubeconfig_path" {
   description = "Local path to the kubeconfig file"
 }
 
+
+output "kubeconfig" {
+  value       = var.infra_provider == "vcluster" ? try(module.vcluster[0].kubeconfig, "") : ""
+  description = "Raw kubeconfig YAML (vcluster-only)"
+  sensitive   = true
+}
