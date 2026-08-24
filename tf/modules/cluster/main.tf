@@ -44,3 +44,17 @@ module "kind" {
   node_count      = var.node_count
 }
 
+
+
+module "vcluster" {
+  source               = "./vcluster"
+  count                = var.infra_provider == "vcluster" ? 1 : 0
+  cluster_name         = var.cluster_name
+  namespace            = "vcluster-${var.cluster_name}"
+  location             = var.location != "" ? var.location : "local"
+  host_kubecontext     = var.host_kubecontext
+  host_kubeconfig_path = var.host_kubeconfig_path
+  service_type         = var.service_type
+  service_cidr         = var.vcluster_service_cidr != "" ? var.vcluster_service_cidr : null
+  node_port            = var.node_port
+}
