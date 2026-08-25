@@ -60,6 +60,12 @@ _LOCAL_CONTEXT_PREFIXES = (
     "local-",
 )
 
+_LOCAL_HOSTNAME_SUFFIXES = (
+    ".localhost",
+    ".local",
+    ".internal",
+)
+
 
 def _is_local_server_url(server: str) -> bool:
     """Check whether a Kubernetes server URL targets a local or private address."""
@@ -72,7 +78,7 @@ def _is_local_server_url(server: str) -> bool:
         return False
     if not hostname:
         return False
-    if hostname == "localhost":
+    if hostname == "localhost" or hostname.endswith(_LOCAL_HOSTNAME_SUFFIXES):
         return True
     try:
         ip = ipaddress.ip_address(hostname)
