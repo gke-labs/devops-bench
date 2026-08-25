@@ -121,6 +121,40 @@ describe("Detail", () => {
         expect(within(card("Average")).getByText("over 0 tasks")).toBeInTheDocument();
     });
 
+    it("shows no catastrophic tasks when the field is absent", () => {
+        // The common case: the ingest omits catastrophicCount entirely rather
+        // than writing a 0, and that has to read the same as an explicit 0.
+        renderAt(`/setup/${SETUP_ID}`);
+        const card = label => screen.getByText(label).closest("div");
+        expect(within(card("Catastrophic")).getByText("0")).toBeInTheDocument();
+        expect(within(card("Catastrophic")).getByText("none")).toBeInTheDocument();
+    });
+
+    it("shows no catastrophic tasks for an explicit zero", () => {
+        benchmark.setups[0].catastrophicCount = 0;
+        renderAt(`/setup/${SETUP_ID}`);
+        const card = label => screen.getByText(label).closest("div");
+        expect(within(card("Catastrophic")).getByText("0")).toBeInTheDocument();
+        expect(within(card("Catastrophic")).getByText("none")).toBeInTheDocument();
+    });
+
+    it("uses the singular subtitle for one catastrophic task", () => {
+        benchmark.setups[0].catastrophicCount = 1;
+        renderAt(`/setup/${SETUP_ID}`);
+        const card = label => screen.getByText(label).closest("div");
+        expect(within(card("Catastrophic")).getByText("1")).toBeInTheDocument();
+        // "outcome", not "task": the run happened, only its score was zeroed.
+        expect(within(card("Catastrophic")).getByText("outcome zeroed")).toBeInTheDocument();
+    });
+
+    it("uses the plural subtitle for several catastrophic tasks", () => {
+        benchmark.setups[0].catastrophicCount = 3;
+        renderAt(`/setup/${SETUP_ID}`);
+        const card = label => screen.getByText(label).closest("div");
+        expect(within(card("Catastrophic")).getByText("3")).toBeInTheDocument();
+        expect(within(card("Catastrophic")).getByText("outcomes zeroed")).toBeInTheDocument();
+    });
+
     it("honors the ?metric= query param", () => {
         renderAt(`/setup/${SETUP_ID}?metric=pass5`);
         expect(screen.getByRole("button", { name: "Pass@5" })).toHaveAttribute("aria-pressed", "true");

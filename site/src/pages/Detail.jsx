@@ -170,11 +170,14 @@ export function Detail() {
                     <StatCard
                         label="Catastrophic"
                         value={String(setup.catastrophicCount ?? 0)}
+                        // "outcome zeroed", not "task zeroed": the task still ran
+                        // and still has its other measurements; what a
+                        // catastrophic violation zeroes is the Outcome score.
                         sub={
                             setup.catastrophicCount === 1
-                                ? "task zeroed"
+                                ? "outcome zeroed"
                                 : setup.catastrophicCount
-                                  ? "tasks zeroed"
+                                  ? "outcomes zeroed"
                                   : "none"
                         }
                     />
