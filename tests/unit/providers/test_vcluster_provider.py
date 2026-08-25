@@ -27,7 +27,7 @@ from pytest_mock import MockerFixture
 
 from devops_bench.core import ClusterInfo, ConfigError
 from devops_bench.providers import ResolveContext
-from devops_bench.providers.vcluster import VClusterProvider
+from devops_bench.providers.vcluster import VClusterProvider, _is_local_server_url
 
 
 @pytest.fixture
@@ -56,6 +56,12 @@ contexts:
 - context:
     cluster: private-cluster
   name: my-private-ctx
+- context:
+    cluster: docker-cluster
+  name: docker-desktop-ctx
+- context:
+    cluster: minikube-cluster
+  name: my-minikube-ctx
 clusters:
 - cluster:
     server: https://127.0.0.1:6443
@@ -66,6 +72,12 @@ clusters:
 - cluster:
     server: https://10.240.0.5:6443
   name: private-cluster
+- cluster:
+    server: https://kubernetes.docker.internal:6443
+  name: docker-cluster
+- cluster:
+    server: https://host.minikube.internal:8443
+  name: minikube-cluster
 """,
         encoding="utf-8",
     )
@@ -458,3 +470,43 @@ def test_vcluster_ensure_cluster_credentials_custom_project_id(tmp_path: Path) -
         "test-cluster", "us-central1-a", variables, outputs=outputs
     )
     assert info.project == "my-gcp-project"
+
+
+def test_vcluster_resolve_variables_docker_desktop_hostname(
+    ctx: ResolveContext,
+    fake_kubeconfig: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOST_KUBECONFIG", fake_kubeconfig)
+    monkeypatch.setenv("HOST_KUBECONTEXT", "docker-desktop-ctx")
+
+    variables = VClusterProvider().resolve_variables(ctx, {})
+    assert variables["service_type"] == "NodePort"
+
+
+def test_vcluster_resolve_variables_minikube_internal_hostname(
+    ctx: ResolveContext,
+    fake_kubeconfig: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOST_KUBECONFIG", fake_kubeconfig)
+    monkeypatch.setenv("HOST_KUBECONTEXT", "my-minikube-ctx")
+
+    variables = VClusterProvider().resolve_variables(ctx, {})
+    assert variables["service_type"] == "NodePort"
+
+
+def test_is_local_server_url_cases() -> None:
+    assert _is_local_server_url("https://localhost:6443")
+    assert _is_local_server_url("https://127.0.0.1:6443")
+    assert _is_local_server_url("https://10.0.0.1:6443")
+    assert _is_local_server_url("https://192.168.1.1:6443")
+    assert _is_local_server_url("https://kubernetes.docker.internal:6443")
+    assert _is_local_server_url("https://host.docker.internal:6443")
+    assert _is_local_server_url("https://host.minikube.internal:8443")
+    assert _is_local_server_url("https://my-cluster.local:6443")
+    assert _is_local_server_url("https://api.my-cluster.internal:6443")
+    assert not _is_local_server_url("https://35.192.1.100:6443")
+    assert not _is_local_server_url("https://gke.googleapis.com")
+    assert not _is_local_server_url("")
+    assert not _is_local_server_url("invalid-url")
