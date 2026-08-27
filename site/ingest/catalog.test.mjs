@@ -14,6 +14,15 @@ describe("resolveModel", () => {
         expect(r.known).toBe(true);
     });
 
+    // Two Gemini aliases now share a prefix, and the substring pass walks
+    // MODEL_ALIASES in insertion order — so a Flash id must not be captured by
+    // an earlier Pro alias, and vice versa.
+    it("keeps the Gemini families distinct", () => {
+        expect(resolveModel("gemini-3.7-flash", "Google").key).toBe("gemini-3.7-flash");
+        expect(resolveModel("gemini-3.7-flash-preview", "Google").key).toBe("gemini-3.7-flash");
+        expect(resolveModel("gemini-3.1-pro-preview", "Google").key).toBe("gemini-3.1-pro");
+    });
+
     it("synthesizes (never drops) an unknown model, flagged not-known", () => {
         const r = resolveModel("Totally New Model", "NewCo");
         expect(r.known).toBe(false);
