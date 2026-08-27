@@ -25,6 +25,18 @@ produce a file. In short: you provide raw per-iteration rows; everything the
 dashboard shows (setups, tasks, history) is *derived*, and model/harness display
 metadata comes from `catalog.mjs`, not the upload.
 
+**One run = one `runId`/`t` shared by all its tasks.** If a sweep was run one
+process per task (the bastion matrix, or invoking the harness once per task),
+each task carries its own run identity and the dashboard reads it as N one-task
+runs. Re-batch first — `run_matrix.sh` does this for you, otherwise:
+
+```bash
+python3 -m devops_bench.results.aggregate <results-root> -o <out-dir>
+```
+
+See [`PROTOCOL.md` §4](./PROTOCOL.md#4-how-rows-become-the-dashboard) for what
+this looks like when it goes wrong.
+
 ## Pieces
 
 | File | Role |

@@ -117,6 +117,33 @@ pass@k formula.
 - **`history[]`** — one point per distinct `t` (time-ordered); each point is the
   mean of that run's per-task scores.
 
+> **Every task from one sweep must share one `runId` and one `t`.** That pairing
+> is what makes a set of rows *a run*; `taskFolder` is what keeps the tasks
+> inside it distinct. Give each task its own `runId`/`t` and derive reads them as
+> N separate one-task runs — the board shows **1 task and an N-point trend**
+> instead of N tasks and one point, and `catastrophicCount` drops to whatever the
+> single latest run happened to contain. The scores themselves are unaffected,
+> so this fails silently: valid rows, wrong shape.
+>
+> This bites whenever tasks are run **one process per task** (the bastion
+> matrix, or just invoking the harness once per task), because each invocation
+> mints its own run identity. Two ways out:
+>
+> - Run the sweep as **one harness invocation** over a tasks directory. It
+>   executes them sequentially in one process and writes one `manifest.json`, so
+>   the shared identity is automatic. (Sequential vs parallel is not the issue —
+>   the number of *invocations* is.)
+> - Or re-batch after the fact with
+>   [`devops_bench/results/aggregate.py`](../../devops_bench/results/aggregate.py),
+>   which rewrites per-task rows onto a single `run_id`/`t`, de-dupes retried
+>   tasks (latest wins), and writes a combined `rows.json`:
+>
+>   ```bash
+>   python3 -m devops_bench.results.aggregate <results-root> -o <out-dir>
+>   ```
+>
+>   `run_matrix.sh` runs this automatically over each matrix's results.
+
 Scoring (single definition, in `seed/mock-data.mjs`, reused by ingest):
 - An iteration **passes** when `outcomeScore >= 0.7`.
 - `pass1` = pass rate over the run's scored iterations.
