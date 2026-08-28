@@ -23,6 +23,22 @@ describe("resolveModel", () => {
         expect(resolveModel("gemini-3.1-pro-preview", "Google").key).toBe("gemini-3.1-pro");
     });
 
+    it("resolves the Anthropic and OpenAI ids to curated metadata", () => {
+        expect(resolveModel("claude-opus-5", null)).toEqual({
+            key: "claude-opus-5", meta: MODELS["claude-opus-5"], known: true
+        });
+        expect(resolveModel("claude-fable-5", null).key).toBe("claude-fable-5");
+        expect(resolveModel("gpt-5.6-sol", null).key).toBe("gpt-5.6-sol");
+    });
+
+    // Same insertion-order hazard as the Gemini families: the two Claude ids
+    // share a "claude-" prefix, and a dated suffix must not drift onto the
+    // sibling. Guards the "no bare vendor key" rule in MODEL_ALIASES.
+    it("keeps the Claude families distinct across versioned ids", () => {
+        expect(resolveModel("claude-opus-5-20260101", null).key).toBe("claude-opus-5");
+        expect(resolveModel("claude-fable-5-20260101", null).key).toBe("claude-fable-5");
+    });
+
     it("synthesizes (never drops) an unknown model, flagged not-known", () => {
         const r = resolveModel("Totally New Model", "NewCo");
         expect(r.known).toBe(false);
@@ -40,6 +56,15 @@ describe("resolveHarness", () => {
     it("maps api to api-loop", () => {
         const r = resolveHarness("api");
         expect(r).toEqual({ key: "api-loop", meta: HARNESSES["api-loop"], known: true });
+    });
+
+    it("maps the antigravity and kubeagents runners to curated entries", () => {
+        expect(resolveHarness("antigravity")).toEqual({
+            key: "antigravity", meta: HARNESSES["antigravity"], known: true
+        });
+        // Both spellings land on one line rather than two near-duplicate rows.
+        expect(resolveHarness("kubeagents").key).toBe("kubeagents");
+        expect(resolveHarness("kube-agents").key).toBe("kubeagents");
     });
 
     it("synthesizes an unknown harness as a cli-typed entry", () => {
