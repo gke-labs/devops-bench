@@ -2,12 +2,19 @@
 // Model logos are filled squares with a letter; harness icons are line glyphs
 // tinted with the harness accent so the runner reads as its own entity class.
 
+// Keyed by the `logo` field of a catalog MODELS entry. A model whose logo key is
+// missing here renders NOTHING (see the null return below), so the two must stay
+// in step — Logo.test.jsx asserts every curated key has a brand.
 const BRANDS = {
     alpha: { fill: "#6366f1", letter: "A" },
     beta: { fill: "#0ea5e9", letter: "B" },
     gamma: { fill: "#f97316", letter: "C" },
-    gemini: { fill: "#4285F4", letter: "G" }
+    gemini: { fill: "#4285F4", letter: "G" },
+    claude: { fill: "#d97757", letter: "C" },
+    openai: { fill: "#10a37f", letter: "O" }
 };
+
+export const BRAND_KEYS = Object.keys(BRANDS);
 
 export function BrandLogo({ logo }) {
     const brand = BRANDS[logo];
@@ -30,8 +37,17 @@ const HARNESS_GLYPHS = {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 12l8 4 8-4M4 17l8 4 8-4" />
         </>
     ),
-    braces: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5c-2 0-2 2-2 3.5S6 12 4 12c2 0 2 2.5 2 4s0 3 2 3m8-14c2 0 2 2 2 3.5S18 12 20 12c-2 0-2 2.5-2 4s0 3-2 3" />
+    braces: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5c-2 0-2 2-2 3.5S6 12 4 12c2 0 2 2.5 2 4s0 3 2 3m8-14c2 0 2 2 2 3.5S18 12 20 12c-2 0-2 2.5-2 4s0 3-2 3" />,
+    "arrow-up": <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 20V5m0 0l-5 5m5-5l5 5" />,
+    cluster: (
+        <>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3l7 4v10l-7 4-7-4V7l7-4z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" />
+        </>
+    )
 };
+
+export const HARNESS_GLYPH_KEYS = Object.keys(HARNESS_GLYPHS);
 
 export function HarnessIcon({ harness }) {
     return (
