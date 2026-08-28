@@ -150,6 +150,36 @@ _poll_until_done() {
   done
 }
 
+# Combine the per-combo rows.json files into one batch run for dashboard ingest.
+#
+# The matrix runs one task per process, so every combo emits its own rows.json
+# carrying its own runId/t. The dashboard models a run as a BATCH of tasks
+# sharing one runId/t (tasks stay distinct via taskFolder), so left as-is an
+# N-task matrix renders as N separate one-task runs: one task and an N-point
+# trend, instead of N tasks and one point. aggregate.py re-stamps the rows onto
+# the matrix's own STAMP, which is already run_YYYYMMDD_HHMMSS-shaped.
+#
+# Best-effort. The per-combo rows.json are the source of truth and are untouched
+# by this, so a missing interpreter or an import error warns with the command to
+# re-run rather than failing a matrix that otherwise succeeded.
+_aggregate_for_ingest() {
+  local out="$1"
+
+  # The legacy arm emits no rows.json; nothing to batch, and no warning owed.
+  if [ -z "$(find "${out}" -name rows.json -print -quit 2>/dev/null)" ]; then
+    return 0
+  fi
+
+  local run_id="run_${STAMP}"
+  echo "==> aggregating rows.json for ingest (run_id=${run_id})"
+  if ( cd "${REPO_ROOT}" && python3 -m devops_bench.results.aggregate "${out}" -o "${out}" --run-id "${run_id}" ); then
+    return 0
+  fi
+  echo "WARN: aggregation failed; per-combo rows.json under ${out} are intact." >&2
+  echo "      The dashboard needs one batch runId, so re-run before ingest:" >&2
+  echo "      (cd ${REPO_ROOT} && python3 -m devops_bench.results.aggregate ${out} -o ${out} --run-id ${run_id})" >&2
+}
+
 # Pull results (with retry) and summarize from the pulled dirs. Reads the local
 # <rid> subdirs rather than COMBOS, so it also serves RESUME_STAMP attach.
 _pull_and_summarize() {
@@ -164,6 +194,8 @@ _pull_and_summarize() {
     echo "==> local results at ${LOCAL_OUT}"
   fi
 
+  _aggregate_for_ingest "${LOCAL_OUT}"
+
   echo "==> summary"
   printf '%-56s %-8s %s\n' "COMBO" "EXIT" "results.json"
   local d rid st rj
@@ -175,6 +207,11 @@ _pull_and_summarize() {
     printf '%-56s %-8s %s\n' "${rid}" "${st}" "${rj:-<none>}"
   done
   echo "==> done. results under ${LOCAL_OUT} (each combo provisioned + tore down its own cluster)"
+  # Guarded as an `if`, not a trailing `&&`: a false test would make this the
+  # function's nonzero exit status under `set -e`.
+  if [ -f "${LOCAL_OUT}/rows.json" ]; then
+    echo "    ingest this: ${LOCAL_OUT}/rows.json"
+  fi
 }
 
 # Run the COMBOS matrix. Arg: a human label for logging.
