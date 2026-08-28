@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { useBenchmark } from "../context/BenchmarkContext.jsx";
 import { buildFilterGroups, getFilteredSetups, emptyFilterState } from "../lib/filters.js";
 import { setupScore } from "../lib/accessors.js";
-import { METRIC_LABELS, availableMetrics, metricDescription, isLowerBetter } from "../lib/vocab.js";
+import { METRIC_LABELS, availableMetrics, metricDescription, isLowerBetter, bestValue } from "../lib/vocab.js";
 import { FilterBar } from "../components/FilterBar.jsx";
 import { LeaderboardRow } from "../components/LeaderboardRow.jsx";
 import { MetricToggle } from "../components/MetricToggle.jsx";
@@ -42,13 +42,14 @@ export function Leaderboard() {
         });
     }, [filtered, metric]);
 
-    // Best value on screen — the smallest, for the lower-is-better absolute
-    // metrics — so their bars have a scale. Null for percentage metrics, which
-    // need none.
-    const metricBest = useMemo(() => {
-        const vals = sorted.map(s => setupScore(s, metric)).filter(v => v != null);
-        return vals.length ? Math.min(...vals) : null;
-    }, [sorted, metric]);
+    // Best value on screen, so an absolute metric's bars have a scale. Computed
+    // for every metric; a percentage metric ignores it downstream in
+    // metricBarFraction(). See bestValue() for why non-positive readings are
+    // excluded rather than min'd over.
+    const metricBest = useMemo(
+        () => bestValue(metric, sorted.map(s => setupScore(s, metric))),
+        [sorted, metric]
+    );
 
     function toggleFilter(groupKey, value) {
         setFilterState(prev => {

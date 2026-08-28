@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useBenchmark } from "../context/BenchmarkContext.jsx";
 import { setupScore, setupLabel } from "../lib/accessors.js";
-import { METRICS, METRIC_LABELS, availableMetrics, formatMetric, metricBarFraction, isLowerBetter, metricMeta } from "../lib/vocab.js";
+import { METRICS, METRIC_LABELS, availableMetrics, formatMetric, metricBarFraction, isLowerBetter, metricMeta, bestValue } from "../lib/vocab.js";
 import { SetupIdentity } from "../components/SetupIdentity.jsx";
 import { MetricToggle } from "../components/MetricToggle.jsx";
 import { TrendChart } from "../components/TrendChart.jsx";
@@ -50,14 +50,13 @@ function TaskTable({ setup, metric }) {
         });
     }, [setup, metric, sort]);
 
-    // Best value across this setup's tasks — the smallest for a lower-is-better
-    // metric — so an absolute metric's bar has a scale (percentage metrics
-    // ignore it).
-    const taskBest = useMemo(() => {
-        const vals = setup.tasks.map(t => t.scores[metric]).filter(v => v != null);
-        if (!vals.length) return null;
-        return isLowerBetter(metric) ? Math.min(...vals) : Math.max(...vals);
-    }, [setup, metric]);
+    // Best value across this setup's tasks, so an absolute metric's bar has a
+    // scale (percentage metrics ignore it). Same helper the leaderboard uses,
+    // so the two cannot disagree about what "best" means.
+    const taskBest = useMemo(
+        () => bestValue(metric, setup.tasks.map(t => t.scores[metric])),
+        [setup, metric]
+    );
 
     function sortBy(key) {
         setSort(prev => prev.key === key

@@ -1,5 +1,35 @@
 import { describe, it, expect } from "vitest";
-import { generateRaw, derive, passAtK, PASS_THRESHOLD } from "./mock-data.mjs";
+import { generateRaw, derive, passAtK, PASS_THRESHOLD, sumTokens, latencyOf } from "./mock-data.mjs";
+
+describe("sumTokens", () => {
+    it("prefers the producer's own total over the buckets", () => {
+        expect(sumTokens({ totalTokens: 993225, inputTokens: 135329, outputTokens: 9732 })).toBe(993225);
+    });
+
+    it("sums the captured buckets when no total is reported", () => {
+        // reasoningTokens is a sibling of output, not a subset, so it is added.
+        expect(sumTokens({ inputTokens: 100, outputTokens: 20, reasoningTokens: 5 })).toBe(125);
+    });
+
+    it("is null when no usage was captured at all", () => {
+        expect(sumTokens({ inputTokens: null, outputTokens: null })).toBeNull();
+        expect(sumTokens({})).toBeNull();
+    });
+
+    // Regression: antigravity's parser returns {input: 0, output: 0, total: 0,
+    // cached: 0} for an empty session log (parsing.py) and normalize.py coerces
+    // those through as ints rather than nulls. Reporting a real 0 would rank
+    // that setup FIRST on a lower-is-better metric with a full bar — the same
+    // failure latencyOf() guards against.
+    it("treats an all-zero usage record as unmeasured, not as zero tokens", () => {
+        expect(sumTokens({ inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0 })).toBeNull();
+        expect(latencyOf({ latencySec: 0 })).toBeNull();
+    });
+
+    it("falls through to the buckets when only the total is zeroed", () => {
+        expect(sumTokens({ totalTokens: 0, inputTokens: 400, outputTokens: 100 })).toBe(500);
+    });
+});
 
 describe("passAtK", () => {
     it("is 0 when there are no passes", () => {

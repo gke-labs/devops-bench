@@ -323,8 +323,16 @@ export function latencyOf(row) {
 // the canonical buckets in normalize.py), so leaving it out would undercount
 // every reasoning model. Null when no usage was captured at all, so "not
 // measured" stays distinct from a genuine zero.
+//
+// A non-positive result is the same unmeasured sentinel `latencyOf` handles: a
+// harness that produced no session log normalizes to zeros rather than nulls
+// (antigravity's parser returns `{input: 0, output: 0, total: 0, cached: 0}`
+// for an empty log, and normalize.py coerces those through as ints), and no
+// real run costs 0 tokens. Reporting the 0 would rank that setup FIRST on a
+// lower-is-better metric. The total is checked separately from the buckets so
+// a zeroed total still falls through to buckets that were captured.
 export function sumTokens(row) {
-    if (Number.isFinite(row.totalTokens)) return row.totalTokens;
+    if (Number.isFinite(row.totalTokens) && row.totalTokens > 0) return row.totalTokens;
     const parts = [
         row.inputTokens,
         row.outputTokens,
@@ -332,7 +340,9 @@ export function sumTokens(row) {
         row.reasoningTokens,
         row.cacheWriteTokens
     ].filter(v => Number.isFinite(v));
-    return parts.length ? parts.reduce((a, b) => a + b, 0) : null;
+    if (!parts.length) return null;
+    const total = parts.reduce((a, b) => a + b, 0);
+    return total > 0 ? total : null;
 }
 
 // The {latency, tokens} slice of Scores for one group of iteration rows.

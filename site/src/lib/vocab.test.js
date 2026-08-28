@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatMetric, isLowerBetter, metricBarFraction, metricMeta } from "./vocab.js";
+import { formatMetric, isLowerBetter, metricBarFraction, metricMeta, bestValue } from "./vocab.js";
 
 describe("metric presentation rules", () => {
     it("treats quality metrics as higher-is-better percentages", () => {
@@ -73,5 +73,38 @@ describe("metricBarFraction", () => {
         // 0 is the unmeasured sentinel, not an instant run — no bar for it.
         expect(metricBarFraction("latency", 0, 10)).toBe(0);
         expect(metricBarFraction("latency", 10, 0)).toBe(0);
+    });
+});
+
+describe("bestValue", () => {
+    it("takes the smallest for a lower-is-better metric and the largest otherwise", () => {
+        expect(bestValue("latency", [30, 10, 20])).toBe(10);
+        expect(bestValue("tokens", [300, 100, 200])).toBe(100);
+        expect(bestValue("composite", [30, 10, 20])).toBe(30);
+    });
+
+    it("skips nulls and non-finite entries", () => {
+        expect(bestValue("latency", [null, 30, undefined, NaN, 20])).toBe(20);
+        expect(bestValue("latency", [null, undefined])).toBeNull();
+        expect(bestValue("latency", [])).toBeNull();
+    });
+
+    // Regression: an unmeasured run normalizes to 0 rather than null, and the
+    // min would then be 0. metricBarFraction bails on `best <= 0`, so that one
+    // row would empty EVERY bar in the column instead of only its own.
+    it("ignores the 0 sentinel so one unmeasured row cannot flatten the column", () => {
+        expect(bestValue("tokens", [0, 5000, 20000])).toBe(5000);
+        expect(bestValue("latency", [0, 42])).toBe(42);
+        expect(metricBarFraction("tokens", 20000, bestValue("tokens", [0, 5000, 20000]))).toBeCloseTo(0.25);
+    });
+
+    it("is null when every lower-is-better reading is the sentinel", () => {
+        expect(bestValue("tokens", [0, 0])).toBeNull();
+    });
+
+    // A percentage metric legitimately bottoms out at 0 (a 0% pass rate), so the
+    // non-positive filter must not apply on that side.
+    it("keeps a genuine 0 for a higher-is-better metric", () => {
+        expect(bestValue("composite", [0, 0])).toBe(0);
     });
 });

@@ -131,6 +131,26 @@ export function metricBarFraction(metric, value, best) {
     return Math.max(0, Math.min(1, best / value));
 }
 
+/**
+ * The best value among `values` for `metric`, or null when none qualifies.
+ *
+ * "Best" follows the metric's direction: the smallest for a lower-is-better
+ * absolute metric, the largest otherwise. Non-positive readings are dropped
+ * from the lower-is-better case because they are the unmeasured sentinel
+ * (see `latencyOf` / `sumTokens` in seed/mock-data.mjs). That matters beyond
+ * the offending row: `best` is shared by the whole column, so one 0 would trip
+ * the `best <= 0` guard above and flatten EVERY bar, not just its own.
+ *
+ * Shared by the leaderboard (across visible setups) and the detail task table
+ * (across one setup's tasks) so the two cannot drift apart.
+ */
+export function bestValue(metric, values) {
+    const vals = values.filter(v => v != null && Number.isFinite(v));
+    if (!isLowerBetter(metric)) return vals.length ? Math.max(...vals) : null;
+    const positive = vals.filter(v => v > 0);
+    return positive.length ? Math.min(...positive) : null;
+}
+
 // One-line explanation per metric — the single source of truth for the score
 // tooltip (contextual to the selected metric) and each toggle button's hover.
 export const METRIC_DESCRIPTIONS = {
