@@ -67,3 +67,30 @@ describe("useBenchmarkData", () => {
         await waitFor(() => expect(terminate).toHaveBeenCalledTimes(1));
     });
 });
+
+describe("useBenchmarkData in demo mode", () => {
+    it("serves the bundled dataset and never touches Firestore", async () => {
+        vi.stubEnv("VITE_DEMO_DATA", "true");
+        vi.stubEnv("PROD", true);
+        const { result } = renderHook(() => useBenchmarkData());
+        await waitFor(() => expect(result.current.loading).toBe(false));
+
+        expect(loadBenchmarkData).not.toHaveBeenCalled();
+        // Nothing to terminate — terminating an untouched client is what the
+        // guard on the demo branch exists to avoid.
+        expect(terminate).not.toHaveBeenCalled();
+        expect(result.current.error).toBeNull();
+
+        // The real seed data, not a fixture: the preview exists to show the
+        // efficiency sections, which are omitted when nothing measured them.
+        expect(result.current.setups.length).toBeGreaterThan(0);
+        for (const setup of result.current.setups) {
+            expect(result.current.models[setup.model]).toBeTruthy();
+            expect(result.current.harnesses[setup.harness]).toBeTruthy();
+        }
+        const scores = result.current.setups[0].tasks[0].scores;
+        for (const key of ["composite", "cost", "latency", "tokensInput"]) {
+            expect(scores[key], `demo data needs ${key}`).toEqual(expect.any(Number));
+        }
+    });
+});

@@ -6,7 +6,8 @@ const BRANDS = {
     alpha: { fill: "#6366f1", letter: "A" },
     beta: { fill: "#0ea5e9", letter: "B" },
     gamma: { fill: "#f97316", letter: "C" },
-    gemini: { fill: "#4285F4", letter: "G" }
+    gemini: { fill: "#4285F4", letter: "G" },
+    claude: { fill: "#d97757", letter: "C" }
 };
 
 export function BrandLogo({ logo }) {

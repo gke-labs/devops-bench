@@ -11,6 +11,7 @@ import { FilterBar } from "../components/FilterBar.jsx";
 import { LeaderboardRow } from "../components/LeaderboardRow.jsx";
 import { MetricToggle } from "../components/MetricToggle.jsx";
 import { TrendChart } from "../components/TrendChart.jsx";
+import { ChartsPanel } from "../components/ChartsPanel.jsx";
 import { EmptyState, LoadError, Loading } from "../components/States.jsx";
 
 export function Leaderboard() {
@@ -130,6 +131,11 @@ export function Leaderboard() {
                         ))}
                 </div>
             </div>
+
+            {/* Efficiency charts — the same filtered setups the table shows. */}
+            {!loading && !error && filtered.length > 0 && (
+                <ChartsPanel setups={filtered} models={models} harnesses={harnesses} />
+            )}
 
             {/* Trend chart */}
             {!loading && !error && filtered.length > 0 && (

@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 
 import { derive } from "./derive.mjs";
 import { loadResults } from "./load.mjs";
+import { SCORE_KEYS } from "../seed/mock-data.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, "fixtures");
@@ -74,20 +75,17 @@ describe("derive — data-driven", () => {
             { ...base, iteration: 1, outcomeScore: null }
         ]);
         const task = setups[0].tasks.find(t => t.folder === "task-a");
-        // Null-safe across all metrics (v1 composite/correctness/safety included).
-        expect(task.scores).toEqual({
-            pass1: null,
-            pass5: null,
-            passMax: null,
-            composite: null,
-            correctness: null,
-            recoverableSafety: null,
-            // Efficiency is telemetry, not a score: an iteration that never
-            // scored still consumed wall-clock, so latency survives while every
-            // score is null. Tokens stay null because the fixture captured none.
-            latency: 1,
-            tokens: null
-        });
+        // Null-safe across EVERY metric in the vocabulary, asserted against
+        // SCORE_KEYS rather than a hand-written list so a metric added later is
+        // covered by this regression instead of quietly escaping it.
+        // Efficiency is telemetry, not a score: an iteration that never scored
+        // still consumed wall-clock, so latency survives while everything else
+        // is null (the fixture captures no tokens, cost or trajectory).
+        expect(task.scores.latency).toBe(1);
+        for (const key of SCORE_KEYS.filter(k => k !== "latency")) {
+            expect(task.scores[key], `${key} should be null`).toBeNull();
+        }
+        expect(Object.keys(task.scores).sort()).toEqual([...SCORE_KEYS].sort());
     });
 
     it("treats latencySec 0 as unmeasured, so it can't rank as the fastest", () => {

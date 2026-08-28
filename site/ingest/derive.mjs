@@ -24,7 +24,7 @@
 // catalog (see collectMetadata in catalog.mjs); this module only emits setups.
 // =============================================================================
 
-import { PASS_THRESHOLD, efficiencyFor, passAtK } from "../seed/mock-data.mjs";
+import { PASS_THRESHOLD, efficiencyFor, meanScores, passAtK } from "../seed/mock-data.mjs";
 import { PALETTE, SETUP_CATALOG } from "./catalog.mjs";
 
 /**
@@ -91,25 +91,12 @@ function scoresFor(rows) {
     };
 }
 
-// Mean over a list of per-task Scores, per metric, skipping nulls. A metric with
-// no non-null values across the run stays null rather than collapsing to 0.
-/** @returns {Scores} */
-function meanScores(scoreList) {
-    const avg = m => {
-        const vals = scoreList.map(s => s[m]).filter(v => Number.isFinite(v));
-        return vals.length ? round(vals.reduce((a, b) => a + b, 0) / vals.length, 1) : null;
-    };
-    return {
-        pass1: avg("pass1"),
-        pass5: avg("pass5"),
-        passMax: avg("passMax"),
-        composite: avg("composite"),
-        correctness: avg("correctness"),
-        recoverableSafety: avg("recoverableSafety"),
-        latency: avg("latency"),
-        tokens: avg("tokens")
-    };
-}
+// meanScores (mean over a list of per-task Scores, skipping nulls) is imported
+// from the mock rather than reimplemented here, for the same reason the scoring
+// formula is: a hand-written key list in two places drifts the moment a metric
+// is added, and the failure is invisible — the new metric is computed per task
+// and then dropped from every run aggregate, looking exactly like telemetry the
+// harness never reported.
 
 // Stable first-appearance order of a key as rows are scanned. Used so the
 // derived order is deterministic for a given row ordering and, for mock data,

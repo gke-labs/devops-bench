@@ -94,6 +94,17 @@ export function validateRow(row) {
     for (const k of ["cachedTokens", "reasoningTokens", "cacheWriteTokens", "totalTokens"]) {
         if (k in row) intOrNull(k, nonNeg);
     }
+    // Agentic-work counts — OPTIONAL, same contract as the extra token buckets,
+    // and validated for the same reason: they are averaged into the read-model,
+    // so a negative would drag a mean below zero.
+    for (const k of ["toolCalls", "toolErrors", "modelTurns"]) {
+        if (k in row) intOrNull(k, nonNeg);
+    }
+    // The model that actually answered. Optional and may be "" (the harness did
+    // not report one); pricing falls back to `model` in that case.
+    if ("servedModel" in row && typeof row.servedModel !== "string") {
+        errs.push("servedModel: must be a string");
+    }
 
     // Scoring-framework v1 fields — OPTIONAL (pre-v1 rows omit them). Validate the
     // shape only when present so old runs still ingest.

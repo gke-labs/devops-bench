@@ -21,18 +21,25 @@
 
 /** @type {Record<string, {name: string, provider: string, license: string, logo: string}>} */
 export const MODELS = {
-    "alpha-pro":        { name: "Alpha Pro",        provider: "Acme",    license: "Proprietary", logo: "alpha" },
-    "beta-sonic":       { name: "Beta Sonic",       provider: "Globex",  license: "Proprietary", logo: "beta" },
-    "gamma-coder":      { name: "Gamma Coder",      provider: "Initech", license: "Open Source", logo: "gamma" },
-    "gemini-3.1-pro":   { name: "Gemini 3.1 Pro",   provider: "Google",  license: "Proprietary", logo: "gemini" },
-    "gemini-3.7-flash": { name: "Gemini 3.7 Flash", provider: "Google",  license: "Proprietary", logo: "gemini" }
+    "alpha-pro":        { name: "Alpha Pro",        provider: "Acme",      license: "Proprietary", logo: "alpha" },
+    "beta-sonic":       { name: "Beta Sonic",       provider: "Globex",    license: "Proprietary", logo: "beta" },
+    "gamma-coder":      { name: "Gamma Coder",      provider: "Initech",   license: "Open Source", logo: "gamma" },
+    "gemini-3.1-pro":   { name: "Gemini 3.1 Pro",   provider: "Google",    license: "Proprietary", logo: "gemini" },
+    "gemini-3.5-flash": { name: "Gemini 3.5 Flash", provider: "Google",    license: "Proprietary", logo: "gemini" },
+    "gemini-3.7-flash": { name: "Gemini 3.7 Flash", provider: "Google",    license: "Proprietary", logo: "gemini" },
+    "claude-opus-5":    { name: "Claude Opus 5",    provider: "Anthropic", license: "Proprietary", logo: "claude" },
+    "claude-opus-4-8":  { name: "Claude Opus 4.8",  provider: "Anthropic", license: "Proprietary", logo: "claude" },
+    "claude-sonnet-5":  { name: "Claude Sonnet 5",  provider: "Anthropic", license: "Proprietary", logo: "claude" },
+    "claude-haiku-4-5": { name: "Claude Haiku 4.5", provider: "Anthropic", license: "Proprietary", logo: "claude" }
 };
 
 /** @type {Record<string, {name: string, type: "cli"|"api", accent: string, logo: string}>} */
 export const HARNESSES = {
-    "gemini-cli": { name: "Gemini CLI", type: "cli", accent: "#0ea5e9", logo: "terminal" },
-    "openclaw":   { name: "OpenClaw",   type: "cli", accent: "#f43f5e", logo: "claw" },
-    "api-loop":   { name: "API Runner", type: "api", accent: "#8b5cf6", logo: "braces" }
+    "gemini-cli":  { name: "Gemini CLI",  type: "cli", accent: "#0ea5e9", logo: "terminal" },
+    "kubeagents":  { name: "KubeAgents",  type: "cli", accent: "#326ce5", logo: "terminal" },
+    "claude-code": { name: "Claude Code", type: "cli", accent: "#d97757", logo: "terminal" },
+    "openclaw":    { name: "OpenClaw",    type: "cli", accent: "#f43f5e", logo: "claw" },
+    "api-loop":    { name: "API Runner",  type: "api", accent: "#8b5cf6", logo: "braces" }
 };
 
 // --- raw identity -> curated id ----------------------------------------------
@@ -49,8 +56,32 @@ export const MODEL_ALIASES = {
     // versioned ids (e.g. gemini-3.1-pro-001) resolve via substring matching.
     "gemini-3.1-pro": "gemini-3.1-pro",
     "gemini-3.1-pro-preview": "gemini-3.1-pro",
-    "gemini-3.7-flash": "gemini-3.7-flash"
+    "gemini-3.5-flash": "gemini-3.5-flash",
+    "gemini-3.7-flash": "gemini-3.7-flash",
+    // Anthropic. The bare keys cover dated snapshots and the `[1m]` long-context
+    // suffix via substring matching; both bill at the same rate, so the suffix
+    // needs no entry of its own.
+    "claude-opus-5": "claude-opus-5",
+    "claude-opus-4-8": "claude-opus-4-8",
+    "claude-sonnet-5": "claude-sonnet-5",
+    "claude-haiku-4-5": "claude-haiku-4-5",
+    // Claude Code's tier shorthands, which is what AGENT_MODEL carries on a
+    // subscription CLI run. They name a TIER, not a version — the CLI resolves
+    // each to whatever is current — so they point at today's default. A run whose
+    // harness reports `servedModel` is priced off that instead and never reaches
+    // these (see pricing.priceFor).
+    "opus": "claude-opus-5",
+    "sonnet": "claude-sonnet-5",
+    "haiku": "claude-haiku-4-5"
 };
+
+// Substring candidates, longest alias first. Order matters and insertion order
+// is the wrong one: "opus" is a substring of "claude-opus-4-8[1m]", so scanning
+// the object as written would resolve an Opus 4.8 run to the Opus 5 shorthand
+// (and, once their prices diverge, bill it at the wrong rate). Longest-first
+// makes the most specific alias win regardless of where it was declared.
+const MODEL_ALIASES_BY_SPECIFICITY = Object.entries(MODEL_ALIASES)
+    .sort((a, b) => b[0].length - a[0].length);
 
 // Map a raw `agentType` (BENCH_AGENT_TYPE, incl. the harness's own aliases
 // cli/binary -> gemini) to a curated harness id.
@@ -60,8 +91,11 @@ export const HARNESS_ALIASES = {
     "gemini-cli": "gemini-cli",
     "cli": "gemini-cli",
     "binary": "gemini-cli",
+    "claude": "claude-code",
+    "claude-code": "claude-code",
     "openclaw": "openclaw",
     "claw": "openclaw",
+    "kubeagents": "kubeagents",
     "api": "api-loop",
     "api-loop": "api-loop"
 };
@@ -104,7 +138,7 @@ export function resolveModel(agentModel, agentProvider) {
     // Exact alias, then substring alias.
     let key = MODEL_ALIASES[lower];
     if (!key) {
-        for (const [alias, target] of Object.entries(MODEL_ALIASES)) {
+        for (const [alias, target] of MODEL_ALIASES_BY_SPECIFICITY) {
             if (lower && lower.includes(alias.toLowerCase())) { key = target; break; }
         }
     }

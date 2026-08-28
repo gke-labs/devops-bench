@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // Stub the chart (jsdom has no real canvas) and the data context.
-vi.mock("react-chartjs-2", () => ({ Line: () => null }));
+vi.mock("react-chartjs-2", () => ({ Line: () => null, Bar: () => null, Scatter: () => null }));
 
 const FIXTURE = {
     models: {

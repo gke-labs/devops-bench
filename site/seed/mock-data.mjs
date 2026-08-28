@@ -26,6 +26,8 @@
  * @typedef {import('../src/lib/schema').HarnessMap} HarnessMap
  */
 
+import { costUsd } from "../ingest/pricing.mjs";
+
 // --- 1. DIMENSION VOCABULARIES & METADATA ------------------------------------
 
 // `models` — stable metadata per base LLM, keyed by model id. Seeded into the
@@ -194,7 +196,20 @@ export function generateRaw() {
                         ? 0
                         : Math.sqrt(correctnessScore * recV);
 
-                    rows.push({
+                    // Token buckets. A coding agent re-sends its whole
+                    // conversation every turn, so cache reads dominate and fresh
+                    // input is the small remainder — the shape the cost and
+                    // token-breakdown charts exist to show. `gamma-coder` is
+                    // modelled as a non-reasoning model (null reasoning bucket,
+                    // not zero) so the demo exercises the missing-bucket path.
+                    const inputTokens = Math.round(8000 + rng() * 30000);
+                    const cachedTokens = Math.round(inputTokens * (2 + rng() * 6));
+                    const cacheWriteTokens = Math.round(inputTokens * (0.2 + rng() * 0.5));
+                    const outputTokens = Math.round(300 + rng() * 1500);
+                    const reasoningTokens = def.model === "gamma-coder"
+                        ? null
+                        : Math.round(500 + rng() * 4000);
+                    const row = {
                         setupId: id,
                         model: def.model,
                         harness: def.harness,
@@ -211,13 +226,27 @@ export function generateRaw() {
                         catastrophic,
                         scoringVersion: "v1",
                         toolScore: round(Math.min(1, correctnessScore + rng() * 0.1), 4),
+                        // Agentic work: one turn can issue several tool calls, so
+                        // toolCalls runs ahead of modelTurns.
+                        modelTurns: Math.round(6 + rng() * 20),
+                        toolCalls: Math.round(10 + rng() * 45),
                         latencySec: round(20 + rng() * 60, 2),
-                        inputTokens: Math.round(8000 + rng() * 30000),
-                        outputTokens: Math.round(300 + rng() * 1500),
+                        inputTokens,
+                        outputTokens,
+                        cachedTokens,
+                        cacheWriteTokens,
+                        reasoningTokens,
+                        totalTokens: inputTokens + outputTokens + cachedTokens
+                            + cacheWriteTokens + (reasoningTokens || 0),
                         // Mock rows are all vetted so the seeded demo renders;
                         // real rows carry per-task validated from the harness.
                         validated: true
-                    });
+                    };
+                    // Cost through the real pricing module, not a fabricated
+                    // number: the mock is what the chart code is developed and
+                    // tested against, so it has to be costed by the same
+                    // definition the ingest stamps on a real row.
+                    rows.push({ ...row, costUsd: costUsd(row) });
                 }
             });
         });
@@ -300,11 +329,13 @@ function scoresFor(rows) {
 // projects efficiency from real rows and must use exactly this definition, not a
 // copy of it. Change a rule here and both mock and real data follow.
 
-// Mean of a raw (already-absolute) per-row value — seconds, token counts. No
-// ×100: these are not fractions, and the UI formats them by unit.
-export function rawMean(rows, pick) {
+// Mean of a raw (already-absolute) per-row value — seconds, token counts, USD.
+// No ×100: these are not fractions, and the UI formats them by unit. `dp` is the
+// rounding precision: 1 decimal is right for seconds and token counts, and wrong
+// for dollars, where a whole run can cost less than the rounding step.
+export function rawMean(rows, pick, dp = 1) {
     const vals = rows.map(pick).filter(v => Number.isFinite(v));
-    return vals.length ? round(vals.reduce((a, b) => a + b, 0) / vals.length, 1) : null;
+    return vals.length ? round(vals.reduce((a, b) => a + b, 0) / vals.length, dp) : null;
 }
 
 // Wall-clock seconds for one row, or null when latency was never measured.
@@ -335,28 +366,73 @@ export function sumTokens(row) {
     return parts.length ? parts.reduce((a, b) => a + b, 0) : null;
 }
 
-// The {latency, tokens} slice of Scores for one group of iteration rows.
-export function efficiencyFor(rows) {
-    return { latency: rawMean(rows, latencyOf), tokens: rawMean(rows, sumTokens) };
+// A single non-negative token bucket, or null when the harness did not report
+// it. `null` and `0` mean different things here — "no cache telemetry" versus "a
+// cache that never hit" — and the token-breakdown chart draws them differently.
+function bucketOf(row, key) {
+    const v = row[key];
+    return Number.isFinite(v) && v >= 0 ? v : null;
 }
 
-// Mean over a list of score objects, per metric. Skips non-numeric entries so a
-// metric with no scored entries comes back as null instead of NaN.
-function meanScores(scoreList) {
-    const avg = m => {
-        const vals = scoreList.map(x => x[m]).filter(v => Number.isFinite(v));
-        return vals.length ? round(vals.reduce((s, v) => s + v, 0) / vals.length, 1) : null;
-    };
+// Share of the PROMPT that was served from cache, as a percentage. The
+// denominator is every prompt-side bucket (fresh input + cache reads + cache
+// writes); output and reasoning are completion, not prompt, and including them
+// would make a verbose model look like it cached badly. Null when the harness
+// reports no cache buckets at all, so "not instrumented" stays distinct from a
+// genuine 0% — the difference between a harness that cannot cache and one that
+// is failing to.
+export function cacheHitRateOf(row) {
+    const cached = bucketOf(row, "cachedTokens");
+    const write = bucketOf(row, "cacheWriteTokens");
+    if (cached == null && write == null) return null;
+    const prompt = (cached || 0) + (write || 0) + (bucketOf(row, "inputTokens") || 0);
+    return prompt > 0 ? ((cached || 0) / prompt) * 100 : null;
+}
+
+// The efficiency slice of Scores for one group of iteration rows: the two
+// headline axes (latency, tokens), the priced axis (cost), the agentic-work
+// axes, and the individual token buckets the breakdown chart stacks.
+//
+// `cost` rounds to 4 decimals, not 1: a cheap task costs cents, and rounding
+// dollars the way seconds are rounded would report every setup as $0.0.
+export function efficiencyFor(rows) {
     return {
-        pass1: avg("pass1"),
-        pass5: avg("pass5"),
-        passMax: avg("passMax"),
-        composite: avg("composite"),
-        correctness: avg("correctness"),
-        recoverableSafety: avg("recoverableSafety"),
-        latency: avg("latency"),
-        tokens: avg("tokens")
+        latency: rawMean(rows, latencyOf),
+        tokens: rawMean(rows, sumTokens),
+        cost: rawMean(rows, r => (Number.isFinite(r.costUsd) ? r.costUsd : null), 4),
+        turns: rawMean(rows, r => bucketOf(r, "modelTurns")),
+        toolCalls: rawMean(rows, r => bucketOf(r, "toolCalls")),
+        cacheHitRate: rawMean(rows, cacheHitRateOf),
+        tokensInput: rawMean(rows, r => bucketOf(r, "inputTokens")),
+        tokensCached: rawMean(rows, r => bucketOf(r, "cachedTokens")),
+        tokensCacheWrite: rawMean(rows, r => bucketOf(r, "cacheWriteTokens")),
+        tokensReasoning: rawMean(rows, r => bucketOf(r, "reasoningTokens")),
+        tokensOutput: rawMean(rows, r => bucketOf(r, "outputTokens"))
     };
+}
+
+// Every key a Scores object carries, in display order. Exported so the two
+// meanScores implementations (here and in ingest/derive.mjs) cannot drift: a
+// metric added to efficiencyFor but forgotten in a hand-written key list is
+// computed per task and then silently dropped from every run aggregate, which
+// looks exactly like a metric the harness never reported.
+export const SCORE_KEYS = [
+    "pass1", "pass5", "passMax",
+    "composite", "correctness", "recoverableSafety",
+    "latency", "tokens", "cost",
+    "turns", "toolCalls", "cacheHitRate",
+    "tokensInput", "tokensCached", "tokensCacheWrite", "tokensReasoning", "tokensOutput"
+];
+
+// Mean over a list of score objects, per metric. Skips non-numeric entries so a
+// metric with no scored entries comes back as null instead of NaN. Cost keeps
+// its 4-decimal precision for the same reason it has it per task.
+export function meanScores(scoreList) {
+    const avg = (m, dp) => {
+        const vals = scoreList.map(x => x[m]).filter(v => Number.isFinite(v));
+        return vals.length ? round(vals.reduce((s, v) => s + v, 0) / vals.length, dp) : null;
+    };
+    return Object.fromEntries(SCORE_KEYS.map(m => [m, avg(m, m === "cost" ? 4 : 1)]));
 }
 
 // Build the dashboard read-model from raw rows: one `setups` doc per setup, with

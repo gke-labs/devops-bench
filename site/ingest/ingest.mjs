@@ -29,6 +29,7 @@ import { loadResults } from "./load.mjs";
 import { derive } from "./derive.mjs";
 import { openDb, commitAll, resultDocId } from "./firestore.mjs";
 import { PALETTE, SETUP_CATALOG, collectMetadata } from "./catalog.mjs";
+import { stampCost } from "./pricing.mjs";
 
 async function main() {
     const args = process.argv.slice(2);
@@ -39,9 +40,21 @@ async function main() {
     console.log(`  sources: ${paths.map(p => path.resolve(p)).join(", ")}`);
 
     // 1. Load + validate this invocation's rows (throws on any invalid row).
-    const newRows = loadResults(paths);
-    const runIds = [...new Set(newRows.map(r => r.runId))];
-    console.log(`  loaded ${newRows.length} rows across ${runIds.length} run(s): ${runIds.join(", ")}`);
+    const loaded = loadResults(paths);
+    const runIds = [...new Set(loaded.map(r => r.runId))];
+    console.log(`  loaded ${loaded.length} rows across ${runIds.length} run(s): ${runIds.join(", ")}`);
+
+    // 1b. Price each row and stamp `costUsd` on it. Done HERE rather than at
+    // derive time so a row keeps the rate it was actually billed at: derive
+    // re-runs over the full history whenever the formula changes, and re-pricing
+    // a 2026 run at 2027 rates would silently rewrite the past. An unpriced model
+    // yields a null cost — never 0, which would rank it best on the cost axis.
+    const { rows: newRows, unpriced } = stampCost(loaded);
+    const costed = newRows.filter(r => r.costUsd != null).length;
+    console.log(`  costed ${costed}/${newRows.length} rows`);
+    if (unpriced.size) {
+        console.warn(`  ⚠ unpriced models (no cost — add to MODEL_PRICES in pricing.mjs): ${[...unpriced].join(", ")}`);
+    }
 
     // 2. Upsert raw rows (idempotent: deterministic doc ids).
     await commitAll(db, newRows.map(row => ({

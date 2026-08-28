@@ -23,11 +23,11 @@
 // --- metrics -----------------------------------------------------------------
 
 /**
- * The scoring metrics, in display order. `composite` is the scoring-framework v1
+ * Quality metrics, in display order. `composite` is the scoring-framework v1
  * headline (cat_v · √(c · rec_v)); `correctness` / `recoverableSafety` are its
  * sub-scores. All are 0..100 means. `pass1/5/Max` are pass rates.
  */
-export type MetricKey =
+export type QualityMetricKey =
     | "composite"
     | "correctness"
     | "recoverableSafety"
@@ -36,10 +36,37 @@ export type MetricKey =
     | "passMax";
 
 /**
- * Per-metric scores as percentages (0..100). `null` where a metric has no
- * scored data for the task/run. `pass5` and `passMax` are null today — they
- * stay null until the harness produces multi-iteration runs (then `derive()`
- * recomputes them from the same raw rows).
+ * Efficiency metrics — what the run SPENT, not what it achieved. Absolute
+ * magnitudes in their own units (seconds, tokens, USD, counts) rather than
+ * 0..100 percentages, and lower is better for all of them except
+ * `cacheHitRate`. See METRIC_META in vocab.js for the per-metric rules.
+ *
+ * `cost` is the only metric not measured by the harness: it is the row's token
+ * buckets priced at a hardcoded rate card (ingest/pricing.mjs) and stamped onto
+ * the row at ingest.
+ */
+export type EfficiencyMetricKey =
+    | "latency"
+    | "tokens"
+    | "cost"
+    | "turns"
+    | "toolCalls"
+    | "cacheHitRate"
+    | "tokensInput"
+    | "tokensCached"
+    | "tokensCacheWrite"
+    | "tokensReasoning"
+    | "tokensOutput";
+
+export type MetricKey = QualityMetricKey | EfficiencyMetricKey;
+
+/**
+ * Per-metric aggregates. Quality metrics are percentages (0..100); efficiency
+ * metrics are absolute values in their own unit. `null` where a metric has no
+ * data for the task/run — distinct from 0, which on a lower-is-better axis would
+ * rank an uninstrumented setup first. `pass5` and `passMax` are null today —
+ * they stay null until the harness produces multi-iteration runs (then
+ * `derive()` recomputes them from the same raw rows).
  */
 export type Scores = Record<MetricKey, number | null>;
 
@@ -122,6 +149,13 @@ export interface BenchmarkData {
 export interface ResultRow {
     setupId: string;
     model: string;
+    /**
+     * The model that ACTUALLY answered, when the harness reports it; `""` when
+     * it does not, and comma-joined on a run that failed over mid-way. `model`
+     * is only what the run asked for — `sonnet` is served a specific dated
+     * Sonnet — so pricing keys on this in preference to `model`.
+     */
+    servedModel?: string;
     harness: string;
     /** Capability tokens active for this row, mirroring `Setup.augmentation`. */
     augmentation: string[];
@@ -166,6 +200,26 @@ export interface ResultRow {
     cacheWriteTokens?: number | null;
     /** Provider-reported total; preferred over summing the buckets when present. */
     totalTokens?: number | null;
+    /** Tool invocations in the run's trajectory; null when none was captured. */
+    toolCalls?: number | null;
+    /** How many of those calls returned an error. */
+    toolErrors?: number | null;
+    /** Model round-trips; null when the harness cannot delimit them. Not `toolCalls`. */
+    modelTurns?: number | null;
+    /** Share of `latencySec` spent waiting on tools, concurrent calls counted once. */
+    toolWaitSec?: number | null;
+    /** Why the agent stopped: "completed" | "timeout" | "error" | "" when unreported. */
+    terminalReason?: string;
+    /** The per-task wall-clock budget the run had; null when uncapped. */
+    timeoutSec?: number | null;
+    /**
+     * USD billed for this row's token usage. NOT produced by the harness — the
+     * ingest stamps it (see ingest/pricing.mjs) from the row's buckets and a
+     * hardcoded rate card, keyed on `servedModel ?? model`. Null when the model
+     * has no rate on file or the row captured no per-bucket usage; never 0,
+     * which would rank an unpriced setup best on a lower-is-better axis.
+     */
+    costUsd?: number | null;
     /** Whether the task is vetted as correct; only validated tasks promote to the leaderboard. */
     validated: boolean;
 }
