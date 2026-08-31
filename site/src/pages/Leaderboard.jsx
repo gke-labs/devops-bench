@@ -99,13 +99,13 @@ export function Leaderboard() {
     const Arrow = ({ k }) => {
         if (sort.key !== k) return <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">↕</span>;
         const down = sort.dir === "desc";
-        const said = k === "name"
+        const directionLabel = k === "name"
             ? (down ? "Z to A" : "A to Z")
             : (down ? "best first" : "worst first");
         return (
             <>
                 <span aria-hidden="true" className="text-indigo-500 dark:text-indigo-400">{down ? "▼" : "▲"}</span>
-                <span className="sr-only">, sorted {said}</span>
+                <span className="sr-only">, sorted {directionLabel}</span>
             </>
         );
     };
