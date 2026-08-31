@@ -35,16 +35,26 @@ export const METRIC_LABELS = {
     pass5: "Pass@5",
     passMax: "Pass^5",
     latency: "Latency",
-    tokens: "Tokens"
+    inputTokens: "Input Tokens",
+    outputTokens: "Output Tokens",
+    cachedTokens: "Cached Tokens"
 };
 
-// Abbreviated labels for the metric toggle only, where eight buttons compete for
+// Abbreviated labels for the metric toggle only, where ten buttons compete for
 // the width of one table column. "Recoverable Safety" is ~2.5x the width of any
 // other button, so it alone decides whether the group fits on one line. Headings,
 // tooltips and the accessible name of the button all keep the full METRIC_LABELS
 // text — this shortens the visible glyphs, not the vocabulary.
+//
+// The token axes drop the shared "Tokens" noun because the efficiency pill
+// already groups them next to each other: three buttons reading "Input Tokens /
+// Output Tokens / Cached Tokens" repeat the word twice for no discrimination,
+// and the full name survives in the tooltip and the accessible name.
 const METRIC_SHORT_LABELS = {
-    recoverableSafety: "Rec. Safety"
+    recoverableSafety: "Rec. Safety",
+    inputTokens: "Input",
+    outputTokens: "Output",
+    cachedTokens: "Cached"
 };
 
 /** Toggle-button text for a metric, falling back to the full label. */
@@ -62,7 +72,9 @@ export const METRICS = [
     "pass5",
     "passMax",
     "latency",
-    "tokens"
+    "inputTokens",
+    "outputTokens",
+    "cachedTokens"
 ];
 
 // Per-metric presentation rules. Quality metrics are 0..100 percentages where
@@ -71,6 +83,7 @@ export const METRICS = [
 // be scaled against the visible range rather than read as a percentage, and the
 // sort has to invert. Anything not listed defaults to the percentage rules.
 const PERCENT = { unit: "%", lowerIsBetter: false, percentage: true };
+const TOKENS = { unit: "", lowerIsBetter: true, percentage: false };
 export const METRIC_META = {
     composite: PERCENT,
     correctness: PERCENT,
@@ -79,7 +92,9 @@ export const METRIC_META = {
     pass5: PERCENT,
     passMax: PERCENT,
     latency: { unit: "s", lowerIsBetter: true, percentage: false },
-    tokens: { unit: "", lowerIsBetter: true, percentage: false }
+    inputTokens: TOKENS,
+    outputTokens: TOKENS,
+    cachedTokens: TOKENS
 };
 
 /** Presentation rules for a metric, defaulting to the percentage rules. */
@@ -137,7 +152,7 @@ export function metricBarFraction(metric, value, best) {
  * "Best" follows the metric's direction: the smallest for a lower-is-better
  * absolute metric, the largest otherwise. Non-positive readings are dropped
  * from the lower-is-better case because they are the unmeasured sentinel
- * (see `latencyOf` / `sumTokens` in seed/mock-data.mjs). That matters beyond
+ * (see `latencyOf` / `bucketSum` in seed/mock-data.mjs). That matters beyond
  * the offending row: `best` is shared by the whole column, so one 0 would trip
  * the `best <= 0` guard above and flatten EVERY bar, not just its own.
  *
@@ -165,7 +180,12 @@ export const METRIC_DESCRIPTIONS = {
     pass5: "Pass@5: needs multi-iteration runs (not produced yet).",
     passMax: "Pass^5: needs multi-iteration runs (not produced yet).",
     latency: "Latency: mean agent wall-clock seconds per task. Lower is better, so the bar is scaled against the fastest setup on screen — a full bar is the fastest, half a bar is twice as slow.",
-    tokens: "Tokens: mean total tokens per task (the provider total when reported, else the sum of the captured buckets). Lower is better."
+    inputTokens:
+        "Input tokens: mean prompt tokens sent per task, including cache writes. Kept separate from output because providers bill it at a fraction of the generated rate. Lower is better.",
+    outputTokens:
+        "Output tokens: mean generated tokens per task, including reasoning tokens (a sibling of output, not a subset). The most expensive axis, and typically a few percent of the volume. Lower is better.",
+    cachedTokens:
+        "Cached tokens: mean cache-read tokens per task — prompt content billed at a steep discount. Reported by some harnesses only, so a blank cell means not reported, not zero. Lower is better."
 };
 
 // Description for a metric key, falling back to its label.
@@ -182,7 +202,11 @@ const METRIC_UNAVAILABLE_REASONS = {
     pass5: "Available once multi-iteration runs land",
     passMax: "Available once multi-iteration runs land",
     latency: "Not reported by these runs",
-    tokens: "Not reported by these runs"
+    inputTokens: "Not reported by these runs",
+    outputTokens: "Not reported by these runs",
+    // Cache reads are the one axis a harness can legitimately omit while
+    // reporting everything else, so the reason names the harness, not the run.
+    cachedTokens: "Not reported by these harnesses"
 };
 
 /** Tooltip for a metric with no data in the current dataset. */

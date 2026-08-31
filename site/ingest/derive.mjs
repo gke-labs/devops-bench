@@ -107,7 +107,9 @@ function meanScores(scoreList) {
         correctness: avg("correctness"),
         recoverableSafety: avg("recoverableSafety"),
         latency: avg("latency"),
-        tokens: avg("tokens")
+        inputTokens: avg("inputTokens"),
+        outputTokens: avg("outputTokens"),
+        cachedTokens: avg("cachedTokens")
     };
 }
 

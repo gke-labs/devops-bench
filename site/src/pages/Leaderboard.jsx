@@ -104,7 +104,7 @@ export function Leaderboard() {
                     <div className="col-span-5 sm:col-span-5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-x-4 sm:gap-y-2 pr-2">
                         <div className="flex items-center gap-1 min-w-[70px]">
                             {/* "METRIC", not "SCORE": the toggle below can select
-                                latency or tokens, and neither is a score. Naming the
+                                latency or a token axis, none of which is a score. Naming the
                                 selected metric here instead would just echo the
                                 highlighted button an inch beneath it. */}
                             <span>METRIC</span>

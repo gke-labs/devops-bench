@@ -179,8 +179,8 @@ export function Detail() {
     // "Avg Speed", which was independent of the metric back when latency wasn't
     // selectable; now that it is, selecting Latency makes "Average" the mean
     // latency and the two cards print the same figure side by side. Taking the
-    // first efficiency metric other than the selected one gives Tokens under
-    // Latency and Latency everywhere else, without naming either key here.
+    // first efficiency metric other than the selected one gives Input Tokens
+    // under Latency and Latency everywhere else, without naming either key here.
     const companion = METRICS.find(m => !metricMeta(m).percentage && m !== metric);
     const companionVals = companion
         ? setup.tasks.map(t => t.scores[companion]).filter(v => v != null)

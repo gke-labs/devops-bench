@@ -2,11 +2,11 @@
 // hero. `available` (optional) marks which metrics have data — the others render
 // DISABLED rather than hidden, so the UI advertises the axis exists and says why
 // it's empty. The reason is per-metric (see metricUnavailableReason): pass@k is
-// waiting on multi-iteration runs, latency/tokens on harness telemetry. When
-// `available` is omitted (or empty), every metric is enabled (back-compat).
+// waiting on multi-iteration runs, the efficiency axes on harness telemetry.
+// When `available` is omitted (or empty), every metric is enabled (back-compat).
 //
 // The metrics are split into two pills, quality and efficiency, rather than one
-// long strip: eight buttons overflow the leaderboard's score column, and the
+// long strip: ten buttons overflow the leaderboard's score column, and the
 // break should fall BETWEEN the two families rather than mid-strip. Wrapping the
 // pills puts it there, and the seam doubles as the visual cue that the efficiency
 // axes read the other way — lower is better, absolute units.

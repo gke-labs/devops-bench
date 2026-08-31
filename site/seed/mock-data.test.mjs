@@ -1,19 +1,63 @@
 import { describe, it, expect } from "vitest";
-import { generateRaw, derive, passAtK, PASS_THRESHOLD, sumTokens, latencyOf } from "./mock-data.mjs";
+import {
+    generateRaw,
+    derive,
+    passAtK,
+    PASS_THRESHOLD,
+    inputTokensOf,
+    outputTokensOf,
+    cachedTokensOf,
+    latencyOf
+} from "./mock-data.mjs";
 
-describe("sumTokens", () => {
-    it("prefers the producer's own total over the buckets", () => {
-        expect(sumTokens({ totalTokens: 993225, inputTokens: 135329, outputTokens: 9732 })).toBe(993225);
+describe("token axes", () => {
+    // The whole point of the split: these three must never be summed into one
+    // figure, so each has to pick up exactly its own billed-rate family.
+    const row = {
+        inputTokens: 100,
+        cacheWriteTokens: 7,
+        outputTokens: 20,
+        reasoningTokens: 5,
+        cachedTokens: 400
+    };
+
+    it("groups the buckets by billed rate, keeping the axes disjoint", () => {
+        expect(inputTokensOf(row)).toBe(107);   // input + cache write
+        expect(outputTokensOf(row)).toBe(25);   // output + reasoning
+        expect(cachedTokensOf(row)).toBe(400);  // cache reads alone
     });
 
-    it("sums the captured buckets when no total is reported", () => {
-        // reasoningTokens is a sibling of output, not a subset, so it is added.
-        expect(sumTokens({ inputTokens: 100, outputTokens: 20, reasoningTokens: 5 })).toBe(125);
+    it("counts reasoning as output, since it is a sibling bucket and not a subset", () => {
+        // Dropping it would undercount every reasoning model on the one axis
+        // that is billed at the highest rate.
+        expect(outputTokensOf({ outputTokens: 20, reasoningTokens: 5 })).toBe(25);
+        expect(outputTokensOf({ outputTokens: 20 })).toBe(20);
     });
 
-    it("is null when no usage was captured at all", () => {
-        expect(sumTokens({ inputTokens: null, outputTokens: null })).toBeNull();
-        expect(sumTokens({})).toBeNull();
+    it("ignores a provider total, which cannot be attributed to an axis", () => {
+        // sumTokens used to prefer totalTokens. A total says nothing about the
+        // input/output split, so a row carrying only one reads as unmeasured
+        // rather than being silently attributed to a single axis.
+        const totalOnly = { totalTokens: 993225 };
+        expect(inputTokensOf(totalOnly)).toBeNull();
+        expect(outputTokensOf(totalOnly)).toBeNull();
+        expect(cachedTokensOf(totalOnly)).toBeNull();
+        // ...and a total alongside buckets never overrides them.
+        expect(inputTokensOf({ totalTokens: 993225, inputTokens: 135329 })).toBe(135329);
+    });
+
+    it("keeps cache reads off the input axis", () => {
+        // Only some harnesses report cache reads (134 of 260 fleet rows, none of
+        // ours). Folding them into input would make a harness that reports them
+        // look more expensive than one that stays silent.
+        expect(inputTokensOf({ inputTokens: 100, cachedTokens: 400 })).toBe(100);
+        expect(cachedTokensOf({ inputTokens: 100 })).toBeNull();
+    });
+
+    it("is null when the axis was never captured at all", () => {
+        expect(inputTokensOf({ inputTokens: null })).toBeNull();
+        expect(outputTokensOf({})).toBeNull();
+        expect(cachedTokensOf({})).toBeNull();
     });
 
     // Regression: antigravity's parser returns {input: 0, output: 0, total: 0,
@@ -22,12 +66,17 @@ describe("sumTokens", () => {
     // that setup FIRST on a lower-is-better metric with a full bar — the same
     // failure latencyOf() guards against.
     it("treats an all-zero usage record as unmeasured, not as zero tokens", () => {
-        expect(sumTokens({ inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0 })).toBeNull();
+        const zeroed = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0 };
+        expect(inputTokensOf(zeroed)).toBeNull();
+        expect(outputTokensOf(zeroed)).toBeNull();
+        expect(cachedTokensOf(zeroed)).toBeNull();
         expect(latencyOf({ latencySec: 0 })).toBeNull();
     });
 
-    it("falls through to the buckets when only the total is zeroed", () => {
-        expect(sumTokens({ totalTokens: 0, inputTokens: 400, outputTokens: 100 })).toBe(500);
+    it("keeps an axis that was captured when a sibling axis is zeroed", () => {
+        // A zeroed bucket is per-axis: output going quiet must not blank input.
+        expect(inputTokensOf({ inputTokens: 400, outputTokens: 0 })).toBe(400);
+        expect(outputTokensOf({ inputTokens: 400, outputTokens: 0 })).toBeNull();
     });
 });
 
@@ -136,6 +185,7 @@ describe("derive", () => {
         // Efficiency is telemetry, not a score: the blanked cell still consumed
         // wall-clock and tokens, so those survive while every score is null.
         expect(task.scores.latency).toBeGreaterThan(0);
-        expect(task.scores.tokens).toBeGreaterThan(0);
+        expect(task.scores.inputTokens).toBeGreaterThan(0);
+        expect(task.scores.outputTokens).toBeGreaterThan(0);
     });
 });

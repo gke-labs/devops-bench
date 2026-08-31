@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { formatMetric, isLowerBetter, metricBarFraction, metricMeta, bestValue } from "./vocab.js";
+import {
+    formatMetric,
+    isLowerBetter,
+    metricBarFraction,
+    metricMeta,
+    bestValue,
+    METRICS,
+    METRIC_LABELS,
+    metricDescription
+} from "./vocab.js";
 
 describe("metric presentation rules", () => {
     it("treats quality metrics as higher-is-better percentages", () => {
@@ -10,10 +19,23 @@ describe("metric presentation rules", () => {
     });
 
     it("treats efficiency metrics as lower-is-better magnitudes", () => {
-        for (const m of ["latency", "tokens"]) {
+        for (const m of ["latency", "inputTokens", "outputTokens", "cachedTokens"]) {
             expect(metricMeta(m).percentage).toBe(false);
             expect(isLowerBetter(m)).toBe(true);
         }
+    });
+
+    it("keeps the token buckets on separate axes, never summed into one", () => {
+        // The buckets are billed at different rates, so a single combined
+        // metric reports whichever happens to be largest. Guard the vocabulary
+        // against a combined key creeping back in.
+        expect(METRICS).toEqual(expect.arrayContaining(["inputTokens", "outputTokens", "cachedTokens"]));
+        expect(METRICS).not.toContain("tokens");
+        // Each carries its own label and its own explanation.
+        const labels = ["inputTokens", "outputTokens", "cachedTokens"].map(m => METRIC_LABELS[m]);
+        expect(new Set(labels).size).toBe(3);
+        const notes = ["inputTokens", "outputTokens", "cachedTokens"].map(metricDescription);
+        expect(new Set(notes).size).toBe(3);
     });
 
     it("defaults an unknown metric to the percentage rules", () => {
@@ -30,14 +52,14 @@ describe("formatMetric", () => {
     it("renders latency in seconds and compacts large token counts", () => {
         expect(formatMetric("latency", 42.66)).toBe("42.7s");
         expect(formatMetric("latency", 8)).toBe("8.0s");
-        expect(formatMetric("tokens", 38412)).toBe("38.4k");
-        expect(formatMetric("tokens", 850)).toBe("850");
+        expect(formatMetric("outputTokens", 38412)).toBe("38.4k");
+        expect(formatMetric("outputTokens", 850)).toBe("850");
     });
 
     it("renders a missing value as an em dash, never as zero", () => {
         expect(formatMetric("latency", null)).toBe("—");
         expect(formatMetric("composite", undefined)).toBe("—");
-        expect(formatMetric("tokens", NaN)).toBe("—");
+        expect(formatMetric("outputTokens", NaN)).toBe("—");
     });
 });
 
@@ -57,7 +79,7 @@ describe("metricBarFraction", () => {
         // Regression: filtering down to one row made value === the scale, which
         // previously floored the bar at 2% for the fastest setup on screen.
         expect(metricBarFraction("latency", 42, 42)).toBeCloseTo(1);
-        expect(metricBarFraction("tokens", 38412, 38412)).toBeCloseTo(1);
+        expect(metricBarFraction("outputTokens", 38412, 38412)).toBeCloseTo(1);
     });
 
     it("keeps near-equal values near-equal instead of full vs empty", () => {
@@ -79,7 +101,7 @@ describe("metricBarFraction", () => {
 describe("bestValue", () => {
     it("takes the smallest for a lower-is-better metric and the largest otherwise", () => {
         expect(bestValue("latency", [30, 10, 20])).toBe(10);
-        expect(bestValue("tokens", [300, 100, 200])).toBe(100);
+        expect(bestValue("outputTokens", [300, 100, 200])).toBe(100);
         expect(bestValue("composite", [30, 10, 20])).toBe(30);
     });
 
@@ -93,13 +115,13 @@ describe("bestValue", () => {
     // min would then be 0. metricBarFraction bails on `best <= 0`, so that one
     // row would empty EVERY bar in the column instead of only its own.
     it("ignores the 0 sentinel so one unmeasured row cannot flatten the column", () => {
-        expect(bestValue("tokens", [0, 5000, 20000])).toBe(5000);
+        expect(bestValue("outputTokens", [0, 5000, 20000])).toBe(5000);
         expect(bestValue("latency", [0, 42])).toBe(42);
-        expect(metricBarFraction("tokens", 20000, bestValue("tokens", [0, 5000, 20000]))).toBeCloseTo(0.25);
+        expect(metricBarFraction("outputTokens", 20000, bestValue("outputTokens", [0, 5000, 20000]))).toBeCloseTo(0.25);
     });
 
     it("is null when every lower-is-better reading is the sentinel", () => {
-        expect(bestValue("tokens", [0, 0])).toBeNull();
+        expect(bestValue("outputTokens", [0, 0])).toBeNull();
     });
 
     // A percentage metric legitimately bottoms out at 0 (a 0% pass rate), so the

@@ -84,9 +84,12 @@ describe("derive — data-driven", () => {
             recoverableSafety: null,
             // Efficiency is telemetry, not a score: an iteration that never
             // scored still consumed wall-clock, so latency survives while every
-            // score is null. Tokens stay null because the fixture captured none.
+            // score is null. The token axes stay null because the fixture
+            // captured no usage.
             latency: 1,
-            tokens: null
+            inputTokens: null,
+            outputTokens: null,
+            cachedTokens: null
         });
     });
 
@@ -112,23 +115,50 @@ describe("derive — data-driven", () => {
         expect(mixed[0].tasks[0].scores.latency).toBe(10);
     });
 
-    it("counts reasoning tokens, which are a sibling bucket of output", () => {
-        // Regression: omitting reasoningTokens undercounted every reasoning model.
+    it("projects the token buckets onto three axes rather than one total", () => {
+        // Regression: a single summed figure was ~the input count wearing a
+        // different label. Output was 0.7% of the fleet's summed buckets, so the
+        // most expensive axis was invisible in the number that ranked setups.
         const base = {
             setupId: "s", model: "m", harness: "h", augmentation: [],
             runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
             taskFolder: "task-a", taskName: "Task A", status: "success",
             toolScore: null, latencySec: 5, outcomeScore: 0.9, iteration: 0
         };
-        const summed = derive([
-            { ...base, inputTokens: 100, outputTokens: 200, reasoningTokens: 700 }
+        const split = derive([
+            {
+                ...base,
+                inputTokens: 100,
+                cacheWriteTokens: 50,
+                outputTokens: 200,
+                reasoningTokens: 700,
+                cachedTokens: 4000,
+                // A provider total no longer overrides the buckets: it cannot be
+                // attributed to an axis.
+                totalTokens: 950
+            }
         ]);
-        expect(summed[0].tasks[0].scores.tokens).toBe(1000);
+        expect(split[0].tasks[0].scores).toMatchObject({
+            inputTokens: 150,
+            outputTokens: 900,
+            cachedTokens: 4000
+        });
+    });
 
-        // A provider-reported total still wins over the bucket sum.
-        const totalled = derive([
-            { ...base, inputTokens: 100, outputTokens: 200, reasoningTokens: 700, totalTokens: 950 }
+    it("leaves the cached axis null for a harness that reports no cache reads", () => {
+        // Only some harnesses report cache reads. A blank cell has to stay
+        // distinct from a 0, or a silent harness would rank best on a
+        // lower-is-better axis purely for being less talkative.
+        const setups = derive([
+            {
+                setupId: "s", model: "m", harness: "h", augmentation: [],
+                runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
+                taskFolder: "task-a", taskName: "Task A", status: "success",
+                toolScore: null, latencySec: 5, outcomeScore: 0.9, iteration: 0,
+                inputTokens: 100, outputTokens: 200
+            }
         ]);
-        expect(totalled[0].tasks[0].scores.tokens).toBe(950);
+        expect(setups[0].tasks[0].scores.cachedTokens).toBeNull();
+        expect(setups[0].tasks[0].scores.inputTokens).toBe(100);
     });
 });

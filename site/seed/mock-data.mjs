@@ -214,6 +214,14 @@ export function generateRaw() {
                         latencySec: round(20 + rng() * 60, 2),
                         inputTokens: Math.round(8000 + rng() * 30000),
                         outputTokens: Math.round(300 + rng() * 1500),
+                        // Cache reads are reported by SOME harnesses only (in the
+                        // fleet's week-2 drop, 134 of 260 rows; in ours, none), so
+                        // the mock leaves them absent on the API runner. That keeps
+                        // a blank Cached cell on screen next to populated ones —
+                        // the case the separate axis exists to make visible.
+                        ...(def.harness === "api-loop"
+                            ? {}
+                            : { cachedTokens: Math.round(12000 + rng() * 60000) }),
                         // Mock rows are all vetted so the seeded demo renders;
                         // real rows carry per-task validated from the harness.
                         validated: true
@@ -317,37 +325,66 @@ export function latencyOf(row) {
     return Number.isFinite(row.latencySec) && row.latencySec > 0 ? row.latencySec : null;
 }
 
-// Total tokens for one row. Prefers the producer's own total when present (it
-// may count buckets the row does not break out); otherwise sums the captured
-// buckets. `reasoningTokens` is a SIBLING of output, not a subset of it (see
-// the canonical buckets in normalize.py), so leaving it out would undercount
-// every reasoning model. Null when no usage was captured at all, so "not
-// measured" stays distinct from a genuine zero.
-//
+// Sum of the named buckets for one row, or null when none of them was captured.
 // A non-positive result is the same unmeasured sentinel `latencyOf` handles: a
 // harness that produced no session log normalizes to zeros rather than nulls
 // (antigravity's parser returns `{input: 0, output: 0, total: 0, cached: 0}`
 // for an empty log, and normalize.py coerces those through as ints), and no
 // real run costs 0 tokens. Reporting the 0 would rank that setup FIRST on a
-// lower-is-better metric. The total is checked separately from the buckets so
-// a zeroed total still falls through to buckets that were captured.
-export function sumTokens(row) {
-    if (Number.isFinite(row.totalTokens) && row.totalTokens > 0) return row.totalTokens;
-    const parts = [
-        row.inputTokens,
-        row.outputTokens,
-        row.cachedTokens,
-        row.reasoningTokens,
-        row.cacheWriteTokens
-    ].filter(v => Number.isFinite(v));
+// lower-is-better metric.
+function bucketSum(row, keys) {
+    const parts = keys.map(k => row[k]).filter(v => Number.isFinite(v));
     if (!parts.length) return null;
     const total = parts.reduce((a, b) => a + b, 0);
     return total > 0 ? total : null;
 }
 
-// The {latency, tokens} slice of Scores for one group of iteration rows.
+// Token usage is reported as three axes, not one number, because the buckets are
+// not interchangeable: a provider bills generated tokens at several times the
+// prompt rate and a cache read at a fraction of it. Summing them reports
+// whichever bucket happens to be largest — in our own drops output is 0.7%
+// (fleet week-2), 2.4% and 5.5% of the summed buckets, so a combined figure is
+// the input count wearing a different label, and the axis a reader cares about
+// is the one it hides.
+//
+// Grouping is by BILLED RATE, so each axis is a quantity of one kind of thing:
+//
+//   input  = inputTokens + cacheWriteTokens — cache creation is prompt content
+//            sent for this run, billed at roughly the input rate.
+//   output = outputTokens + reasoningTokens — reasoning is a SIBLING bucket of
+//            output, not a subset (see the canonical buckets in normalize.py),
+//            and both are generated at the output rate. Folding it in here is
+//            what keeps reasoning models from being undercounted.
+//   cached = cachedTokens — the cheapest bucket, and reported by only some
+//            harnesses (134 of 260 fleet rows; none of ours). Folded into input
+//            it would make a harness that reports cache reads look more
+//            expensive than one that stays silent, which is a ranking artifact
+//            of telemetry verbosity rather than a real cost difference.
+//
+// None of these consults `totalTokens`: a single provider-reported total cannot
+// be attributed to an axis, and no row in any dataset we hold carries one
+// without also carrying the buckets. A producer that ever reports only a total
+// renders blank here rather than being silently mis-attributed.
+export function inputTokensOf(row) {
+    return bucketSum(row, ["inputTokens", "cacheWriteTokens"]);
+}
+
+export function outputTokensOf(row) {
+    return bucketSum(row, ["outputTokens", "reasoningTokens"]);
+}
+
+export function cachedTokensOf(row) {
+    return bucketSum(row, ["cachedTokens"]);
+}
+
+// The efficiency slice of Scores for one group of iteration rows.
 export function efficiencyFor(rows) {
-    return { latency: rawMean(rows, latencyOf), tokens: rawMean(rows, sumTokens) };
+    return {
+        latency: rawMean(rows, latencyOf),
+        inputTokens: rawMean(rows, inputTokensOf),
+        outputTokens: rawMean(rows, outputTokensOf),
+        cachedTokens: rawMean(rows, cachedTokensOf)
+    };
 }
 
 // Mean over a list of score objects, per metric. Skips non-numeric entries so a
@@ -365,7 +402,9 @@ function meanScores(scoreList) {
         correctness: avg("correctness"),
         recoverableSafety: avg("recoverableSafety"),
         latency: avg("latency"),
-        tokens: avg("tokens")
+        inputTokens: avg("inputTokens"),
+        outputTokens: avg("outputTokens"),
+        cachedTokens: avg("cachedTokens")
     };
 }
 

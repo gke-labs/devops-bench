@@ -56,8 +56,8 @@ describe("MetricToggle", () => {
         expect(buttonFor("latency")).toHaveAttribute("aria-pressed", "true");
         expect(buttonFor("composite")).toHaveAttribute("aria-pressed", "false");
 
-        fireEvent.click(buttonFor("tokens"));
-        expect(onChange).toHaveBeenCalledWith("tokens");
+        fireEvent.click(buttonFor("outputTokens"));
+        expect(onChange).toHaveBeenCalledWith("outputTokens");
     });
 
     it("disables metrics missing from `available` rather than hiding them", () => {
@@ -82,7 +82,7 @@ describe("MetricToggle", () => {
         render(<MetricToggle value="composite" onChange={() => {}} available={["composite"]} />);
         expect(buttonFor("pass5")).toHaveAttribute("title", "Available once multi-iteration runs land");
         expect(buttonFor("latency")).toHaveAttribute("title", "Not reported by these runs");
-        expect(buttonFor("tokens")).toHaveAttribute("title", "Not reported by these runs");
+        expect(buttonFor("outputTokens")).toHaveAttribute("title", "Not reported by these runs");
     });
 
     it("describes an enabled metric instead of explaining its absence", () => {

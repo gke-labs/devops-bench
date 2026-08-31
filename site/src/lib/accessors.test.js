@@ -140,7 +140,7 @@ describe("yAxisBounds", () => {
         it("follows the data instead of clamping to 100", () => {
             // Token means run to five figures; a [0, 100] clamp would push every
             // series off the top of the chart.
-            const b = yAxisBounds([withHistory("tokens", [23200, 24100, 25200])], "tokens");
+            const b = yAxisBounds([withHistory("outputTokens", [23200, 24100, 25200])], "outputTokens");
             expect(b.min).toBeGreaterThan(100);
             expect(b.min).toBeLessThan(23200);
             expect(b.max).toBeGreaterThan(25200);
@@ -150,7 +150,7 @@ describe("yAxisBounds", () => {
             // Raw padding gave [45.3, 54.7], printing "54.8s" against "54.0s".
             expect(yAxisBounds([withHistory("latency", [47.9, 50.1, 52.2])], "latency"))
                 .toEqual({ min: 44, max: 56 });
-            expect(yAxisBounds([withHistory("tokens", [23200, 24100, 25200])], "tokens"))
+            expect(yAxisBounds([withHistory("outputTokens", [23200, 24100, 25200])], "outputTokens"))
                 .toEqual({ min: 21000, max: 27000 });
         });
 

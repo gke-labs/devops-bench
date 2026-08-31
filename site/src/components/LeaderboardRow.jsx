@@ -7,7 +7,7 @@ import { setupScore, setupLabel } from "../lib/accessors.js";
 import { formatMetric, metricBarFraction } from "../lib/vocab.js";
 
 // `metricBest` is the best value for this metric across the visible rows — for
-// absolute metrics (latency, tokens) that is the SMALLEST, and the bar shows
+// absolute metrics (latency, the token axes) that is the SMALLEST, and the bar shows
 // each row's ratio to it, since those metrics have no natural ceiling. Unused by
 // percentage metrics.
 export function LeaderboardRow({ setup, models, harnesses, metric, metricBest }) {
