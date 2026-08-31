@@ -27,8 +27,8 @@ const FIXTURE = {
         {
             id: "gamma-coder-openclaw-mcp-skills", order: 1, model: "gamma-coder", harness: "openclaw",
             augmentation: ["mcp", "skills"], color: "#ec4899",
-            tasks: [{ folder: "a", name: "A", scores: { pass1: 70, pass5: 75, passMax: 80, composite: 90, latency: 50 } }],
-            history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: 70, pass5: 75, passMax: 80, composite: 90, latency: 50 } }]
+            tasks: [{ folder: "a", name: "A", scores: { pass1: 70, pass5: 75, passMax: 80, composite: 90, latency: 50, cachedTokens: 5000 } }],
+            history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: 70, pass5: 75, passMax: 80, composite: 90, latency: 50, cachedTokens: 5000 } }]
         }
     ],
     loading: false,
@@ -136,13 +136,48 @@ describe("Leaderboard sorting", () => {
         expect(order()[0]).toMatch(/Alpha Pro/);
     });
 
-    it("points the arrow at the values, not the sort flag, on a lower-is-better metric", () => {
-        // Best-first on latency is ASCENDING numbers. A ▼ there would sit above
-        // a column reading 20.0s → 50.0s.
+    it("never changes sort direction on its own when the metric changes", () => {
+        // Regression: the arrow used to describe the raw digits, and best-first
+        // is DESCENDING numbers on composite but ASCENDING numbers on latency.
+        // Crossing between the two families inverted it with no click, which
+        // reads as the sort mode switching by itself.
         renderPage();
-        fireEvent.click(screen.getByRole("button", { name: "Latency" }));
-        expect(metricHeader()).toHaveAccessibleName(/sorted ascending/);
+        expect(metricHeader()).toHaveAccessibleName(/best first/);
+        // Latency/Cached are lower-is-better and Pass@1/Outcome higher — the
+        // crossing that used to invert the glyph.
+        for (const m of ["Latency", "Pass@1", "Cached Tokens", "Outcome"]) {
+            fireEvent.click(screen.getByRole("button", { name: m }));
+            expect(metricHeader()).toHaveAccessibleName(/best first/);
+        }
+        // Only an explicit click moves it, and then it stays moved.
         fireEvent.click(metricHeader());
-        expect(metricHeader()).toHaveAccessibleName(/sorted descending/);
+        expect(metricHeader()).toHaveAccessibleName(/worst first/);
+        fireEvent.click(screen.getByRole("button", { name: "Latency" }));
+        expect(metricHeader()).toHaveAccessibleName(/worst first/);
+    });
+
+    it("keeps the winner on top across every metric, quality or efficiency", () => {
+        // The arrow no longer tracks the digits, but best-first is still what
+        // the default MEANS: highest composite, lowest latency.
+        renderPage();
+        expect(order()[0]).toMatch(/Gamma Coder/);   // composite 90 > 70
+        fireEvent.click(screen.getByRole("button", { name: "Latency" }));
+        expect(order()[0]).toMatch(/Alpha Pro/);     // latency 20s < 50s
+    });
+
+    it("gives an identical alphabetical order on every metric tab", () => {
+        // The name comparator reads model/harness/augmentation only, so the
+        // ordering cannot vary by metric — including on tabs where a setup has
+        // no reading at all and the rank sort would shuffle it to the bottom.
+        renderPage();
+        fireEvent.click(modelHeader());
+        const baseline = order();
+        expect(baseline[0]).toMatch(/Alpha Pro/);
+        for (const m of ["Latency", "Input Tokens", "Output Tokens", "Cached Tokens", "Pass@1", "Outcome"]) {
+            const pill = screen.queryByRole("button", { name: m });
+            if (!pill || pill.disabled) continue;
+            fireEvent.click(pill);
+            expect(order()).toEqual(baseline);
+        }
     });
 });

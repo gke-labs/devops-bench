@@ -82,22 +82,30 @@ export function Leaderboard() {
             : { key, dir: key === "name" ? "asc" : "desc" });
     }
 
-    // The arrow reports which way the VALUES run, not the internal sort flag.
-    // "desc" means best-first, and best-first under latency or a token axis is
-    // ascending numbers — so the glyph has to invert or the column reads
-    // 22.3k → 28.0k under a ▼. Same rule as the detail page's table.
+    // The glyph describes the column's ORDER, never the raw digits: on the
+    // metric ▼ is best-first and ▲ is worst-first, on every metric alike.
+    //
+    // Pointing it at the digits instead made it flip with no click, because
+    // best-first is DESCENDING numbers on Outcome but ASCENDING numbers on
+    // latency and the token axes. Moving between the two families inverted the
+    // arrow on its own, which reads as the sort mode changing by itself when
+    // all you did was change tabs. Rank is the stable thing here, so the arrow
+    // tracks rank; the cost is a ▼ above a latency column that counts upward,
+    // which the label spells out.
+    //
     // These headers are buttons in a CSS grid, not real columnheaders, so
-    // aria-sort would be invalid here — the direction rides along as
+    // aria-sort would be invalid — the direction rides along as
     // visually-hidden text in the button's accessible name instead.
     const Arrow = ({ k }) => {
         if (sort.key !== k) return <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">↕</span>;
-        const ascending = k === "name"
-            ? sort.dir === "asc"
-            : (sort.dir === "asc") !== isLowerBetter(metric);
+        const down = sort.dir === "desc";
+        const said = k === "name"
+            ? (down ? "Z to A" : "A to Z")
+            : (down ? "best first" : "worst first");
         return (
             <>
-                <span aria-hidden="true" className="text-indigo-500 dark:text-indigo-400">{ascending ? "▲" : "▼"}</span>
-                <span className="sr-only">, sorted {ascending ? "ascending" : "descending"}</span>
+                <span aria-hidden="true" className="text-indigo-500 dark:text-indigo-400">{down ? "▼" : "▲"}</span>
+                <span className="sr-only">, sorted {said}</span>
             </>
         );
     };
@@ -154,7 +162,7 @@ export function Leaderboard() {
                                 latency or a token axis, none of which is a score. Naming the
                                 selected metric here instead would just echo the
                                 highlighted button an inch beneath it. */}
-                            <button type="button" onClick={() => sortBy("metric")} title={`Rank by ${METRIC_LABELS[metric]}`} className={headerBtn}>
+                            <button type="button" onClick={() => sortBy("metric")} title={`Rank by ${METRIC_LABELS[metric]} — ▼ best first, ▲ worst first`} className={headerBtn}>
                                 METRIC <Arrow k="metric" />
                             </button>
                             <div tabIndex={0} aria-label={`${METRIC_LABELS[metric]} explanation`} className="group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 rounded-full">
