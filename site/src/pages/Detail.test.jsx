@@ -160,6 +160,21 @@ describe("Detail", () => {
         expect(within(card("Catastrophic")).getByText("outcomes zeroed")).toBeInTheDocument();
     });
 
+    it("drops the catastrophic card on the efficiency metrics", () => {
+        // A catastrophic violation zeroes the OUTCOME score. The seconds and
+        // tokens the run consumed are untouched, so beside a latency or token
+        // headline the card qualifies a figure it has no bearing on.
+        benchmark.setups[0].catastrophicCount = 3;
+        for (const m of ["latency", "inputTokens", "outputTokens"]) {
+            renderAt(`/setup/${SETUP_ID}?metric=${m}`);
+            expect(screen.queryByText("Catastrophic")).not.toBeInTheDocument();
+            cleanup();
+        }
+        // ...and is still there on the quality side, where it explains the score.
+        renderAt(`/setup/${SETUP_ID}?metric=composite`);
+        expect(screen.getByText("Catastrophic")).toBeInTheDocument();
+    });
+
     it("reports the efficiency axis the toggle is not showing", () => {
         const card = label => screen.getByText(label).closest("div");
 

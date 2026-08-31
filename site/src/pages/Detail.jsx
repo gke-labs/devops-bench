@@ -224,20 +224,28 @@ export function Detail() {
                     <StatCard label="Best Task" value={pct(best)} sub={METRIC_LABELS[metric]} />
                     <StatCard label="Average" value={pct(avg)} sub={`over ${vals.length} tasks`} />
                     <StatCard label="Median" value={pct(med)} sub={METRIC_LABELS[metric]} />
-                    <StatCard
-                        label="Catastrophic"
-                        value={String(setup.catastrophicCount ?? 0)}
-                        // "outcome zeroed", not "task zeroed": the task still ran
-                        // and still has its other measurements; what a
-                        // catastrophic violation zeroes is the Outcome score.
-                        sub={
-                            setup.catastrophicCount === 1
-                                ? "outcome zeroed"
-                                : setup.catastrophicCount
-                                  ? "outcomes zeroed"
-                                  : "none"
-                        }
-                    />
+                    {/* Only on the quality metrics. What a catastrophic
+                        violation zeroes is the Outcome score — the seconds and
+                        tokens the run consumed are untouched and still valid, so
+                        in a row of cards that otherwise all describe the selected
+                        metric, this one would read as qualifying a figure it has
+                        no bearing on. Same rule as the leaderboard's ⚠ badge. */}
+                    {metricMeta(metric).percentage && (
+                        <StatCard
+                            label="Catastrophic"
+                            value={String(setup.catastrophicCount ?? 0)}
+                            // "outcome zeroed", not "task zeroed": the task still ran
+                            // and still has its other measurements; what a
+                            // catastrophic violation zeroes is the Outcome score.
+                            sub={
+                                setup.catastrophicCount === 1
+                                    ? "outcome zeroed"
+                                    : setup.catastrophicCount
+                                      ? "outcomes zeroed"
+                                      : "none"
+                            }
+                        />
+                    )}
                     {companion ? (
                         <StatCard
                             label={`Avg ${METRIC_LABELS[companion]}`}

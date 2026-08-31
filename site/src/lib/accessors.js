@@ -42,6 +42,25 @@ export function setupLabel(setup, models, harnesses) {
     return parts.join(" · ");
 }
 
+// Alphabetical ordering over the identity a row actually displays — model, then
+// harness, then the augmentation chips — rather than over setup.id, which is a
+// slug and would sort "api-loop" above "Gemini CLI" on punctuation the reader
+// cannot see. `numeric` keeps gpt-5-2 ahead of gpt-5-10 instead of ordering the
+// version digits as text.
+/**
+ * @param {Setup} a
+ * @param {Setup} b
+ * @param {ModelMap} models
+ * @param {HarnessMap} harnesses
+ * @returns {number}
+ */
+export function compareByName(a, b, models, harnesses) {
+    const cmp = (x, y) => x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" });
+    return cmp(models[a.model].name, models[b.model].name)
+        || cmp(harnesses[a.harness].name, harnesses[b.harness].name)
+        || cmp(a.augmentation.join(","), b.augmentation.join(","));
+}
+
 // Secondary modifier chips — one per augmentation token, or a single neutral
 // "Baseline" chip when the augmentation array is empty. The harness type chip
 // is built separately at the call site (it needs the per-harness accent color).

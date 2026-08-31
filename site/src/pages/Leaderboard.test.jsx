@@ -15,17 +15,20 @@ const FIXTURE = {
         "openclaw": { name: "OpenClaw", type: "cli", accent: "#f43f5e", logo: "claw" }
     },
     setups: [
+        // Deliberately ranked against the alphabet: Gamma Coder leads on
+        // composite while Alpha Pro leads on latency, so a sort assertion can
+        // tell rank order, reverse-rank order and name order apart.
         {
             id: "alpha-pro-gemini-cli", order: 0, model: "alpha-pro", harness: "gemini-cli",
             augmentation: [], color: "#3b82f6",
-            tasks: [{ folder: "a", name: "A", scores: { pass1: 90, pass5: 95, passMax: 100 } }],
-            history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: 90, pass5: 95, passMax: 100 } }]
+            tasks: [{ folder: "a", name: "A", scores: { pass1: 90, pass5: 95, passMax: 100, composite: 70, latency: 20 } }],
+            history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: 90, pass5: 95, passMax: 100, composite: 70, latency: 20 } }]
         },
         {
             id: "gamma-coder-openclaw-mcp-skills", order: 1, model: "gamma-coder", harness: "openclaw",
             augmentation: ["mcp", "skills"], color: "#ec4899",
-            tasks: [{ folder: "a", name: "A", scores: { pass1: 70, pass5: 75, passMax: 80 } }],
-            history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: 70, pass5: 75, passMax: 80 } }]
+            tasks: [{ folder: "a", name: "A", scores: { pass1: 70, pass5: 75, passMax: 80, composite: 90, latency: 50 } }],
+            history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: 70, pass5: 75, passMax: 80, composite: 90, latency: 50 } }]
         }
     ],
     loading: false,
@@ -78,5 +81,68 @@ describe("Leaderboard", () => {
         fireEvent.click(screen.getByRole("button", { name: "Pass@5" }));
         expect(screen.getByRole("heading", { name: /Pass@5 Trend Over Time/i })).toBeInTheDocument();
         expect(screen.queryByText(/success rates/i)).not.toBeInTheDocument();
+    });
+});
+
+// Row order, read off the links in DOM order.
+const order = () => screen.getAllByRole("link").map(a => a.getAttribute("aria-label"));
+const modelHeader = () => screen.getByRole("button", { name: /^MODEL/ });
+const metricHeader = () => screen.getByRole("button", { name: /^METRIC/ });
+
+describe("Leaderboard sorting", () => {
+    it("still opens ranked best-first, so it reads as a leaderboard", () => {
+        renderPage();
+        // Gamma leads on composite despite sorting second alphabetically.
+        expect(order()[0]).toMatch(/Gamma Coder/);
+    });
+
+    it("sorts alphabetically when the identity header is clicked", () => {
+        renderPage();
+        fireEvent.click(modelHeader());
+        expect(order()[0]).toMatch(/Alpha Pro/);
+    });
+
+    it("holds that order across metric tabs, which is the point of having it", () => {
+        // The reason to sort by name is to read one setup down the columns.
+        // Re-ranking on every tab makes that impossible, so the sort key has to
+        // survive a metric change. Composite and latency rank oppositely here,
+        // so a regression to auto-rank would visibly reorder.
+        renderPage();
+        fireEvent.click(modelHeader());
+        for (const m of ["Latency", "Pass@5"]) {
+            fireEvent.click(screen.getByRole("button", { name: m }));
+            expect(order()[0]).toMatch(/Alpha Pro/);
+        }
+    });
+
+    it("re-ranks per metric while sorted by rank, the pre-existing behavior", () => {
+        renderPage();
+        expect(order()[0]).toMatch(/Gamma Coder/);
+        // Best latency is the SMALLEST, so Alpha (20s) leads Gamma (50s).
+        fireEvent.click(screen.getByRole("button", { name: "Latency" }));
+        expect(order()[0]).toMatch(/Alpha Pro/);
+    });
+
+    it("flips direction when the active header is clicked again", () => {
+        renderPage();
+        fireEvent.click(modelHeader());
+        expect(order()[0]).toMatch(/Alpha Pro/);
+        fireEvent.click(modelHeader());
+        expect(order()[0]).toMatch(/Gamma Coder/);
+
+        fireEvent.click(metricHeader());
+        expect(order()[0]).toMatch(/Gamma Coder/);
+        fireEvent.click(metricHeader());
+        expect(order()[0]).toMatch(/Alpha Pro/);
+    });
+
+    it("points the arrow at the values, not the sort flag, on a lower-is-better metric", () => {
+        // Best-first on latency is ASCENDING numbers. A ▼ there would sit above
+        // a column reading 20.0s → 50.0s.
+        renderPage();
+        fireEvent.click(screen.getByRole("button", { name: "Latency" }));
+        expect(metricHeader()).toHaveAccessibleName(/sorted ascending/);
+        fireEvent.click(metricHeader());
+        expect(metricHeader()).toHaveAccessibleName(/sorted descending/);
     });
 });
