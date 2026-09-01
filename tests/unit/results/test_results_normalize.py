@@ -130,6 +130,35 @@ def test_normalize_tokens_float_coerced_to_int():
     assert normalize_tokens({"input": 12.0, "output": 3.9}) == (12, 3, None, None, None, None)
 
 
+def test_normalize_tokens_openclaw_camel_case_cache_shape() -> None:
+    # OpenClaw sums the provider's `usage` mapping verbatim, so Anthropic's cache
+    # buckets arrive camelCased. Real payload from a claude-opus-5 b-0011 run.
+    tokens = {
+        "input": 58,
+        "output": 11613,
+        "cacheRead": 1613330,
+        "cacheWrite": 225457,
+        "total": 1850458,
+    }
+    assert normalize_tokens(tokens) == (58, 11613, 1613330, None, 225457, 1850458)
+
+
+def test_normalize_tokens_camel_case_cache_buckets_reconcile_to_total() -> None:
+    # The regression that motivated the aliases: dropping cacheRead/cacheWrite
+    # left the buckets summing to 11,671 against a reported total of 1,850,458,
+    # so a fully-cached run looked ~99% cheaper than it was.
+    inp, out, cached, _reasoning, cache_write, total = normalize_tokens(
+        {"input": 58, "output": 11613, "cacheRead": 1613330, "cacheWrite": 225457, "total": 1850458}
+    )
+    assert inp + out + cached + cache_write == total
+
+
+def test_normalize_tokens_snake_case_cached_still_wins_over_camel() -> None:
+    # gemini-cli and antigravity emit `cached`; it stays ahead of the OpenClaw
+    # spelling so a record carrying both is read the canonical way.
+    assert normalize_tokens({"cached": 5, "cacheRead": 900}).cached == 5
+
+
 # -- extract_score -----------------------------------------------------------
 
 
