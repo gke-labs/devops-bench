@@ -21,7 +21,9 @@ under the ``checklist`` key; the batch pipeline picks it up via :data:`METRICS`.
 
 from __future__ import annotations
 
+import random
 import re
+import time
 from collections.abc import Iterable
 
 from deepeval.metrics import GEval
@@ -46,6 +48,21 @@ _log = get_logger("metrics.checklist")
 
 # Per-task checklist pass cutoff.
 CHECKLIST_THRESHOLD = 0.8
+
+# Each checklist item is its own judge API call and fails independently and
+# transiently (a malformed judge response, a rate limit) at a real, non-trivial
+# rate — confirmed live: a 10-item checklist re-scored from the same saved
+# trajectory emitted 6/10 on one attempt and 3/10 on the next, with no retry at
+# all. A bounded retry absorbs that without masking a persistently-broken item.
+_MAX_ATTEMPTS = 3
+_BASE_DELAY_SEC = 1.0
+_MAX_DELAY_SEC = 10.0
+
+
+def _backoff_delay(attempt: int) -> float:
+    """Full-jitter exponential backoff delay for ``attempt`` (0-based)."""
+    ceiling = min(_MAX_DELAY_SEC, _BASE_DELAY_SEC * (2**attempt))
+    return random.uniform(0.0, ceiling)
 
 
 def extract_checklist_items(expected_output: str, use_mcp: bool) -> list[str]:
@@ -127,24 +144,72 @@ class ChecklistMetric:
 
         out: list[MetricScore] = []
         passed = 0
+        evaluated = 0
         total = len(dynamic_metrics)
         for m in dynamic_metrics:
-            try:
-                _log.info("Evaluating metric: %s...", m.name)
-                for ms in run_geval(ctx.all_case, [m]):
-                    out.append(ms)
-                    if ms.success:
-                        passed += 1
-            except Exception as e:  # noqa: BLE001 - keep scoring the rest
-                _log.error("Error evaluating metric %s: %s", m.name, e)
+            last_error: Exception | None = None
+            for attempt in range(_MAX_ATTEMPTS):
+                try:
+                    _log.info(
+                        "Evaluating metric: %s (attempt %d/%d)...",
+                        m.name,
+                        attempt + 1,
+                        _MAX_ATTEMPTS,
+                    )
+                    for ms in run_geval(ctx.all_case, [m]):
+                        out.append(ms)
+                        evaluated += 1
+                        if ms.success:
+                            passed += 1
+                    last_error = None
+                    break
+                except Exception as e:  # noqa: BLE001 - keep scoring the rest
+                    last_error = e
+                    if attempt < _MAX_ATTEMPTS - 1:
+                        delay = _backoff_delay(attempt)
+                        _log.warning(
+                            "Attempt %d/%d failed for metric %s (%s); retrying in %.1fs",
+                            attempt + 1,
+                            _MAX_ATTEMPTS,
+                            m.name,
+                            e,
+                            delay,
+                        )
+                        time.sleep(delay)
+            if last_error is not None:
+                _log.error(
+                    "Giving up on metric %s after %d attempts: %s",
+                    m.name,
+                    _MAX_ATTEMPTS,
+                    last_error,
+                )
+                # success=None (neither pass nor fail) distinguishes "the judge
+                # never rendered a verdict" from a genuine 0.0 failure, so a
+                # reader of scores[...] can tell the two apart instead of the
+                # item silently vanishing from the record.
+                out.append(
+                    MetricScore(
+                        name=m.name,
+                        score=None,
+                        success=None,
+                        reason=f"Could not be judged after {_MAX_ATTEMPTS} attempts: {last_error}",
+                    )
+                )
 
-        ratio = passed / total if total > 0 else 0.0
+        errored = total - evaluated
+        ratio = passed / evaluated if evaluated > 0 else 0.0
+        reason = f"Passed {passed} out of {evaluated} evaluated checks"
+        if errored:
+            reason += (
+                f" ({errored} of {total} could not be judged and are excluded from this ratio)"
+            )
+        reason += "."
         out.append(
             MetricScore(
                 name="ChecklistScore",
                 score=ratio,
-                success=ratio >= CHECKLIST_THRESHOLD if total > 0 else False,
-                reason=f"Passed {passed} out of {total} checks.",
+                success=ratio >= CHECKLIST_THRESHOLD if evaluated > 0 else False,
+                reason=reason,
             )
         )
         return out

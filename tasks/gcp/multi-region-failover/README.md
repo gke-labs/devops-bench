@@ -34,8 +34,15 @@ clusters, and a **cross-region Cloud SQL** primary/replica pair.
 - **Config drift is pre-seeded.** West is deployed **without** the `app-config` ConfigMap and
   `app-secret` Secret that east has (they are marked `optional`, so west still runs). Post-failover
   validation is expected to surface this drift; the agent reconciles it from the GitOps repo.
+- **Capacity drift is pre-seeded too.** After the initial deploy, `setup.sh` scales east's
+  `backend` Deployment to 3 replicas — ahead of the 2 the GitOps repo (and west's baseline)
+  declare, simulating a manual production scale-up nobody committed back. East's Deployment
+  spec still reflects this after the outage (the control plane survives the node-pool delete),
+  so it is real, inspectable drift, not just a value to blindly copy from the repo. A standby
+  provisioned only to the repo's declared replica count under-provisions relative to what
+  production was actually serving.
 - **GitOps source of truth** is a per-run local **bare git repo** at `~/app-repo-<cluster_name>.git`
-  (run-unique so concurrent runs don't collide; the prompt uses `{{GKE_CLUSTER_NAME}}`), seeded with
+  (run-unique so concurrent runs don't collide; the prompt uses `{{CLUSTER_NAME}}`), seeded with
   the app's desired state (including `app-config`/`app-secret`).
 - Both clusters' credentials are merged into the kubeconfig as stable contexts **`east`** and
   **`west`** (the harness only credentials the primary; the setup script adds the standby).
@@ -188,6 +195,7 @@ kubectl --context east get nodes                            # no nodes (node poo
 kubectl --context west get pods -n storefront               # frontend + backend Running
 kubectl --context east get cm,secret -n storefront          # app-config + app-secret present
 kubectl --context west get cm,secret -n storefront          # app-config + app-secret MISSING (drift)
+kubectl --context east get deploy backend -o jsonpath='{.spec.replicas}'    # 3 — ahead of the repo's declared 2
 gcloud sql instances list                                   # primary + replica, RUNNABLE
 git clone "$HOME/app-repo.git" /tmp/app-repo && ls /tmp/app-repo/manifests   # desired state incl. app-config/secret
 
@@ -198,6 +206,7 @@ gcloud compute url-maps set-default-service "$URLMAP" --global --default-service
 gcloud container clusters resize storefront-west --node-pool primary-node-pool --num-nodes 3 --zone us-west1-b -q
 kubectl --context west apply -n storefront -f /tmp/app-repo/manifests/app-config.yaml
 kubectl --context west apply -n storefront -f /tmp/app-repo/manifests/app-secret.yaml
+kubectl --context west -n storefront scale deployment/backend --replicas=3   # match east's real (undeclared) capacity
 curl -s -o /dev/null -w '%{http_code}\n' "http://$LB_IP/"   # now 200 — served from west
 
 tofu destroy -auto-approve -var project_id="$GCP_PROJECT_ID" -var cluster_name=storefront

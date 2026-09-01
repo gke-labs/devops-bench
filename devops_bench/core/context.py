@@ -51,12 +51,18 @@ class ClusterInfo:
         project: Cloud project; None for local clusters.
         kubeconfig_path: Kubeconfig path; resolved from ``KUBECONFIG`` or
             ``~/.kube/config`` when not supplied.
+        outputs: Extra stack outputs beyond ``cluster_name``/``cluster_location``
+            (e.g. a global LB IP), keyed by their raw (lowercase) tofu output
+            name. Empty for deployers that don't surface any. Non-scalar and
+            ``sensitive`` outputs are dropped by the populating deployer, never
+            stored here.
     """
 
     name: str
     location: str | None = None
     project: str | None = None
     kubeconfig_path: str = field(default_factory=_resolve_kubeconfig)
+    outputs: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, info: dict[str, Any]) -> ClusterInfo:

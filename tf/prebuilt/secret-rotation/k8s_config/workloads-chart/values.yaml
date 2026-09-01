@@ -1,3 +1,5 @@
 projectID: ""
 namespace: ""
 secretName: ""
+cacheSecretName: ""
+webhookSecretName: ""

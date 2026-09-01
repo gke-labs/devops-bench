@@ -47,6 +47,13 @@ from devops_bench.core import (
 from devops_bench.deployers.factory import get_deployer
 from devops_bench.evalharness.artifacts import collect_generated_files, snapshot_dir
 from devops_bench.evalharness.base import Harness
+from devops_bench.evalharness.hold import (
+    HOLD_POLL_INTERVAL_SEC,
+    HoldObservation,
+    SafeguardMonitor,
+    hold_verdict,
+    run_hold_window,
+)
 from devops_bench.evalharness.reporter import ResultReporter
 from devops_bench.evalharness.scenario import (
     VERIFICATION_TIMEOUT_SEC,
@@ -83,6 +90,17 @@ _AGENT_TYPE_ALIASES: dict[str, str] = {
 
 # Default agent type when neither --agent-type nor BENCH_AGENT_TYPE is set.
 _DEFAULT_AGENT_TYPE = "gemini-cli"
+
+# Record-level ``status`` values for a run whose agent process itself never
+# completed cleanly (crashed, exited non-zero, or timed out). Distinct from
+# "success" so a degraded run cannot be mistaken for a genuine one, and
+# distinct from "failed" (reserved for a harness-side exception aborting the
+# task before/around the agent step, e.g. infra provisioning). Both are
+# excluded from scoring in :meth:`DefaultEvalHarness._score`, the same way
+# "failed" already is: a run with no reliable agent output must not receive a
+# composite OutcomeScore that reads as if the agent had a fair turn.
+_STATUS_AGENT_ERROR = "agent_error"
+_STATUS_AGENT_TIMEOUT = "agent_timeout"
 
 # Default target deployment + namespace used both for placeholder
 # substitution in the agent prompt and as the chaos port-forward target, so the
@@ -212,7 +230,7 @@ class DefaultEvalHarness(Harness):
 
     # -- agent resolution (model/provider-agnostic) -----------------------
 
-    def resolve_agent(self, agent_type: str) -> Any:
+    def resolve_agent(self, agent_type: str, config: AgentConfig | None = None) -> Any:
         """Resolve and instantiate the agent under test from the registry.
 
         The builtin agent modules are imported once so their
@@ -224,6 +242,10 @@ class DefaultEvalHarness(Harness):
         Args:
             agent_type: Configured agent type (e.g. ``gemini-cli`` / ``api`` /
                 ``gemini`` / ``openclaw``).
+            config: Optional :class:`AgentConfig` to build the agent with,
+                overriding the harness snapshot. Used by :meth:`execute_agent`
+                to apply a task-scoped ``timeout_sec`` without mutating
+                ``self._agent_config``. Defaults to the harness snapshot.
 
         Returns:
             An instantiated agent harness. The instance is built with the
@@ -239,7 +261,7 @@ class DefaultEvalHarness(Harness):
         agent_cls = AGENTS.get(key)
         if agent_cls is None:
             raise NotRegisteredError(AGENTS.name, key, AGENTS.keys())
-        return agent_cls(self.build_agent_config())
+        return agent_cls(config if config is not None else self.build_agent_config())
 
     # -- agent config + capabilities (explicit; no env detour) ------------
 
@@ -277,6 +299,29 @@ class DefaultEvalHarness(Harness):
             capabilities=capabilities,
             extra_env=base.extra_env,
         )
+
+    def _agent_config_for_task(self, task: Task | None) -> AgentConfig:
+        """Return the :class:`AgentConfig` to run ``task`` with.
+
+        The harness snapshots one :class:`AgentConfig` at construction time
+        (see :meth:`_build_agent_config_snapshot`), before any task is known,
+        so it cannot itself express a per-task override. A task whose
+        ``timeout_sec`` is set (e.g. because its scope genuinely needs more
+        wall-clock runway than the ``AGENT_TIMEOUT_SEC`` env default) gets a
+        copy of the snapshot with only that field replaced; every other run
+        keeps the exact snapshot object other code paths (manifest model,
+        ``capabilities_granted``) already read.
+
+        Args:
+            task: The task about to run, or ``None``.
+
+        Returns:
+            The harness's :class:`AgentConfig` snapshot, or a copy with
+            ``timeout_sec`` overridden when ``task.timeout_sec`` is set.
+        """
+        if task is None or task.timeout_sec is None:
+            return self._agent_config
+        return replace(self._agent_config, timeout_sec=task.timeout_sec)
 
     @staticmethod
     def _gate_capabilities(env_caps: AllCapabilities, use_mcp: bool) -> AllCapabilities:
@@ -336,6 +381,7 @@ class DefaultEvalHarness(Harness):
         cluster_name: str,
         target_deployment: str | None = None,
         namespace: str | None = None,
+        extra: dict[str, str] | None = None,
     ) -> str:
         """Substitute infrastructure placeholders in a prompt or expectation.
 
@@ -349,19 +395,26 @@ class DefaultEvalHarness(Harness):
             cluster_name: Active cluster name to substitute.
             target_deployment: Optional target deployment name override.
             namespace: Optional namespace override.
+            extra: Additional ``{{NAME}}`` -> value pairs, e.g. a stack's own
+                tofu outputs (see :attr:`~devops_bench.core.ClusterInfo.outputs`),
+                keyed by the placeholder name (uppercase). Applied after the
+                fixed set below.
 
         Returns:
             The text with all known placeholders replaced.
         """
         target_dep = target_deployment or self.target_deployment
         ns = namespace or self.namespace
-        return (
+        resolved = (
             text.replace("{{PROJECT_ID}}", self.project_id)
             .replace("{{CLUSTER_NAME}}", cluster_name)
             .replace("{{APP_LOCATION}}", self.app_location)
             .replace("{{TARGET_DEPLOYMENT_NAME}}", target_dep)
             .replace("{{NAMESPACE}}", ns)
         )
+        for key, value in (extra or {}).items():
+            resolved = resolved.replace("{{" + key + "}}", value)
+        return resolved
 
     def _resolve_spec_placeholders(
         self,
@@ -369,6 +422,7 @@ class DefaultEvalHarness(Harness):
         cluster_name: str,
         target_deployment: str | None = None,
         namespace: str | None = None,
+        extra: dict[str, str] | None = None,
     ) -> Any:
         """Walk a nested spec and substitute placeholders in every string leaf.
 
@@ -384,22 +438,28 @@ class DefaultEvalHarness(Harness):
                 :meth:`replace_placeholders`.
             target_deployment: Optional target deployment name override.
             namespace: Optional namespace override.
+            extra: Additional placeholders, forwarded to
+                :meth:`replace_placeholders`.
 
         Returns:
             A new structure with placeholders resolved. ``None`` round-trips
             unchanged so a missing spec stays missing.
         """
         if isinstance(spec, str):
-            return self.replace_placeholders(spec, cluster_name, target_deployment, namespace)
+            return self.replace_placeholders(
+                spec, cluster_name, target_deployment, namespace, extra
+            )
         if isinstance(spec, list):
             return [
-                self._resolve_spec_placeholders(item, cluster_name, target_deployment, namespace)
+                self._resolve_spec_placeholders(
+                    item, cluster_name, target_deployment, namespace, extra
+                )
                 for item in spec
             ]
         if isinstance(spec, dict):
             return {
                 key: self._resolve_spec_placeholders(
-                    value, cluster_name, target_deployment, namespace
+                    value, cluster_name, target_deployment, namespace, extra
                 )
                 for key, value in spec.items()
             }
@@ -413,6 +473,7 @@ class DefaultEvalHarness(Harness):
         cluster_name: str,
         target_deployment: str | None = None,
         namespace: str | None = None,
+        extra: dict[str, str] | None = None,
     ) -> list[ChaosSpec]:
         """Parse the raw task ``chaos_spec`` blob into typed :class:`ChaosSpec` list.
 
@@ -421,7 +482,9 @@ class DefaultEvalHarness(Harness):
         """
         if not raw:
             return []
-        resolved = self._resolve_spec_placeholders(raw, cluster_name, target_deployment, namespace)
+        resolved = self._resolve_spec_placeholders(
+            raw, cluster_name, target_deployment, namespace, extra
+        )
         # A placeholder-substituted JSON string round-trips through
         # ``json.loads`` to a list/dict the discriminated union can validate.
         if isinstance(resolved, str):
@@ -439,6 +502,8 @@ class DefaultEvalHarness(Harness):
         self,
         entries: list[VerificationEntry],
         timeout_sec: float = VERIFICATION_TIMEOUT_SEC,
+        *,
+        hold_observations: dict[str, HoldObservation] | None = None,
     ) -> list[dict[str, Any]]:
         """Evaluate every entry against the live cluster after the agent finishes.
 
@@ -462,9 +527,29 @@ class DefaultEvalHarness(Harness):
         to short-circuit an under-budget leaf as a definite "deadline
         exhausted" outcome, and this entry was never observed either way.
 
+        A ``hold`` entry is never evaluated with a single ``run_entry`` call
+        here, but the two roles reach their observation differently. A
+        ``safeguard`` hold entry was already sampled on a background thread
+        across the agent's turn (see
+        ``devops_bench.evalharness.hold.SafeguardMonitor``), and its outcome
+        comes entirely from ``hold_observations``. An ``objective`` hold
+        entry is soaked right here instead, via
+        :func:`~devops_bench.evalharness.hold.run_hold_window`, against this
+        same total-budget deadline: an objective starts false and must
+        become true and stay true, which can only be observed after the
+        agent's turn ends. A hold entry with zero samples either way is
+        recorded as an error, not a silent pass: a hold nobody watched must
+        not read as one that held.
+
         Args:
             entries: The task's parsed verification entries.
             timeout_sec: Per-entry budget for converging entries.
+            hold_observations: Name-keyed monitor observations for every
+                ``safeguard``-role ``hold`` entry, as returned by
+                :meth:`~devops_bench.evalharness.hold.SafeguardMonitor.get_observations`.
+                ``None`` (or a missing name) is treated the same as zero
+                samples. Never consulted for ``objective``-role hold entries,
+                which are soaked in this same pass instead.
 
         Returns:
             One raw mapping per entry, in declaration order, carrying the
@@ -474,8 +559,33 @@ class DefaultEvalHarness(Harness):
         agent = VerifierAgent()
         report: list[dict[str, Any]] = []
         total_deadline = time.monotonic() + VERIFICATION_TOTAL_BUDGET_SEC
+        hold_observations = hold_observations or {}
 
         for entry in entries:
+            if entry.resolved_mode == "hold" and entry.role == "safeguard":
+                report.append(self._hold_report_entry(entry, hold_observations.get(entry.name)))
+                continue
+            if entry.resolved_mode == "hold" and entry.role == "objective":
+                if entry.hold_window_sec is None:
+                    raise ValueError(
+                        f"objective hold entry {entry.name!r} reached verification without "
+                        "hold_window_sec set; this should have been rejected at "
+                        "spec-validation time"
+                    )
+                interval_sec = (
+                    entry.hold_poll_interval_sec
+                    if entry.hold_poll_interval_sec is not None
+                    else HOLD_POLL_INTERVAL_SEC
+                )
+                obs = run_hold_window(
+                    entry,
+                    entry.hold_window_sec,
+                    interval_sec=interval_sec,
+                    deadline=total_deadline,
+                )
+                report.append(self._hold_report_entry(entry, obs))
+                continue
+
             remaining = total_deadline - time.monotonic()
             if entry.resolved_mode != "assert" and remaining < MIN_LEAF_BUDGET_SECONDS:
                 # Never evaluated, not a condition observed false.
@@ -528,6 +638,48 @@ class DefaultEvalHarness(Harness):
             )
 
         return report
+
+    @staticmethod
+    def _hold_report_entry(entry: VerificationEntry, obs: HoldObservation | None) -> dict[str, Any]:
+        """Build one hold entry's report row from its driver's observation.
+
+        The verdict itself (pass / fail / error, and why) is delegated to
+        :func:`~devops_bench.evalharness.hold.hold_verdict` so both hold
+        drivers (the live safeguard monitor and the post-run objective
+        window) are scored by exactly one rule. ``obs is None`` (the entry's
+        name was missing from ``hold_observations`` entirely) is treated the
+        same as a fresh, zero-sample observation.
+
+        Args:
+            entry: The hold-mode entry being reported.
+            obs: The driver's observation for this entry, or ``None`` if the
+                entry's name was missing from ``hold_observations`` entirely.
+
+        Returns:
+            The report row for this entry, in the same shape
+            :func:`devops_bench.verification.rollup.rollup` consumes, plus
+            ``hold_sample_count`` / ``hold_error_count`` /
+            ``hold_first_violation_reason`` / ``hold_first_violation_at_sec``
+            so the outcome is auditable from the report alone.
+        """
+        success, status, reason = hold_verdict(obs if obs is not None else HoldObservation())
+
+        return {
+            "name": entry.name,
+            "role": entry.role,
+            "severity": entry.severity,
+            "weight": entry.weight,
+            "mode": entry.resolved_mode,
+            "success": success,
+            "status": status,
+            "reason": reason,
+            "elapsed_time": 0.0,
+            "children": [],
+            "hold_sample_count": obs.sample_count if obs is not None else 0,
+            "hold_error_count": obs.error_count if obs is not None else 0,
+            "hold_first_violation_reason": obs.first_violation_reason if obs is not None else None,
+            "hold_first_violation_at_sec": obs.first_violation_at_sec if obs is not None else None,
+        }
 
     # -- scenario (background chaos) --------------------------------------
 
@@ -593,7 +745,7 @@ class DefaultEvalHarness(Harness):
 
     # -- agent execution --------------------------------------------------
 
-    def execute_agent(self, prompt: str, ctx: RunContext) -> AgentResult:
+    def execute_agent(self, prompt: str, ctx: RunContext, task: Task | None = None) -> AgentResult:
         """Run the configured agent against ``prompt`` through the registry.
 
         Args:
@@ -602,11 +754,15 @@ class DefaultEvalHarness(Harness):
                 the agent so a CLI wrapper executes in the harness-owned
                 workspace instead of a throwaway directory the harness never
                 inspects.
+            task: The task being run, used only to look up a per-task
+                ``timeout_sec`` override via :meth:`_agent_config_for_task`.
+                ``None`` (the default) runs with the harness's unmodified
+                :class:`AgentConfig` snapshot.
 
         Returns:
             The typed :class:`AgentResult` the agent emitted.
         """
-        agent = self.resolve_agent(self.agent_type)
+        agent = self.resolve_agent(self.agent_type, config=self._agent_config_for_task(task))
         return agent.run(prompt, workspace_path=ctx.workspace_path)
 
     # -- pipeline ---------------------------------------------------------
@@ -622,6 +778,7 @@ class DefaultEvalHarness(Harness):
             The detailed per-task result dicts, scored in place, in the
             ``results.json`` schema.
         """
+        self._sweep_stray_sandbox_containers()
         run_dir = self.reporter.new_run_dir()
         detailed_results: list[dict[str, Any]] = [self._run_one(task, run_dir) for task in tasks]
 
@@ -650,6 +807,26 @@ class DefaultEvalHarness(Harness):
         except Exception:  # noqa: BLE001 - rows/manifest are derived, never load-bearing
             _log.exception("failed to write rows.json/manifest.json for %s", run_dir)
         return detailed_results
+
+    def _sweep_stray_sandbox_containers(self) -> None:
+        """Reap any sandboxed agent container left running from a prior run.
+
+        Best-effort and a no-op unless ``BENCH_AGENT_SANDBOX`` is set: a
+        container the harness starts is normally cleaned up by
+        ``sandbox.container_guard`` around its own run, but a harness process
+        killed outright (Ctrl-C, OOM, a host reboot) never gets the chance to
+        run that guard's ``finally``. Sweeping once here, before this batch's
+        own containers exist, catches exactly that leak without risking a
+        live container from the run in progress.
+        """
+        from devops_bench.agents import sandbox
+
+        if not sandbox.sandbox_enabled():
+            return
+        try:
+            sandbox.sweep_stray_containers()
+        except Exception:  # noqa: BLE001 - a sweep failure must not block the run
+            _log.exception("stray sandbox container sweep failed; continuing")
 
     def _write_run_artifacts(self, run_dir: Path, detailed_results: list[dict[str, Any]]) -> None:
         """Flatten ``detailed_results`` into ``rows.json`` + ``manifest.json``.
@@ -709,6 +886,8 @@ class DefaultEvalHarness(Harness):
         deployer: Any | None = None
         scenario_manager: ScenarioManager | None = None
         scenario_thread: threading.Thread | None = None
+        safeguard_monitor: SafeguardMonitor | None = None
+        hold_observations: dict[str, HoldObservation] = {}
         result: dict[str, Any] | None = None
         workspace_path: Path | None = None
         verification_parse_errors: list[dict[str, str]] = []
@@ -742,22 +921,30 @@ class DefaultEvalHarness(Harness):
             context = self.make_context(task, cluster=cluster_info, workspace_path=workspace_path)
 
             target_dep, ns = self._resolve_deployment_and_namespace(task)
+            # A stack's own tofu outputs beyond cluster_name/cluster_location
+            # (e.g. a global LB IP) become {{OUTPUT_NAME}} placeholders, uppercased
+            # to match the fixed set's convention.
+            extra_placeholders = {k.upper(): v for k, v in cluster_info.outputs.items()}
 
-            prompt = self.replace_placeholders(task.prompt, active_cluster_name, target_dep, ns)
+            prompt = self.replace_placeholders(
+                task.prompt, active_cluster_name, target_dep, ns, extra_placeholders
+            )
             # Resolved here, before the agent runs, so a failure mid-execution
             # still records the substituted checklists rather than raw
             # placeholders.
             recoverable_safety = [
-                self.replace_placeholders(item, active_cluster_name, target_dep, ns)
+                self.replace_placeholders(
+                    item, active_cluster_name, target_dep, ns, extra_placeholders
+                )
                 for item in task.recoverable_safety
             ]
 
             chaos_specs = self._parse_chaos_specs(
-                task.chaos_spec, active_cluster_name, target_dep, ns
+                task.chaos_spec, active_cluster_name, target_dep, ns, extra_placeholders
             )
             entries, verification_parse_errors = parse_entries(
                 self._resolve_spec_placeholders(
-                    task.verification_spec, active_cluster_name, target_dep, ns
+                    task.verification_spec, active_cluster_name, target_dep, ns, extra_placeholders
                 )
             )
             if verification_parse_errors:
@@ -798,9 +985,34 @@ class DefaultEvalHarness(Harness):
                         _CHAOS_ACTIVE_WAIT_SEC,
                     )
 
+            # Safeguard hold entries must be observed continuously from here
+            # through the end of the agent's turn, not just at the moment
+            # verification runs after the agent exits (see hold's module
+            # docstring for the failure this closes). Started as close to
+            # the agent's turn as possible so a chaos-induced state change is
+            # not mistaken for an agent-caused violation. Objective hold
+            # entries are deliberately excluded here: an objective starts
+            # false and must become true, so sampling it live would latch a
+            # spurious violation before the agent has done anything. Those
+            # are soaked instead in the post-run verification pass (see
+            # ``_run_verification``).
+            safeguard_hold_entries = [
+                entry
+                for entry in entries
+                if entry.resolved_mode == "hold" and entry.role == "safeguard"
+            ]
+            safeguard_monitor = SafeguardMonitor(safeguard_hold_entries)
+            safeguard_monitor.start()
+
             _log.info("executing agent for prompt: %s", prompt)
             before_files = snapshot_dir(workspace_path)
-            agent_res = self.execute_agent(prompt, context)
+            agent_res = self.execute_agent(prompt, context, task=task)
+            # The agent's turn just ended; stop sampling immediately so the
+            # hold window is exactly "seed through the end of the agent's
+            # turn" rather than continuing to sample through the (potentially
+            # slow) post-processing below.
+            safeguard_monitor.stop()
+            hold_observations = safeguard_monitor.get_observations()
             # NOTE/TODO: This collects ALL frontmatter from bootstrapping, not just generated files.
             # Consider a more targeted filter in a future iteration.
             # Best-effort: a collection failure (I/O, permissions, a bad link in the
@@ -812,7 +1024,7 @@ class DefaultEvalHarness(Harness):
                 _log.exception("artifact collection failed for %s; continuing", task.name)
 
             expected_output = self.replace_placeholders(
-                task.expected_output, active_cluster_name, target_dep, ns
+                task.expected_output, active_cluster_name, target_dep, ns, extra_placeholders
             )
 
             chaos_report, perf_report = self._drain_scenario(scenario_manager, scenario_thread)
@@ -824,7 +1036,9 @@ class DefaultEvalHarness(Harness):
                 verification_report: list[dict[str, Any]] = []
                 verification_status = "skipped_no_infra"
             else:
-                verification_report = self._run_verification(entries)
+                verification_report = self._run_verification(
+                    entries, hold_observations=hold_observations
+                )
                 verification_status = "evaluated"
 
             result = self._build_success_record(
@@ -842,12 +1056,23 @@ class DefaultEvalHarness(Harness):
             _log.info("agent response for %s:\n%s", task.name, result["output"])
         except Exception as exc:  # noqa: BLE001 - surface every task failure
             _log.error("critical error during task %s: %s", task.name, exc)
+            # The exception may have landed before the success path's own
+            # stop()+get_observations() ran (e.g. the agent call itself
+            # raised), so stop here too. Idempotent: a second stop() on an
+            # already-stopped monitor is a no-op, mirroring how
+            # scenario_manager.stop() is already called from both the success
+            # path (via _drain_scenario) and this finally-adjacent path below.
+            if safeguard_monitor is not None:
+                safeguard_monitor.stop()
+                hold_observations = safeguard_monitor.get_observations()
             exception_verification_report: list[dict[str, Any]] = []
             if self.no_infra:
                 exception_verification_status = "skipped_no_infra"
             elif infra_up and entries:
                 try:
-                    exception_verification_report = self._run_verification(entries)
+                    exception_verification_report = self._run_verification(
+                        entries, hold_observations=hold_observations
+                    )
                     exception_verification_status = "evaluated"
                 except Exception:  # noqa: BLE001 - a crash here must not mask the original failure
                     _log.exception(
@@ -881,6 +1106,12 @@ class DefaultEvalHarness(Harness):
                 # but the exception path reaches here without draining).
                 if scenario_thread is not None:
                     scenario_thread.join(timeout=_SCENARIO_JOIN_SEC)
+            if safeguard_monitor is not None:
+                # Belt-and-suspenders: both the success and exception paths
+                # above already stop it, but this ensures the thread never
+                # outlives the task even if a future change adds a path that
+                # skips both (stop() is idempotent and never raises).
+                safeguard_monitor.stop()
             if deployer is not None:
                 self._teardown(deployer, infra_config, task.name)
             if workspace_path is not None:
@@ -916,6 +1147,20 @@ class DefaultEvalHarness(Harness):
         """
         dumped = agent_res.to_dict()
         agent_errors = list(dumped.get("errors") or [])
+        agent_metadata = dumped.get("metadata") or {}
+        # A populated ``errors`` list means the agent process itself never
+        # completed cleanly (``AgentResult.errored()`` covers 429 / SDK fault /
+        # missing binary / an unexpected exception in ``_execute``, and a CLI
+        # agent that recovered a partial trajectory after a timeout or a
+        # non-zero exit still appends its own error). ``metadata["timed_out"]``
+        # (set by a CLI agent's own timeout handling) distinguishes the two
+        # degraded statuses; anything else with an error is the general case.
+        if not agent_errors:
+            status = "success"
+        elif agent_metadata.get("timed_out"):
+            status = _STATUS_AGENT_TIMEOUT
+        else:
+            status = _STATUS_AGENT_ERROR
         record = self._empty_record(task)
         record.update(
             {
@@ -930,14 +1175,12 @@ class DefaultEvalHarness(Harness):
                     entry.get("name") for entry in dumped.get("trajectory", []) if entry.get("name")
                 ],
                 "trajectory": dumped.get("trajectory", []),
-                "status": "success",
+                "status": status,
                 # Run-level validity gate: a vetted task only promotes to the
                 # leaderboard when this run actually produced a usable result.
-                # ``AgentResult.errored()`` (429 / SDK fault / agent timeout)
-                # yields populated ``errors`` + an empty trajectory while the
-                # record still reads ``status:"success"``, so gating on the task
-                # flag alone would let an empty/errored run pass as a genuine low
-                # score. Require no agent error *and* a non-empty trajectory.
+                # Require no agent error *and* a non-empty trajectory (stricter
+                # than ``status`` alone: a clean-exit run with a stray parse
+                # warning is still "success" but not "validated").
                 "validated": (
                     task.validated and not agent_errors and bool(dumped.get("trajectory"))
                 ),
@@ -1147,10 +1390,14 @@ class DefaultEvalHarness(Harness):
 
         Args:
             detailed_results: Execution results to score; ``scores`` is written
-                into each in place. Records marked ``status: "failed"`` are
-                skipped, since there is no agent output to judge.
+                into each in place. Records marked ``status: "failed"``,
+                ``"agent_error"``, or ``"agent_timeout"`` are skipped: none of
+                the three has a reliable agent output to judge, and scoring
+                one anyway would compute a normal-looking composite
+                OutcomeScore for a run whose agent process never completed.
         """
-        scorable = [r for r in detailed_results if r.get("status") != "failed"]
+        _unscored_statuses = ("failed", _STATUS_AGENT_ERROR, _STATUS_AGENT_TIMEOUT)
+        scorable = [r for r in detailed_results if r.get("status") not in _unscored_statuses]
         if not scorable:
             return
         # Lazy import keeps ``deepeval`` / provider SDKs out of harness import.

@@ -436,9 +436,10 @@ def test_success_record_validated_requires_clean_run(isolated_env: None) -> None
 def test_success_record_validated_false_on_errored_run(isolated_env: None) -> None:
     """An errored run (429 / timeout) on a vetted task must not promote.
 
-    ``AgentResult.errored`` yields an empty trajectory + populated ``errors``
-    while the record still reads ``status:"success"``; the run-level gate must
-    reject it.
+    ``AgentResult.errored`` yields an empty trajectory + populated ``errors``;
+    the record's ``status`` is downgraded to ``"agent_error"`` (distinct from
+    ``"success"``) so a degraded run cannot be mistaken for a genuine one, and
+    the run-level validated gate must still reject it.
     """
     harness = DefaultEvalHarness(project_id="p", cluster_name="c")
     record = harness._build_success_record(  # noqa: SLF001 - testing internals
@@ -449,7 +450,7 @@ def test_success_record_validated_false_on_errored_run(isolated_env: None) -> No
         chaos_report={},
         perf_report={},
     )
-    assert record["status"] == "success"
+    assert record["status"] == "agent_error"
     assert record["errors"]
     assert record["validated"] is False
 

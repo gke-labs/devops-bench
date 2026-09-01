@@ -288,9 +288,14 @@ def test_optimize_scale_smoke_end_to_end(
     # ----- capabilities snapshot lives on the record ---------------------
     assert record["capabilities_granted"] == {"use_mcp": True, "skills": []}
 
-    # ----- placeholder substitution happened on the prompt ---------------
+    # ----- prompt no longer carries a placeholder to substitute -----------
+    # The prompt was collapsed to the fully generic template (no
+    # namespace/resource-name hints) as part of this session's hardening
+    # pass; chaos_spec/verification_spec still carry {{TARGET_DEPLOYMENT_NAME}}
+    # in the record (substitution happens only when the fault actually runs,
+    # not into the stored copy), so "web-app" resolution is exercised via
+    # chaos_report/perf_report above instead of asserted here directly.
     assert "{{TARGET_DEPLOYMENT_NAME}}" not in record["input"]
-    assert "web-app" in record["input"]
 
 
 def test_smoke_uses_workspace_path_for_artifact_diff(

@@ -71,6 +71,7 @@ devops-bench/
 │   ├── metrics/             # LLM-as-judge + deterministic scoring (METRICS registry)
 │   ├── tasks/               # Task schema + filesystem loader
 │   ├── k8s/                 # kubectl wrappers (get, wait, poll, port-forward)
+│   ├── gcp/                 # gcloud wrappers (e.g. Secret Manager version reads)
 │   ├── results/             # Result rows, manifest, aggregation, normalization
 │   ├── skills/              # Judge rubric markdown (used by the metrics layer)
 │   ├── cli.py               # Argument parsing for the CLI entrypoint
