@@ -293,14 +293,34 @@ Needs **Java** for the Firestore emulator
 
 ```bash
 # 1. start the emulator (Firestore :8080, UI :4000)
-npx -y firebase-tools emulators:start --only firestore --project devops-bench-demo
+npx -y firebase-tools emulators:start --only firestore --project devops-bench-shared
 
 # 2. in another shell: seed the emulator (writes to the leaderboard-test DB)
-cd seed && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-demo npm run seed && cd ..
+cd seed && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared npm run seed && cd ..
 
 # 3. run the app — firebase.js auto-connects to the emulator on localhost
 npm run dev          # http://localhost:5173
 ```
+
+> **The project id must match `VITE_FIREBASE_PROJECT_ID` in `.env`** (that is
+> `devops-bench-shared`, the same project named at the top of this section). The
+> emulator keeps each project id in a **separate namespace**, so seeding one id
+> while the app reads another leaves the dashboard **silently empty** — no error,
+> just no rows. Four places name the project and all four have to agree:
+>
+> - the `--project` flag in step 1
+> - `GCLOUD_PROJECT` in step 2
+> - `VITE_FIREBASE_PROJECT_ID` in `.env`, which is what the browser reads
+> - `"default"` in `.firebaserc`, which is where the emulator falls back if you
+>   drop `--project` — get this one wrong and the emulator UI on :4000 shows no
+>   docs even though the seed reported success
+>
+> If that happens, query the emulator directly to see which namespace the data
+> actually landed in:
+>
+> ```bash
+> curl -s "http://127.0.0.1:8080/v1/projects/devops-bench-shared/databases/leaderboard-test/documents/setups" | head
+> ```
 
 ### B) Staging (real cloud DB, fabricated data)
 
@@ -344,6 +364,7 @@ npm test             # Vitest — fast, DB-free unit + component tests
 | `src/pages/Detail.test.jsx` | stat-card math (incl. null-safe / empty), task-table sorting, `?metric=` param, not-found/loading/error |
 | `src/hooks/useBenchmarkData.test.js` | load-once lifecycle, error capture, terminate-on-PROD |
 | `src/components/TrendChart.test.jsx` | sr-only a11y table: date-union columns, `—` for missing runs and null values |
+| `src/components/MetricToggle.test.jsx` | a button per vocab metric, the quality/efficiency group split, `available` disabling |
 
 ---
 

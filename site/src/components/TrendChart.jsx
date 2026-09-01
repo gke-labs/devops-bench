@@ -14,6 +14,7 @@ import {
     Legend
 } from "chart.js";
 import { setupHistory, setupLabel, allRunDates, formatRunDate, yAxisBounds } from "../lib/accessors.js";
+import { formatMetric, metricMeta } from "../lib/vocab.js";
 import { useIsDark } from "../hooks/useIsDark.js";
 
 // Register Chart.js parts + apply the Inter styling once at module load. Colors
@@ -74,7 +75,7 @@ export function TrendChart({
             tooltip: {
                 callbacks: {
                     title: items => (items.length ? formatRunDate(items[0].parsed.x) : ""),
-                    label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`
+                    label: ctx => ` ${ctx.dataset.label}: ${formatMetric(metric, ctx.parsed.y)}`
                 }
             }
         },
@@ -93,14 +94,23 @@ export function TrendChart({
                 max: yBounds.max,
                 border: { display: false },
                 grid: { color: gridColor },
-                ticks: { color: textColor, callback: value => value + "%", stepSize: 10, padding: 8 }
+                // stepSize only suits the 0..100 percentage axis. An absolute
+                // metric's range is unbounded (tokens run to tens of thousands),
+                // so forcing a step of 10 would ask Chart.js for thousands of
+                // ticks; let it choose, capped, and format each by unit.
+                ticks: {
+                    color: textColor,
+                    callback: value => formatMetric(metric, value),
+                    ...(metricMeta(metric).percentage ? { stepSize: 10 } : { maxTicksLimit: 8 }),
+                    padding: 8
+                }
             }
         },
         elements: {
             line: { tension: 0.35, borderWidth: 3 },
             point: { radius: 3, hitRadius: 12, hoverRadius: 6, hoverBackgroundColor: pointHover, hoverBorderWidth: 3 }
         }
-    }), [dates, showLegend, yBounds, textColor, gridColor, pointHover]);
+    }), [dates, metric, showLegend, yBounds, textColor, gridColor, pointHover]);
 
     return (
         <div className="chart-container flex-grow">
@@ -122,7 +132,7 @@ export function TrendChart({
                                 // Guard both a missing run AND a present run with a
                                 // null value for this metric (sparse real data).
                                 const v = setup.history.find(h => h.t === d)?.scores[metric];
-                                return <td key={d}>{v == null ? "—" : v.toFixed(1) + "%"}</td>;
+                                return <td key={d}>{formatMetric(metric, v)}</td>;
                             })}
                         </tr>
                     ))}

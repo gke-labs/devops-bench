@@ -4,12 +4,25 @@
 import { Link } from "react-router-dom";
 import { SetupIdentity } from "./SetupIdentity.jsx";
 import { setupScore, setupLabel } from "../lib/accessors.js";
+import { formatMetric, metricBarFraction, metricMeta } from "../lib/vocab.js";
 
-export function LeaderboardRow({ setup, models, harnesses, metric }) {
+// `metricBest` is the best value for this metric across the visible rows — for
+// absolute metrics (latency, the token axes) that is the SMALLEST, and the bar shows
+// each row's ratio to it, since those metrics have no natural ceiling. Unused by
+// percentage metrics.
+export function LeaderboardRow({ setup, models, harnesses, metric, metricBest }) {
     const model = models[setup.model];
     const harness = harnesses[setup.harness];
-    const score = setupScore(setup, metric) ?? 0;
+    const score = setupScore(setup, metric);
+    const barPct = metricBarFraction(metric, score, metricBest) * 100;
     const to = `/setup/${encodeURIComponent(setup.id)}?metric=${encodeURIComponent(metric)}`;
+    // The badge sits immediately left of the figure, so it reads as annotating
+    // it — and what a catastrophic violation zeroes is the OUTCOME score, not
+    // the seconds or tokens a run consumed. Those readings are unaffected and
+    // still valid, so under an efficiency metric the badge would flag a number
+    // it has no bearing on. It stays on the quality columns, where the zeroing
+    // is what the reader is looking at.
+    const badgeable = metricMeta(metric).percentage;
 
     return (
         <Link
@@ -22,24 +35,30 @@ export function LeaderboardRow({ setup, models, harnesses, metric }) {
                 <SetupIdentity setup={setup} model={model} harness={harness} variant="row" />
             </div>
 
-            {/* Score progression meter — fixed-width badge slot (reserved on every row)
-                keeps the %, bar, and column start identical whether or not a badge shows. */}
+            {/* Score progression meter. On a quality metric the badge slot is a
+                fixed width reserved on EVERY row, so the figure, bar and column
+                start line up whether or not a given row carries a badge. An
+                efficiency metric drops the slot entirely rather than reserving
+                empty space — no row can badge there, so the columns still agree
+                with each other and the bar gets the width back. */}
             <div className="col-span-4 sm:col-span-4 flex items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0">
-                <span className="w-10 shrink-0 flex justify-end">
-                    {setup.catastrophicCount > 0 && (
-                        <span
-                            title={`${setup.catastrophicCount} task(s) with a catastrophic safety violation (outcome zeroed)`}
-                            className="inline-flex items-center gap-0.5 rounded-full bg-rose-50 dark:bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-500/30"
-                        >
-                            ⚠ {setup.catastrophicCount}
-                        </span>
-                    )}
-                </span>
+                {badgeable && (
+                    <span className="w-10 shrink-0 flex justify-end">
+                        {setup.catastrophicCount > 0 && (
+                            <span
+                                title={`${setup.catastrophicCount} task(s) with a catastrophic safety violation (outcome zeroed)`}
+                                className="inline-flex items-center gap-0.5 rounded-full bg-rose-50 dark:bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-500/30"
+                            >
+                                ⚠ {setup.catastrophicCount}
+                            </span>
+                        )}
+                    </span>
+                )}
                 <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 w-12 min-w-[48px]">
-                    {score.toFixed(1)}%
+                    {formatMetric(metric, score)}
                 </span>
                 <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden relative">
-                    <div className="progress-bar-fill h-full rounded-full" style={{ width: `${score}%`, backgroundColor: setup.color }} />
+                    <div className="progress-bar-fill h-full rounded-full" style={{ width: `${barPct}%`, backgroundColor: setup.color }} />
                 </div>
             </div>
 

@@ -128,4 +128,46 @@ describe("yAxisBounds", () => {
         const allNull = makeSetup({ history: [{ t: "2026-01-15T00:00:00Z", scores: { pass1: null } }] });
         expect(yAxisBounds([allNull], "pass1")).toEqual({ min: 0, max: 100 });
     });
+
+    describe("absolute metrics", () => {
+        const withHistory = (metric, values) => makeSetup({
+            history: values.map((v, i) => ({
+                t: `2026-0${i + 1}-15T00:00:00Z`,
+                scores: { [metric]: v }
+            }))
+        });
+
+        it("follows the data instead of clamping to 100", () => {
+            // Token means run to five figures; a [0, 100] clamp would push every
+            // series off the top of the chart.
+            const b = yAxisBounds([withHistory("outputTokens", [23200, 24100, 25200])], "outputTokens");
+            expect(b.min).toBeGreaterThan(100);
+            expect(b.min).toBeLessThan(23200);
+            expect(b.max).toBeGreaterThan(25200);
+        });
+
+        it("snaps the endpoints to a round step so no stray label crowds a gridline", () => {
+            // Raw padding gave [45.3, 54.7], printing "54.8s" against "54.0s".
+            expect(yAxisBounds([withHistory("latency", [47.9, 50.1, 52.2])], "latency"))
+                .toEqual({ min: 44, max: 56 });
+            expect(yAxisBounds([withHistory("outputTokens", [23200, 24100, 25200])], "outputTokens"))
+                .toEqual({ min: 21000, max: 27000 });
+        });
+
+        it("scales the step to the magnitude rather than assuming tens", () => {
+            // Sub-minute latencies need a fractional step; tokens need thousands.
+            const small = yAxisBounds([withHistory("latency", [2.1, 2.4])], "latency");
+            expect(small).toEqual({ min: 1, max: 3.5 });
+        });
+
+        it("keeps a non-zero height for a single data point", () => {
+            const b = yAxisBounds([withHistory("latency", [50])], "latency");
+            expect(b.max).toBeGreaterThan(b.min);
+        });
+
+        it("never drops the axis below zero", () => {
+            const b = yAxisBounds([withHistory("latency", [0.5])], "latency");
+            expect(b.min).toBeGreaterThanOrEqual(0);
+        });
+    });
 });

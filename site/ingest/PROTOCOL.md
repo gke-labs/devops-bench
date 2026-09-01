@@ -62,9 +62,17 @@ always `0`; the schema is already shaped for multi-iteration runs (§4).
 | `catastrophic` | boolean (optional) | `true` \| `false` | Whether a catastrophic tripwire fired (`cat_v = 0`), zeroing the outcome. Omitted by pre-v1 rows. |
 | `scoringVersion` | string (optional) | e.g. `"v1"` | Scoring-framework version that produced `outcomeScore`. Omitted by pre-v1 rows. |
 | `toolScore` | number \| null | `[0, 1]` or null | Tool-invocation score; `null` when unscored. |
-| `latencySec` | number | `>= 0` | Agent wall-clock latency, seconds. |
+| `latencySec` | number | `>= 0` | Agent wall-clock latency, seconds. Non-nullable, so the producer emits **`0` when latency was not measured**; derive reads `0` as that sentinel rather than as an instant run, and the `Latency` metric treats the row as missing data. |
 | `inputTokens` | integer \| null | `>= 0` or null | Prompt tokens consumed; `null` when usage was not captured. |
 | `outputTokens` | integer \| null | `>= 0` or null | Completion tokens produced; `null` when usage was not captured. |
+| `cachedTokens` | integer \| null (optional) | `>= 0` or null | Cache-read input tokens. Omitted by pre-v1 rows. |
+| `reasoningTokens` | integer \| null (optional) | `>= 0` or null | Reasoning/thinking tokens. A **sibling** bucket of `outputTokens`, not a subset, so the `Tokens` metric adds it in. Omitted by pre-v1 rows. |
+| `cacheWriteTokens` | integer \| null (optional) | `>= 0` or null | Cache-creation input tokens. Omitted by pre-v1 rows. |
+| `totalTokens` | integer \| null (optional) | `>= 0` or null | Provider-reported total. **Preferred over the bucket sum** when present, since it may count buckets the row does not break out. Omitted by pre-v1 rows. |
+
+The `Tokens` leaderboard metric is `totalTokens` when reported, else the sum of
+whichever buckets are present, else `null` (no usage captured). A row reporting
+neither a total nor any bucket is "not measured", not zero tokens.
 
 `setupId`, `model`, `harness`, `augmentation`, `runId`, `t` are **denormalized
 onto every row** — they repeat across all of a run's rows (they mirror the run's

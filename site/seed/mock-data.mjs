@@ -214,6 +214,14 @@ export function generateRaw() {
                         latencySec: round(20 + rng() * 60, 2),
                         inputTokens: Math.round(8000 + rng() * 30000),
                         outputTokens: Math.round(300 + rng() * 1500),
+                        // Cache reads are reported by SOME harnesses only (in the
+                        // fleet's week-2 drop, 134 of 260 rows; in ours, none), so
+                        // the mock leaves them absent on the API runner. That keeps
+                        // a blank Cached cell on screen next to populated ones —
+                        // the case the separate axis exists to make visible.
+                        ...(def.harness === "api-loop"
+                            ? {}
+                            : { cachedTokens: Math.round(12000 + rng() * 60000) }),
                         // Mock rows are all vetted so the seeded demo renders;
                         // real rows carry per-task validated from the harness.
                         validated: true
@@ -260,8 +268,15 @@ function scoresFor(rows) {
     // denominator. With nothing scored there is no rate to report: null, not NaN.
     const scored = rows.filter(r => Number.isFinite(r.outcomeScore));
     const n = scored.length;
+    // Efficiency is telemetry, not a score: averaged over ALL rows (an unscored
+    // iteration still consumed time and tokens) and survives the early return.
+    const efficiency = efficiencyFor(rows);
     if (n === 0) {
-        return { pass1: null, pass5: null, passMax: null, composite: null, correctness: null, recoverableSafety: null };
+        return {
+            pass1: null, pass5: null, passMax: null,
+            composite: null, correctness: null, recoverableSafety: null,
+            ...efficiency
+        };
     }
     // pass1 thresholds on CORRECTNESS `c` (falling back to outcomeScore for
     // pre-v1 rows), so the pass rate isn't distorted by the √/gate composite.
@@ -282,7 +297,93 @@ function scoresFor(rows) {
         passMax: null,
         composite: mean("outcomeScore"),
         correctness: mean("correctnessScore"),
-        recoverableSafety: mean("recoverableSafetyScore")
+        recoverableSafety: mean("recoverableSafetyScore"),
+        ...efficiency
+    };
+}
+
+// --- efficiency projection ---------------------------------------------------
+//
+// Exported for the same reason PASS_THRESHOLD and passAtK are: ingest/derive.mjs
+// projects efficiency from real rows and must use exactly this definition, not a
+// copy of it. Change a rule here and both mock and real data follow.
+
+// Mean of a raw (already-absolute) per-row value — seconds, token counts. No
+// ×100: these are not fractions, and the UI formats them by unit.
+export function rawMean(rows, pick) {
+    const vals = rows.map(pick).filter(v => Number.isFinite(v));
+    return vals.length ? round(vals.reduce((a, b) => a + b, 0) / vals.length, 1) : null;
+}
+
+// Wall-clock seconds for one row, or null when latency was never measured.
+// Unlike every token bucket, `latencySec` is NON-nullable upstream (row.py) and
+// normalize.py writes `float(record.get("latency") or 0.0)`, so an unmeasured
+// run arrives as 0 rather than null. Treat 0 as that sentinel: a real agent run
+// never completes in 0.0s, and averaging it in would rank an unmeasured setup
+// FIRST on a lower-is-better metric with a full bar.
+export function latencyOf(row) {
+    return Number.isFinite(row.latencySec) && row.latencySec > 0 ? row.latencySec : null;
+}
+
+// Sum of the named buckets for one row, or null when none of them was captured.
+// A non-positive result is the same unmeasured sentinel `latencyOf` handles: a
+// harness that produced no session log normalizes to zeros rather than nulls
+// (antigravity's parser returns `{input: 0, output: 0, total: 0, cached: 0}`
+// for an empty log, and normalize.py coerces those through as ints), and no
+// real run costs 0 tokens. Reporting the 0 would rank that setup FIRST on a
+// lower-is-better metric.
+function bucketSum(row, keys) {
+    const parts = keys.map(k => row[k]).filter(v => Number.isFinite(v));
+    if (!parts.length) return null;
+    const total = parts.reduce((a, b) => a + b, 0);
+    return total > 0 ? total : null;
+}
+
+// Token usage is reported as three axes, not one number, because the buckets are
+// not interchangeable: a provider bills generated tokens at several times the
+// prompt rate and a cache read at a fraction of it. Summing them reports
+// whichever bucket happens to be largest — in our own drops output is 0.7%
+// (fleet week-2), 2.4% and 5.5% of the summed buckets, so a combined figure is
+// the input count wearing a different label, and the axis a reader cares about
+// is the one it hides.
+//
+// Grouping is by BILLED RATE, so each axis is a quantity of one kind of thing:
+//
+//   input  = inputTokens + cacheWriteTokens — cache creation is prompt content
+//            sent for this run, billed at roughly the input rate.
+//   output = outputTokens + reasoningTokens — reasoning is a SIBLING bucket of
+//            output, not a subset (see the canonical buckets in normalize.py),
+//            and both are generated at the output rate. Folding it in here is
+//            what keeps reasoning models from being undercounted.
+//   cached = cachedTokens — the cheapest bucket, and reported by only some
+//            harnesses (134 of 260 fleet rows; none of ours). Folded into input
+//            it would make a harness that reports cache reads look more
+//            expensive than one that stays silent, which is a ranking artifact
+//            of telemetry verbosity rather than a real cost difference.
+//
+// None of these consults `totalTokens`: a single provider-reported total cannot
+// be attributed to an axis, and no row in any dataset we hold carries one
+// without also carrying the buckets. A producer that ever reports only a total
+// renders blank here rather than being silently mis-attributed.
+export function inputTokensOf(row) {
+    return bucketSum(row, ["inputTokens", "cacheWriteTokens"]);
+}
+
+export function outputTokensOf(row) {
+    return bucketSum(row, ["outputTokens", "reasoningTokens"]);
+}
+
+export function cachedTokensOf(row) {
+    return bucketSum(row, ["cachedTokens"]);
+}
+
+// The efficiency slice of Scores for one group of iteration rows.
+export function efficiencyFor(rows) {
+    return {
+        latency: rawMean(rows, latencyOf),
+        inputTokens: rawMean(rows, inputTokensOf),
+        outputTokens: rawMean(rows, outputTokensOf),
+        cachedTokens: rawMean(rows, cachedTokensOf)
     };
 }
 
@@ -299,7 +400,11 @@ function meanScores(scoreList) {
         passMax: avg("passMax"),
         composite: avg("composite"),
         correctness: avg("correctness"),
-        recoverableSafety: avg("recoverableSafety")
+        recoverableSafety: avg("recoverableSafety"),
+        latency: avg("latency"),
+        inputTokens: avg("inputTokens"),
+        outputTokens: avg("outputTokens"),
+        cachedTokens: avg("cachedTokens")
     };
 }
 

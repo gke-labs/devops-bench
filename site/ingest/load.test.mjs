@@ -82,6 +82,28 @@ describe("validateRow", () => {
         expect(errs.join()).toMatch(/inputTokens/);
     });
 
+    it("accepts the extra usage buckets, present or absent", () => {
+        // Optional: pre-v1 rows omit them entirely and must still ingest.
+        expect(validateRow(validRow)).toEqual([]);
+        expect(validateRow({
+            ...validRow,
+            cachedTokens: 100, reasoningTokens: 700, cacheWriteTokens: 0, totalTokens: 9520
+        })).toEqual([]);
+        expect(validateRow({
+            ...validRow,
+            cachedTokens: null, reasoningTokens: null, cacheWriteTokens: null, totalTokens: null
+        })).toEqual([]);
+    });
+
+    it("flags a negative or non-integer usage bucket", () => {
+        // Regression: a negative total reached the token mean and dragged
+        // the token mean below zero, collapsing every token bar to empty.
+        expect(validateRow({ ...validRow, totalTokens: -5 }).join()).toMatch(/totalTokens/);
+        expect(validateRow({ ...validRow, reasoningTokens: 1.5 }).join()).toMatch(/reasoningTokens/);
+        expect(validateRow({ ...validRow, cachedTokens: -1 }).join()).toMatch(/cachedTokens/);
+        expect(validateRow({ ...validRow, cacheWriteTokens: "1000" }).join()).toMatch(/cacheWriteTokens/);
+    });
+
     it("rejects a non-object", () => {
         expect(validateRow(null)).toEqual(["not an object"]);
         expect(validateRow([])).toEqual(["not an object"]);

@@ -11,7 +11,7 @@
 // Two targets, selected by whether FIRESTORE_EMULATOR_HOST is set:
 //
 //   EMULATOR (default, no credentials needed):
-//     FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-demo \
+//     FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
 //       node seed.mjs                                  # → DB leaderboard-test
 //
 //   REAL Firestore (the shared TEST database — uses Application Default Creds;
@@ -32,7 +32,7 @@ const EMULATOR = !!process.env.FIRESTORE_EMULATOR_HOST;
 const PROJECT_ID =
     process.env.GCLOUD_PROJECT ||
     process.env.GOOGLE_CLOUD_PROJECT ||
-    (EMULATOR ? "devops-bench-demo" : "devops-bench-shared");
+    "devops-bench-shared";
 // Named Firestore database (must match the client's VITE_FIRESTORE_DATABASE_ID).
 // Defaults to the test DB; never silently defaults to prod.
 const DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || "leaderboard-test";

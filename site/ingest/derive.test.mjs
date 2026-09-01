@@ -81,7 +81,84 @@ describe("derive — data-driven", () => {
             passMax: null,
             composite: null,
             correctness: null,
-            recoverableSafety: null
+            recoverableSafety: null,
+            // Efficiency is telemetry, not a score: an iteration that never
+            // scored still consumed wall-clock, so latency survives while every
+            // score is null. The token axes stay null because the fixture
+            // captured no usage.
+            latency: 1,
+            inputTokens: null,
+            outputTokens: null,
+            cachedTokens: null
         });
+    });
+
+    it("treats latencySec 0 as unmeasured, so it can't rank as the fastest", () => {
+        // Regression: latencySec is non-nullable upstream and normalize.py
+        // coerces a missing measurement to 0.0. Averaging that in gave an
+        // unmeasured setup a latency of 0 — first place on a lower-is-better
+        // metric, with a full bar.
+        const base = {
+            setupId: "s", model: "m", harness: "h", augmentation: [],
+            runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
+            taskFolder: "task-a", taskName: "Task A", status: "success",
+            toolScore: null, inputTokens: null, outputTokens: null, outcomeScore: 0.9
+        };
+        const unmeasured = derive([{ ...base, iteration: 0, latencySec: 0 }]);
+        expect(unmeasured[0].tasks[0].scores.latency).toBeNull();
+
+        // A 0 alongside real readings drops out of the mean rather than halving it.
+        const mixed = derive([
+            { ...base, iteration: 0, latencySec: 0 },
+            { ...base, iteration: 1, latencySec: 10 }
+        ]);
+        expect(mixed[0].tasks[0].scores.latency).toBe(10);
+    });
+
+    it("projects the token buckets onto three axes rather than one total", () => {
+        // Regression: a single summed figure was ~the input count wearing a
+        // different label. Output was 0.7% of the fleet's summed buckets, so the
+        // most expensive axis was invisible in the number that ranked setups.
+        const base = {
+            setupId: "s", model: "m", harness: "h", augmentation: [],
+            runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
+            taskFolder: "task-a", taskName: "Task A", status: "success",
+            toolScore: null, latencySec: 5, outcomeScore: 0.9, iteration: 0
+        };
+        const split = derive([
+            {
+                ...base,
+                inputTokens: 100,
+                cacheWriteTokens: 50,
+                outputTokens: 200,
+                reasoningTokens: 700,
+                cachedTokens: 4000,
+                // A provider total no longer overrides the buckets: it cannot be
+                // attributed to an axis.
+                totalTokens: 950
+            }
+        ]);
+        expect(split[0].tasks[0].scores).toMatchObject({
+            inputTokens: 150,
+            outputTokens: 900,
+            cachedTokens: 4000
+        });
+    });
+
+    it("leaves the cached axis null for a harness that reports no cache reads", () => {
+        // Only some harnesses report cache reads. A blank cell has to stay
+        // distinct from a 0, or a silent harness would rank best on a
+        // lower-is-better axis purely for being less talkative.
+        const setups = derive([
+            {
+                setupId: "s", model: "m", harness: "h", augmentation: [],
+                runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
+                taskFolder: "task-a", taskName: "Task A", status: "success",
+                toolScore: null, latencySec: 5, outcomeScore: 0.9, iteration: 0,
+                inputTokens: 100, outputTokens: 200
+            }
+        ]);
+        expect(setups[0].tasks[0].scores.cachedTokens).toBeNull();
+        expect(setups[0].tasks[0].scores.inputTokens).toBe(100);
     });
 });

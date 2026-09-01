@@ -83,9 +83,17 @@ export function validateRow(row) {
     if (!STATUSES.has(row.status)) errs.push('status: must be "success" or "failed"');
     floatOrNull("outcomeScore", num01);
     floatOrNull("toolScore", num01);
+    // 0 is in contract: the producer's latencySec is non-nullable and coerces an
+    // unmeasured run to 0.0, which derive reads as the "not measured" sentinel (§2).
     float("latencySec", nonNeg);
     intOrNull("inputTokens", nonNeg);
     intOrNull("outputTokens", nonNeg);
+    // Extra usage buckets — OPTIONAL (pre-v1 rows omit them), validated when
+    // present because derive's token total reads them. A negative value here
+    // would drag the mean below zero and collapse every token bar to empty.
+    for (const k of ["cachedTokens", "reasoningTokens", "cacheWriteTokens", "totalTokens"]) {
+        if (k in row) intOrNull(k, nonNeg);
+    }
 
     // Scoring-framework v1 fields — OPTIONAL (pre-v1 rows omit them). Validate the
     // shape only when present so old runs still ingest.

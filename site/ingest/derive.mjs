@@ -12,10 +12,11 @@
 //   tasks   <- distinct row.taskFolder at the LATEST run of each setup
 //   history <- one aggregate point per distinct row.t, time-ordered
 //
-// The SCORING FORMULA is NOT duplicated here — PASS_THRESHOLD and the pass@k
-// estimator are imported from seed/mock-data.mjs so test data and real data are
-// scored by exactly one definition. Change the formula there and re-run derive
-// (see the CLI at the bottom) to re-score everything from the same raw rows.
+// The SCORING FORMULA is NOT duplicated here — PASS_THRESHOLD, the pass@k
+// estimator and the efficiency projection are imported from seed/mock-data.mjs
+// so test data and real data are scored by exactly one definition. Change the
+// formula there and re-run derive (see the CLI at the bottom) to re-score
+// everything from the same raw rows.
 //
 // Presentation (order / color) is not derivable from results — it's curation, so
 // it comes from the optional catalog overrides, falling back to discovery order
@@ -23,7 +24,7 @@
 // catalog (see collectMetadata in catalog.mjs); this module only emits setups.
 // =============================================================================
 
-import { PASS_THRESHOLD, passAtK } from "../seed/mock-data.mjs";
+import { PASS_THRESHOLD, efficiencyFor, passAtK } from "../seed/mock-data.mjs";
 import { PALETTE, SETUP_CATALOG } from "./catalog.mjs";
 
 /**
@@ -55,8 +56,16 @@ function round(v, dp) {
 function scoresFor(rows) {
     const scored = rows.filter(r => Number.isFinite(r.outcomeScore));
     const n = scored.length;
+    // Efficiency is telemetry, not a score: it is recorded even for an iteration
+    // that never scored, so it is averaged over ALL rows rather than the scored
+    // subset, and it survives the no-scored-rows early return below.
+    const efficiency = efficiencyFor(rows);
     if (n === 0) {
-        return { pass1: null, pass5: null, passMax: null, composite: null, correctness: null, recoverableSafety: null };
+        return {
+            pass1: null, pass5: null, passMax: null,
+            composite: null, correctness: null, recoverableSafety: null,
+            ...efficiency
+        };
     }
     // pass1 thresholds on CORRECTNESS `c` (falling back to outcomeScore for
     // pre-v1 rows) so the pass rate isn't distorted by the √/gate composite.
@@ -77,7 +86,8 @@ function scoresFor(rows) {
         passMax: null,
         composite: mean("outcomeScore"),
         correctness: mean("correctnessScore"),
-        recoverableSafety: mean("recoverableSafetyScore")
+        recoverableSafety: mean("recoverableSafetyScore"),
+        ...efficiency
     };
 }
 
@@ -95,7 +105,11 @@ function meanScores(scoreList) {
         passMax: avg("passMax"),
         composite: avg("composite"),
         correctness: avg("correctness"),
-        recoverableSafety: avg("recoverableSafety")
+        recoverableSafety: avg("recoverableSafety"),
+        latency: avg("latency"),
+        inputTokens: avg("inputTokens"),
+        outputTokens: avg("outputTokens"),
+        cachedTokens: avg("cachedTokens")
     };
 }
 
@@ -201,7 +215,7 @@ export function derive(rows, opts = {}) {
 // re-score every setup from the existing raw rows WITHOUT re-uploading. The
 // normal path (ingest.mjs) runs derive automatically after each upload.
 //
-//   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-demo \
+//   FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=devops-bench-shared \
 //     node derive.mjs
 //   GCLOUD_PROJECT=devops-bench-shared FIRESTORE_DATABASE_ID=leaderboard-test \
 //     node derive.mjs

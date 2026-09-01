@@ -26,6 +26,12 @@
  * The scoring metrics, in display order. `composite` is the scoring-framework v1
  * headline (cat_v · √(c · rec_v)); `correctness` / `recoverableSafety` are its
  * sub-scores. All are 0..100 means. `pass1/5/Max` are pass rates.
+ *
+ * The efficiency keys are NOT percentages: they are absolute per-task means in
+ * seconds and token counts, where lower is better (see METRIC_META in vocab.js).
+ * The three token axes are separate because their buckets are billed at
+ * different rates and cannot be meaningfully added — see the grouping rules on
+ * `inputTokensOf` in seed/mock-data.mjs.
  */
 export type MetricKey =
     | "composite"
@@ -33,13 +39,19 @@ export type MetricKey =
     | "recoverableSafety"
     | "pass1"
     | "pass5"
-    | "passMax";
+    | "passMax"
+    | "latency"
+    | "inputTokens"
+    | "outputTokens"
+    | "cachedTokens";
 
 /**
- * Per-metric scores as percentages (0..100). `null` where a metric has no
- * scored data for the task/run. `pass5` and `passMax` are null today — they
+ * Per-metric values, keyed by MetricKey. Quality metrics are percentages
+ * (0..100); efficiency metrics are absolute magnitudes. `null` where a metric
+ * has no data for the task/run. `pass5` and `passMax` are null today — they
  * stay null until the harness produces multi-iteration runs (then `derive()`
- * recomputes them from the same raw rows).
+ * recomputes them from the same raw rows). `cachedTokens` is null for any
+ * harness that does not report cache reads.
  */
 export type Scores = Record<MetricKey, number | null>;
 
@@ -149,11 +161,23 @@ export interface ResultRow {
     scoringVersion?: string;
     /** Tool-use score in [0,1]; null when unscored. */
     toolScore: number | null;
+    /**
+     * Agent wall-clock seconds. Non-nullable upstream, so an unmeasured run
+     * arrives as `0` — derive treats that as missing data, not an instant run.
+     */
     latencySec: number;
     /** Null when token usage was not captured. */
     inputTokens: number | null;
     /** Null when token usage was not captured. */
     outputTokens: number | null;
+    /** Cache-read input tokens; null/absent when not captured. */
+    cachedTokens?: number | null;
+    /** Reasoning tokens — a sibling bucket of `outputTokens`, not a subset. */
+    reasoningTokens?: number | null;
+    /** Cache-creation input tokens; null/absent when not captured. */
+    cacheWriteTokens?: number | null;
+    /** Provider-reported total; preferred over summing the buckets when present. */
+    totalTokens?: number | null;
     /** Whether the task is vetted as correct; only validated tasks promote to the leaderboard. */
     validated: boolean;
 }

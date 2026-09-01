@@ -35,7 +35,7 @@ export function openDb() {
     const projectId =
         process.env.GCLOUD_PROJECT ||
         process.env.GOOGLE_CLOUD_PROJECT ||
-        (emulator ? "devops-bench-demo" : "devops-bench-shared");
+        "devops-bench-shared";
     const databaseId = process.env.FIRESTORE_DATABASE_ID || "leaderboard-test";
 
     if (databaseId === PROD_DATABASE_ID && process.env.ALLOW_PROD_INGEST !== "true") {
