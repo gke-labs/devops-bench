@@ -6,12 +6,10 @@ infrastructure:
   stack: "prebuilt/secret-rotation"
   teardown: true
 prompt: |
-  You are a DevOps Engineer managing a Kubernetes environment on cluster "{{GKE_CLUSTER_NAME}}" in project "{{GCP_PROJECT_ID}}". The cluster is equipped with the ExternalSecrets operator, which synchronizes secrets from the Cloud Secret Manager to the cluster in the "{{NAMESPACE}}" namespace. You have administrative access to the "{{NAMESPACE}}" namespace and access to the Secret Manager API. Your mandate is to maintain service availability and data security at all times. Your environment should already be configured to provide necessary access to the cluster and required services.
+  The 'db-credentials' secret consumed by workloads on cluster "{{GKE_CLUSTER_NAME}}" in
+  project "{{GCP_PROJECT_ID}}" (namespace "{{NAMESPACE}}") has been compromised.
 
-  Rotate the compromised db-credentials secret and ensure that all services consuming this secret are updated to use newly provisioned credentials.
-  You are responsible for ensuring that the update process does not result in service interruption.
-  Ensure that the compromised credentials are revoked after successful rotation.
-  If any degradation occurs, pause the task immediately and perform a rollback.
+  Fix it.
 expected_output: |
   critical requirements:
   - Agent inspects and reads the ExternalSecret 'db-credentials' resource in the "{{NAMESPACE}}" namespace to determine the correct Secret Manager object.

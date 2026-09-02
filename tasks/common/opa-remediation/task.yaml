@@ -6,12 +6,10 @@ infrastructure:
   provider: "kind"
   teardown: true
 prompt: |
-  You are the platform engineer on call for the Kubernetes cluster '{{CLUSTER_NAME}}'. Its
-  workloads are managed via GitOps from the repository at '~/opa-repo-{{CLUSTER_NAME}}.git' (the source of truth).
+  Cluster '{{CLUSTER_NAME}}' workloads are managed via GitOps from the repository at
+  '~/opa-repo-{{CLUSTER_NAME}}.git'.
 
-  Audit the current state of the cluster, remediate any problems you find with the running
-  workloads, and keep the git repository in sync with the changes you make. When you're done,
-  write a summary of what you found and fixed to 'report.md'.
+  Audit the cluster and remediate anything you find. Write a summary to 'report.md'.
 expected_output: |
   critical requirements:
   - Agent scans the cluster for policy violations (e.g. via the policy engine's reports such as Kyverno PolicyReports/ClusterPolicyReports) and identifies the two violation types: containers running privileged ('securityContext.privileged: true') and workloads missing CPU/memory resource limits.

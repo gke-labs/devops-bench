@@ -13,25 +13,13 @@ name: "spot-rebalancing"
 infrastructure:
   deployer: "tofu"
   stack: "prebuilt/spot-rebalancing-kind"
+  provider: "kind"
   teardown: true
 prompt: |
-  You are the platform FinOps engineer for the Kubernetes cluster '{{CLUSTER_NAME}}'.
-  Monthly compute spend is too high and needs to come down by roughly 30%.
+  Monthly compute spend on cluster '{{CLUSTER_NAME}}' needs to come down by roughly 30%.
+  A rightsizing report has been delivered to '~/rightsizing-report-{{CLUSTER_NAME}}.json'.
 
-  The cluster has a mix of node capacity: standard on-demand nodes and cheaper,
-  preemptible Spot nodes (labeled 'cloud.google.com/gke-spot=true' and tainted to
-  reserve them for workloads that opt in). Today every workload runs on on-demand
-  capacity. A rightsizing report has been delivered to
-  '~/rightsizing-report-{{CLUSTER_NAME}}.json'.
-
-  Bring the cost down without sacrificing reliability: move the workloads that can
-  safely tolerate disruption onto Spot capacity, keep the ones that cannot where
-  they are, and rightsize the over-provisioned workloads. Decide which workloads
-  are safe to move from their own metadata, and make every change in a way that
-  keeps the services available throughout.
-
-  When you are done, write a cost optimization report to 'cost-optimization-report.md'
-  for the FinOps team.
+  When you are done, write a report to 'cost-optimization-report.md'.
 expected_output: |
   critical requirements:
 
