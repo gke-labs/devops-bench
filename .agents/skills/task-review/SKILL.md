@@ -5,9 +5,10 @@ description: >
   "review this new task", "is this task parallel-safe", "review the secret-rotation
   task.yaml + stack", "will this task collide under the matrix", "check my new
   tf/prebuilt stack". Reviews a newly added/changed `tasks/**/task.yaml` together
-  with its TF stack across schema/metadata, spec parsing, outcome rubric,
-  parallel-safety (the emphasis), infra leak prevention, placeholders, and flags —
-  returning ranked findings with severity + file:line evidence + a concrete fix.
+  with its TF stack across schema/metadata, spec parsing, verifier robustness,
+  outcome rubric, parallel-safety (the emphasis), infra leak prevention,
+  placeholders, and flags — returning ranked findings with severity + file:line
+  evidence + a concrete fix.
   Review-only: static analysis plus unit tests / spec-parse checks; it NEVER
   provisions infra or runs an eval. For a review of harness/library CODE, use the
   sibling `devops-bench-review` skill instead.
@@ -55,6 +56,25 @@ Every chaos entry's `verify:` names a **real `verification_spec` entry's `name`*
 a dangling ref doesn't crash, it's silently recorded as a parse error, so a typo is
 a finding. *Why:* a mismatched cross-ref means the chaos you injected is never
 actually asserted.
+
+### Verifier robustness (false negatives)
+
+A check must not fail a solution that actually reached the goal. Two recurring
+false-negative sources, both findings on sight:
+
+- **Unpinned identifiers.** Every identifier a check references (namespace, label
+  selector, resource name) is named in the prompt or supplied by a placeholder. A
+  check keyed on `selector: "app=web"` when the prompt never says that label fails
+  an agent that shipped a perfect deployment under a different one. Naming the
+  target is not method-prescription — the agent still chooses every method, the
+  task only says where to look.
+- **Positional paths.** No index-based traversal (`containers[0]`, `rules[0]`):
+  order is incidental and a valid manifest may emit entries in any order. Select
+  by identity with a filter predicate instead —
+  `containers[?(@.name=="web")].image`.
+
+*Why:* a false negative is worse than a noisy pass here — it fails correct work
+and reads as a model capability gap in the results rather than a task bug.
 
 ### Outcome-based rubric
 
