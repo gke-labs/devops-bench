@@ -1,0 +1,43 @@
+task_id: 24
+name: "mesh-federation"
+# Cross-cluster Istio service-mesh federation. Each run provisions TWO kind
+# clusters joined as an Istio multi-primary / multi-network mesh (shared root CA,
+# east-west gateways, cross-cluster endpoint discovery), with a client workload in
+# cluster '{{CLUSTER_NAME}}' and a backend in cluster '{{CLUSTER_NAME}}-peer'. An
+# mTLS misconfiguration is injected so the cross-cluster call fails the handshake;
+# the agent must diagnose and restore secure connectivity.
+#
+# HEAVIEST task in the suite: two kind clusters + full Istio (istiod, east-west
+# gateways, MetalLB) on each. Run with a LOW MAX_PARALLEL — host disk/inotify/pods
+# sum across concurrent runs. No GKE quota (kind). Parallel-SAFE: both kind cluster
+# names derive from the run-token-prefixed {{CLUSTER_NAME}}, and the kubeconfig is
+# the per-run $KUBECONFIG.
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/mesh-federation-kind"
+  teardown: true
+prompt: |
+  You are the platform engineer on call for a federated Istio service mesh that spans two
+  Kubernetes clusters joined as a multi-primary mesh: '{{CLUSTER_NAME}}' (the client cluster)
+  and '{{CLUSTER_NAME}}-peer' (the backend cluster). Both are in your kubeconfig as the
+  contexts 'kind-{{CLUSTER_NAME}}' and 'kind-{{CLUSTER_NAME}}-peer'.
+
+  A 'sleep' client in the 'sample' namespace of the client cluster is supposed to reach the
+  'backend' service (hostname 'backend.sample.svc.cluster.local') whose pods run in the
+  'sample' namespace of the backend cluster. Right now that cross-cluster call is failing.
+
+  Investigate the failure across both clusters, restore secure cross-cluster communication so
+  the client can reach the backend again, and make sure the path is protected by mutual TLS
+  consistently across the mesh. When you're done, write a 'mesh-federation-report.md'
+  documenting the root cause, the fix, and the resulting security posture.
+expected_output: |
+  critical requirements:
+
+  GRADING NOTE: Grade on outcome — is the cross-cluster call restored AND served over mutual TLS? Any sound reconciliation of the conflicting mTLS configuration is acceptable (align the client to mesh mTLS, or otherwise make the client↔server mTLS posture consistent); do not require one specific edit. The federation plumbing (shared CA, east-west gateways, remote secrets) is already in place — the task is to diagnose and fix the mTLS break, not to rebuild the mesh.
+
+  - Agent diagnoses the failing cross-cluster call by inspecting both clusters (e.g. exec'ing the 'sleep' client to reproduce the failure, and examining the Istio mTLS configuration), rather than assuming a generic app bug.
+  - Agent identifies the mTLS mismatch: the backend cluster's 'sample' namespace enforces 'PeerAuthentication' STRICT, while the client cluster has a 'DestinationRule' for the backend host that DISABLES TLS — so the client sends plaintext and the server rejects the handshake.
+  - Agent reconciles the conflict so client and server agree on mutual TLS for the backend host (e.g. removes the offending DestinationRule or sets its tls mode to 'ISTIO_MUTUAL'), without simply disabling security (it does not weaken the backend to PERMISSIVE/disable mTLS to "fix" it).
+  - After the fix, the cross-cluster call from the 'sleep' client succeeds (returns the backend's response from the peer cluster) and is served over mTLS.
+  - Agent writes 'mesh-federation-report.md' documenting the root cause (the STRICT vs DISABLE mTLS mismatch across the two clusters), the remediation applied, and confirmation that cross-cluster traffic is restored and mutually authenticated.
+validated: true
