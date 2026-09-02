@@ -20,6 +20,7 @@ import json
 import os
 import pathlib
 import shutil
+import time
 from typing import TYPE_CHECKING
 
 from devops_bench import core
@@ -38,6 +39,42 @@ __all__ = ["AgyCliAgent"]
 _log = core.get_logger("agents.cli.antigravity")
 
 _GCLOUD_LOOKUP_TIMEOUT_SEC = 10
+
+# agy flushes usage to the conversation DB asynchronously after process exit;
+# poll briefly for the rows before giving up.
+_DB_FLUSH_POLL_ATTEMPTS = 10
+_DB_FLUSH_POLL_INTERVAL_SEC = 0.25
+# Rows that decode to nothing mean schema drift, not an in-flight flush: allow
+# one recheck, then stop instead of burning the full poll budget.
+_UNDECODABLE_MAX_ATTEMPTS = 2
+
+
+def _read_db_tokens(db_path: pathlib.Path) -> dict | None:
+    """Read canonical token usage from the conversation DB.
+
+    Polls for the async flush while the DB reports ``pending``.
+
+    Args:
+        db_path: Path to the ``conversations/<uuid>.db`` file.
+
+    Returns:
+        The canonical token dict, or ``None`` when usage never materializes
+        (missing DB, or schema drift making the blobs undecodable).
+    """
+    undecodable_seen = 0
+    for attempt in range(_DB_FLUSH_POLL_ATTEMPTS):
+        state, tokens = parsing.db_token_state(db_path)
+        if state == "ready":
+            return tokens
+        if state == "absent":
+            return None
+        if state == "undecodable":
+            undecodable_seen += 1
+            if undecodable_seen >= _UNDECODABLE_MAX_ATTEMPTS:
+                return None
+        if attempt < _DB_FLUSH_POLL_ATTEMPTS - 1:
+            time.sleep(_DB_FLUSH_POLL_INTERVAL_SEC)
+    return None
 
 
 def _resolve_model_name(model: str) -> str:
@@ -201,8 +238,7 @@ class AgyCliAgent(base.AgentHarness):
                 env_overlay["GOOGLE_CLOUD_LOCATION"] = location
                 env_overlay["GCP_LOCATION"] = location
 
-            # Explicit gemini_dir ensures agy runs against the workspace and
-            # the local settings.json, not the real HOME.
+            # Explicit gemini_dir keeps agy on the workspace settings, not real HOME.
             argv = [
                 binary,
                 "--dangerously-skip-permissions",
@@ -280,6 +316,9 @@ class AgyCliAgent(base.AgentHarness):
             conv_dir = agy_config_dir / "conversations"
 
             session_text = ""
+            # Tokens live in the conversation DB, not the transcript; read them
+            # here while the per-run workdir still exists.
+            db_tokens: dict | None = None
             if conv_dir.exists():
                 db_files = list(conv_dir.glob("*.db"))
                 if db_files:
@@ -298,6 +337,7 @@ class AgyCliAgent(base.AgentHarness):
                         session_text = transcript_path.read_text(encoding="utf-8")
                     else:
                         _log.warning("Transcript file not found: %s", transcript_path)
+                    db_tokens = _read_db_tokens(db_files[0])
                 else:
                     _log.warning("No .db files found in %s", conv_dir)
             else:
@@ -306,10 +346,33 @@ class AgyCliAgent(base.AgentHarness):
             if not session_text:
                 _log.warning("Failed to retrieve session log, falling back to empty")
 
-        output, trajectory, tokens, parse_errors = parsing.parse_session_jsonl(session_text)
+        # Output + trajectory come from the transcript; tokens prefer the DB,
+        # falling back to transcript-aggregated counts (old agy formats), else
+        # all-None so the row reads "unavailable" rather than a fake 0.
+        output, trajectory, transcript_tokens, parse_errors = parsing.parse_session_jsonl(
+            session_text
+        )
+        metadata: dict = {}
+        if db_tokens is not None:
+            tokens = db_tokens
+            metadata["token_source"] = "db"
+        elif any(transcript_tokens.get(k) for k in ("input", "output", "cached")):
+            # Old transcript shape: reasoning is folded into output and there is
+            # no cache_write; map onto the canonical buckets.
+            tokens = parsing.empty_tokens()
+            tokens.update(
+                input=transcript_tokens.get("input"),
+                cached=transcript_tokens.get("cached"),
+                output=transcript_tokens.get("output"),
+                total=transcript_tokens.get("total"),
+            )
+            metadata["token_source"] = "transcript"
+        else:
+            tokens = parsing.empty_tokens()
+            metadata["token_source"] = "unavailable"
+            _log.warning("No token usage recovered from conversation DB or transcript")
 
         errors: list[str] = list(parse_errors)
-        metadata: dict = {}
         if timeout_exc is not None:
             errors.append(f"antigravity-cli subprocess error: {timeout_exc}")
             if not output:
@@ -321,8 +384,7 @@ class AgyCliAgent(base.AgentHarness):
             if not output:
                 output = f"Error: agy exited {completed.returncode}"
 
-        # If we couldn't find a session file but the run succeeded, we might have no output.
-        # Fall back to stdout if output is empty.
+        # Fall back to raw stdout when the transcript yielded no output.
         if not output and completed is not None and completed.stdout:
             output = completed.stdout.strip()
 
