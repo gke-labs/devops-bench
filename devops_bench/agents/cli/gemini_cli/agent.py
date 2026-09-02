@@ -273,6 +273,7 @@ class GeminiCliAgent(AgentHarness):
                     extra_env=env_overlay,
                     container_name=container_name,
                     network="kind" if cluster else None,
+                    fixture_mounts=sandbox.discover_fixture_mounts(cluster) or None,
                 )
                 sandboxed = True
 

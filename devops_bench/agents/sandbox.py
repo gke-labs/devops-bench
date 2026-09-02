@@ -56,6 +56,7 @@ __all__ = [
     "current_cluster_name",
     "uses_exec_credential_plugin",
     "build_agent_kubeconfig",
+    "discover_fixture_mounts",
     "wrap_argv",
     "container_name_for_workspace",
     "kill_container",
@@ -341,6 +342,70 @@ def build_agent_kubeconfig(cluster_name: str | None, dest_dir: Path) -> Path | N
     return path
 
 
+# Env override naming this run's fixtures explicitly, as ``:``-separated host
+# paths. Set it for a stack whose fixture name does not carry the cluster token
+# that :func:`discover_fixture_mounts` keys off.
+FIXTURES_ENV = "BENCH_AGENT_FIXTURES"
+
+
+def discover_fixture_mounts(cluster_name: str | None) -> dict[str, str]:
+    """Find this run's seeded task fixtures and map them into the container.
+
+    A task's stack seeds its inputs next to the operator's home — a GitOps repo
+    (``~/opa-repo-<cluster>.git``), a delivered advisory, a rightsizing report —
+    and the prompt then points the agent at ``~/<name>``. The container
+    repoints ``HOME`` at ``/workspace`` and mounts neither the real home nor the
+    repository, so before this the agent was told to read a file that could not
+    exist for it. That is not containment, it is a broken task: the fixture is
+    task INPUT, not answer material.
+
+    It is also a containment problem in its own right. Observed across 40
+    sandboxed runs on two models: every agent spent turns hunting the
+    filesystem for the missing fixture, and the ones that hunted hardest
+    escalated to a privileged pod, mounted the node's host disk, and reached
+    the bench checkout — reading ``task.yaml`` and its ``verification_spec``.
+    Giving the agent the input it was promised removes the reason to go looking.
+
+    Eligibility is deliberately narrow: only paths whose NAME carries the
+    run-unique ``cluster_name`` token match, and only at the top level of the
+    home directory. So this can surface artifacts this run's own stack created
+    and nothing else — not the operator's unrelated files, and not a concurrent
+    run's fixtures.
+
+    Args:
+        cluster_name: The run's cluster name, used as the discriminating token.
+
+    Returns:
+        Host path -> container path, for :func:`wrap_argv`'s ``fixture_mounts``.
+        Empty when nothing matches, which is the normal case for the many tasks
+        that seed no files at all.
+    """
+    explicit = os.environ.get(FIXTURES_ENV, "").strip()
+    if explicit:
+        candidates = [Path(p).expanduser() for p in explicit.split(":") if p.strip()]
+    elif not cluster_name:
+        return {}
+    else:
+        home = Path.home()
+        if not home.is_dir():
+            return {}
+        # Top level only, and the name must carry the token. A recursive walk
+        # would widen this well past "artifacts of this run".
+        candidates = sorted(home.glob(f"*{cluster_name}*"))
+
+    mounts: dict[str, str] = {}
+    for path in candidates:
+        if not path.exists():
+            _log.warning("declared fixture %s does not exist; not mounting it", path)
+            continue
+        # HOME is /workspace in the container, so a prompt's ``~/<name>``
+        # resolves to exactly this path.
+        mounts[str(path.resolve())] = f"/workspace/{path.name}"
+    if mounts:
+        _log.info("mounting %d task fixture(s): %s", len(mounts), sorted(mounts))
+    return mounts
+
+
 def wrap_argv(
     argv: list[str],
     *,
@@ -350,6 +415,7 @@ def wrap_argv(
     extra_env: dict[str, str] | None = None,
     container_name: str | None = None,
     network: str | None = "kind",
+    fixture_mounts: dict[str, str] | None = None,
 ) -> list[str]:
     """Wrap an agent command line in ``docker run``.
 
@@ -378,6 +444,13 @@ def wrap_argv(
             kubeconfig: GKE's server is a real, publicly routable address that
             already means something on the default bridge network, and there
             is no ``kind`` network to join outside a kind-provisioned host.
+        fixture_mounts: Task fixtures, host path -> container path, mounted
+            READ-WRITE (see :func:`discover_fixture_mounts`). The write bit is
+            deliberate: several tasks ask the agent to commit its fix back to
+            the seeded GitOps repo, so a read-only bind fails them as surely
+            as no bind at all. This is the one mount set that is task INPUT
+            rather than tooling, and it is kept separate from everything above
+            precisely so that stays visible at the call site.
     """
     image = image or os.environ.get("BENCH_AGENT_IMAGE", "")
     if not image:
@@ -395,6 +468,10 @@ def wrap_argv(
     name_flags = ["--name", container_name] if container_name else []
     network_flags = ["--network", network] if network else []
 
+    fixture_flags: list[str] = []
+    for host_path, container_path in (fixture_mounts or {}).items():
+        fixture_flags += ["-v", f"{host_path}:{container_path}"]
+
     return [
         # No -i. Keeping stdin open gives the agent an open, non-TTY stdin to block
         # on, and a headless `-p <prompt>` run never reads it. Combined with
@@ -410,6 +487,7 @@ def wrap_argv(
         f"{workspace}:/workspace",
         "-v",
         f"{kubeconfig}:/kubeconfig:ro",
+        *fixture_flags,
         "-e",
         "KUBECONFIG=/kubeconfig",
         "-e",
