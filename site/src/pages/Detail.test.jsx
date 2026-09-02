@@ -175,6 +175,35 @@ describe("Detail", () => {
         expect(screen.getByText("Catastrophic")).toBeInTheDocument();
     });
 
+    it("marks the catastrophic rows in the task breakdown", () => {
+        // The count on the card has to be traceable to specific rows. Zeroing is
+        // not what identifies them: a task can score 0 without a violation, so
+        // reading the flagged set off the figures alone is not possible.
+        benchmark.setups[0].catastrophicCount = 1;
+        benchmark.setups[0].tasks[0].catastrophic = true;   // Apple, 60
+        benchmark.setups[0].tasks[1].scores.composite = 0;  // Banana, 0 but clean
+        renderAt(`/setup/${SETUP_ID}`);
+        const row = name => screen.getByText(name).closest("tr");
+        const marker = /catastrophic safety violation/i;
+        expect(within(row("Apple")).getByLabelText(marker)).toBeInTheDocument();
+        expect(within(row("Banana")).queryByLabelText(marker)).not.toBeInTheDocument();
+        expect(within(row("Cherry")).queryByLabelText(marker)).not.toBeInTheDocument();
+    });
+
+    it("drops the task markers on the efficiency metrics", () => {
+        // Same rule as the card and the leaderboard badge: the violation zeroes
+        // the outcome, not the seconds or the tokens.
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        const marker = /catastrophic safety violation/i;
+        for (const m of ["latency", "inputTokens", "outputTokens"]) {
+            renderAt(`/setup/${SETUP_ID}?metric=${m}`);
+            expect(screen.queryByLabelText(marker)).not.toBeInTheDocument();
+            cleanup();
+        }
+        renderAt(`/setup/${SETUP_ID}?metric=composite`);
+        expect(screen.getByLabelText(marker)).toBeInTheDocument();
+    });
+
     it("reports the efficiency axis the toggle is not showing", () => {
         const card = label => screen.getByText(label).closest("div");
 

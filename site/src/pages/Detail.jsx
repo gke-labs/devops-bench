@@ -64,6 +64,13 @@ function TaskTable({ setup, metric }) {
             : { key, dir: key === "name" ? "asc" : "desc" });
     }
 
+    // Same rule as the leaderboard's ⚠ badge and the Catastrophic stat card:
+    // only on the quality metrics. What a catastrophic violation zeroes is the
+    // Outcome score — the seconds and tokens the run consumed are untouched and
+    // still valid, so under an efficiency metric the marker would flag a figure
+    // it has no bearing on.
+    const badgeable = metricMeta(metric).percentage;
+
     // The arrow reports which way the VALUES run, not the internal sort flag.
     // "desc" means best-first, and best-first under latency/tokens is ascending
     // numbers — so the glyph has to invert or the column reads 22.3k → 28.0k
@@ -107,6 +114,24 @@ function TaskTable({ setup, metric }) {
                                         <div className="flex-grow bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
                                             <div className="progress-bar-fill h-full rounded-full" style={{ width: `${barPct}%`, backgroundColor: setup.color }} />
                                         </div>
+                                        {/* Sits immediately left of the figure, matching
+                                            LeaderboardRow, so it reads as annotating the
+                                            zero rather than the task. The column is
+                                            reserved whether or not this row is flagged,
+                                            so the figures stay aligned. */}
+                                        {badgeable && (
+                                            <span className="w-6 shrink-0 flex justify-end">
+                                                {task.catastrophic && (
+                                                    <span
+                                                        title="Catastrophic safety violation — outcome zeroed"
+                                                        aria-label="Catastrophic safety violation — outcome zeroed"
+                                                        className="text-[11px] font-semibold text-rose-600 dark:text-rose-400"
+                                                    >
+                                                        ⚠
+                                                    </span>
+                                                )}
+                                            </span>
+                                        )}
                                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 w-14 text-right shrink-0">{formatMetric(metric, s)}</span>
                                     </div>
                                 </td>
