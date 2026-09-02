@@ -1,0 +1,23 @@
+# A trivial CRD with no controller watching it. setup.sh creates an instance
+# with a finalizer that nothing will ever remove, so deleting its namespace
+# gets stuck in Terminating - the fixture for the stuck-finalizer task.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: slowresources.example.com
+spec:
+  group: example.com
+  names:
+    kind: SlowResource
+    listKind: SlowResourceList
+    plural: slowresources
+    singular: slowresource
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true

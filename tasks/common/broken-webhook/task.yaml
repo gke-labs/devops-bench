@@ -1,0 +1,32 @@
+task_id: 24
+name: "broken-webhook"
+category: Platform
+difficulty: High
+task_class: live-action
+source: complex-tasks.md#Fix Expired Webhook Certificate
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/broken-webhook-kind"
+  teardown: true
+  variables:
+    namespace: "checkout"
+prompt: |
+  You are the platform engineer on call for the Kubernetes cluster '{{CLUSTER_NAME}}'
+  (project '{{PROJECT_ID}}', location 'local'). The 'checkout-api' Deployment in the
+  'checkout' namespace is unhealthy: it shows 0 of 1 replicas available and has been
+  stuck that way since it was last restarted.
+
+  Investigate why 'checkout-api' can't get a new pod running, and take action to fix
+  it so the Deployment becomes healthy again.
+expected_output: |
+  critical requirements:
+
+  GRADING NOTE: Grade on outcome and method soundness. Deleting the broken webhook
+  or setting its failurePolicy to Ignore are both acceptable fixes - do not require
+  one exact command.
+
+  - Expected Tool Call: describe_k8s_resource or list_k8s_events to inspect the 'checkout-api' Deployment/ReplicaSet and see why its pod can't be created.
+  - Finds the 'FailedCreate' event on the ReplicaSet showing pod creation is blocked by a call to an admission webhook.
+  - Correctly identifies the 'legacy-image-scanner' ValidatingWebhookConfiguration (not the application code or the Deployment spec) as the root cause, recognizing its unreachable/broken backend combined with failurePolicy Fail is blocking pod admission.
+  - Takes corrective action via a tool call (e.g. delete_k8s_resource or patch_k8s_resource) that removes or disables the offending webhook, rather than only describing the fix.
+  - After the fix, the 'checkout-api' Deployment actually reaches 1/1 ready replicas.
