@@ -94,6 +94,10 @@ New tasks live under `tasks/<provider>/<name>/task.yaml`, each pairing a `chaos_
 
 Before submitting, run the `task-review` skill over your task — see [the skills overview](docs/getting-started.md#skills-in-this-repo).
 
+### Keeping tasks in your own repo
+
+You don't have to contribute a task here to evaluate against it. A task definition and its OpenTofu stack can live entirely in your repo — point the harness at the path and it runs. See [docs/how-to/out-of-tree-tasks.md](docs/how-to/out-of-tree-tasks.md) and the runnable [`examples/out-of-tree-task/`](examples/out-of-tree-task/).
+
 ## Documentation
 
 We welcome contributions around adding new tasks, models or agent harness. You can review documentation in [`docs/`](docs/README.md) for detailed instructions and skills. Start with [Getting started](docs/getting-started.md), then browse the component docs and

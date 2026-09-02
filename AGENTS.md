@@ -11,6 +11,7 @@ provision infra → run the agent → optional chaos + verify → judge → tear
 | `tasks/` | Task definitions on disk (`task.yaml` files). |
 | `tf/` | OpenTofu / Terraform infrastructure modules. |
 | `site/` | React + Vite leaderboard plus the Firestore `ingest/` pipeline. |
+| `examples/` | Copyable starting points, not part of the benchmark — e.g. an out-of-tree task. |
 | `docs/` | Human documentation. |
 | `.agents/skills/` | Skills for coding agents. |
 
