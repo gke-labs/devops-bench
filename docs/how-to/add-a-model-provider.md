@@ -70,7 +70,7 @@ all = ["devops-bench[google-genai,anthropic,openai,yourprovider-sdk]"]
 
 `AGENT_PROVIDER` resolves through the shared contract in
 `devops_bench/core/model_providers.py` — the one place every harness (the `api`
-runner and the `gemini`/`openclaw` CLIs) reads. If your provider needs aliases, a
+runner and the `gemini`/`claude`/`openclaw` CLIs) reads. If your provider needs aliases, a
 distinct backend, a non-default API-key env var, or keyless (ADC-style) auth, add
 a `ProviderSpec` row to `_SPECS` and its alias(es) to `_ALIASES` there:
 

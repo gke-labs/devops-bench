@@ -16,8 +16,8 @@ change.
 
 ## Supported providers and models
 
-Every harness — the `api` runner and the `gemini`/`openclaw` CLIs — resolves
-`AGENT_PROVIDER` through one shared contract
+Every harness — the `api` runner and the `gemini`/`claude`/`openclaw` CLIs —
+resolves `AGENT_PROVIDER` through one shared contract
 (`devops_bench/core/model_providers.py`). A provider resolves to an *adapter
 family* (which `LLMClient` the `api` harness builds), a *backend* hint
 (genai/vertex/bedrock), the *openclaw wire-provider*, and the *API-key env
@@ -95,7 +95,7 @@ final fallback.
 
 > [!NOTE]
 > **All harnesses share one provider contract.** The `api` runner and the
-> `gemini`/`openclaw` CLIs all resolve `AGENT_PROVIDER` through
+> `gemini`/`claude`/`openclaw` CLIs all resolve `AGENT_PROVIDER` through
 > `devops_bench/core/model_providers.py`. The `api` harness uses it to pick the
 > adapter family and backend for `get_model()`; the CLI harnesses use it to route
 > `AGENT_API_KEY` onto the binary's provider-specific env var(s) (e.g. `google` →
