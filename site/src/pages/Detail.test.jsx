@@ -204,6 +204,43 @@ describe("Detail", () => {
         expect(screen.getByLabelText(marker)).toBeInTheDocument();
     });
 
+    it("explains the marker in a legend when a task is flagged", () => {
+        // The marker's title/aria-label is invisible until hovered and
+        // unreachable by touch, so the glyph needs a visible explanation.
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        renderAt(`/setup/${SETUP_ID}`);
+        const legend = screen.getByText(/catastrophic safety violation/i, { selector: "p" });
+        expect(legend).toBeInTheDocument();
+        expect(legend).toHaveTextContent(/this task/i);          // singular
+        expect(legend).toHaveTextContent(/latency and token figures are unaffected/i);
+    });
+
+    it("counts the flagged tasks in the legend", () => {
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        benchmark.setups[0].tasks[1].catastrophic = true;
+        renderAt(`/setup/${SETUP_ID}`);
+        expect(screen.getByText(/catastrophic safety violation/i, { selector: "p" }))
+            .toHaveTextContent(/these 2 tasks/i);
+    });
+
+    it("omits the legend when nothing is flagged", () => {
+        // A legend for a mark that is not on the page implies the page might
+        // contain one.
+        renderAt(`/setup/${SETUP_ID}`);
+        expect(screen.queryByText(/catastrophic safety violation/i, { selector: "p" }))
+            .not.toBeInTheDocument();
+    });
+
+    it("omits the legend on the efficiency metrics, with the markers", () => {
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        for (const m of ["latency", "inputTokens", "outputTokens"]) {
+            renderAt(`/setup/${SETUP_ID}?metric=${m}`);
+            expect(screen.queryByText(/catastrophic safety violation/i, { selector: "p" }))
+                .not.toBeInTheDocument();
+            cleanup();
+        }
+    });
+
     it("reports the efficiency axis the toggle is not showing", () => {
         const card = label => screen.getByText(label).closest("div");
 
