@@ -73,6 +73,7 @@ each harness maps them onto its target.
 | `AGENT_TARGET` | unset | Path to the CLI binary (`gemini` / `oc`). Ignored by `api`. |
 | `AGENT_TIMEOUT_SEC` | `600` | Wall-clock budget for each external call. |
 | `AGENT_MAX_TURNS` | harness default (50 for `api`) | Caps the `api` tool-use loop. |
+| `AGENT_REASONING_EFFORT` | unset | Reasoning-effort level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, or `max`. Only the openclaw harness honors it today, mapping it onto `oc agent --thinking <level>`. |
 
 **Capabilities**
 

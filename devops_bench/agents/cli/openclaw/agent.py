@@ -168,6 +168,45 @@ _PROVIDER_TRANSPORT: dict[str, dict[str, str]] = {
     },
 }
 
+# Agent runtime each provider's models must be pinned to in the per-run
+# config. oc's default routing sends every ``openai/*`` model (gpt-5.6-sol
+# included, it is literally the fallback default in oc's codex-route module)
+# to the separately-published ``codex`` app-server harness plugin, which is
+# neither bundled nor enabled in the sandbox image, so the run aborts with
+# 'Agent harness runtime "codex" is unavailable'. Pinning ``openclaw`` (oc's
+# own embedded runtime) drives the model straight over the OpenAI Responses
+# transport that oc's built-in catalog already declares for it; confirmed
+# live on openclaw 2026.9.1-beta.1 with ``--thinking high`` reaching the
+# request as reasoningEffort=high.
+_PROVIDER_RUNTIME: dict[str, str] = {
+    "openai": "openclaw",
+}
+
+# Session and subagent tools need an authenticated gateway websocket, which a
+# one-shot `oc agent --local` run never has. Without this deny list the model
+# can call sessions_spawn (which reports accepted even though the child dies
+# on a credentials error) and then sessions_yield, ending its turn with no
+# work done. Deny them so the agent does the task in its own turn.
+_SUBAGENT_TOOL_DENY: tuple[str, ...] = (
+    "sessions_spawn",
+    "sessions_yield",
+    "sessions_send",
+    "sessions_list",
+    "sessions_history",
+    "sessions_search",
+    "subagents",
+)
+
+
+def _build_tool_policy() -> dict:
+    return {"tools": {"deny": list(_SUBAGENT_TOOL_DENY)}}
+
+
+# Levels ``oc agent --thinking`` accepts.
+_THINKING_LEVELS = frozenset(
+    {"off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max"}
+)
+
 
 def _oc_model_id(config: AgentConfig) -> str:
     """Resolve the canonical ``provider/model`` id ``oc agent --model`` expects.
@@ -255,23 +294,55 @@ def _build_model_override(config: AgentConfig) -> dict:
     }
 
 
+def _build_runtime_pin(config: AgentConfig) -> dict:
+    """Pin the agent runtime for providers oc would otherwise misroute.
+
+    Returns ``{"agents": {"defaults": {"models": {model_id: {"agentRuntime":
+    {"id": runtime}}}}}}`` when the resolved provider is in
+    :data:`_PROVIDER_RUNTIME`, else an empty dict.
+    """
+    model_id = _oc_model_id(config)
+    if not model_id:
+        return {}
+    provider, _, _ = model_id.partition("/")
+    runtime = _PROVIDER_RUNTIME.get(provider)
+    if runtime is None:
+        return {}
+    return {"agents": {"defaults": {"models": {model_id: {"agentRuntime": {"id": runtime}}}}}}
+
+
+def _deep_merge(dst: dict, src: dict) -> None:
+    """Recursively merge ``src`` into ``dst`` in place; ``src`` wins on leaves."""
+    for key, value in src.items():
+        if isinstance(value, dict) and isinstance(dst.get(key), dict):
+            _deep_merge(dst[key], value)
+        else:
+            dst[key] = value
+
+
 def _build_openclaw_config(config: AgentConfig, mcp_servers: tuple[McpBinding, ...]) -> dict:
     """Assemble the isolated ``openclaw.json`` payload for a run.
 
-    Merges the two per-run config concerns the harness owns: command-bearing MCP
-    bindings (``mcp.servers``) and a catalog entry for a model openclaw doesn't
-    ship by default (``models``/``agents``; see :func:`_build_model_override`).
-    Their key spaces are disjoint, so either, both, or neither may be present.
+    Merges the per-run config concerns the harness owns: command-bearing MCP
+    bindings (``mcp.servers``), a catalog entry for a model openclaw doesn't ship
+    by default (``models``/``agents``; see :func:`_build_model_override`), an
+    agent-runtime pin for a provider oc would otherwise misroute (``agents``; see
+    :func:`_build_runtime_pin`), and the session/subagent tool deny list every run
+    needs (``tools``; see :func:`_build_tool_policy`). The model-override and
+    runtime-pin payloads are deep-merged (via :func:`_deep_merge`) rather than
+    shallow-updated, since both can write into the same
+    ``agents.defaults.models[model_id]`` entry.
 
     Args:
-        config: Resolved :class:`AgentConfig` (drives the model-catalog entry).
+        config: Resolved :class:`AgentConfig` (drives the model-catalog entry and
+            the runtime pin).
         mcp_servers: Bindings to render into ``mcp.servers`` (empty-command
             bindings are skipped by :func:`build_mcp_servers`).
 
     Returns:
-        A config mapping, or an empty dict when there is neither a launchable MCP
-        binding nor a model needing a catalog entry (caller then skips the config
-        write and leaves ``OPENCLAW_CONFIG_PATH`` unset).
+        A config mapping. Never empty: the tool-policy deny list (see
+        :func:`_build_tool_policy`) is always merged in, on top of any MCP
+        servers, model-catalog entry, and runtime pin.
 
     Each MCP server entry inherits the run's ``KUBECONFIG`` (set by ``RunEnv``) as
     an explicit ``env`` so the MCP server (e.g. gke-mcp) reads the run-scoped
@@ -285,7 +356,9 @@ def _build_openclaw_config(config: AgentConfig, mcp_servers: tuple[McpBinding, .
             for entry in servers.values():
                 entry.setdefault("env", {})["KUBECONFIG"] = kubeconfig
         payload["mcp"] = {"servers": servers}
-    payload.update(_build_model_override(config))
+    _deep_merge(payload, _build_model_override(config))
+    _deep_merge(payload, _build_runtime_pin(config))
+    _deep_merge(payload, _build_tool_policy())
     return payload
 
 
@@ -343,6 +416,25 @@ def _oc_model_flag(config: AgentConfig) -> str:
     if not model_id:
         return ""
     return f"--model {shlex.quote(model_id)} "
+
+
+def _thinking_flag() -> str:
+    """Return ``--thinking <level> `` for ``oc agent``, or ``""`` when unset.
+
+    The reasoning-effort level is chosen per run through ``AGENT_REASONING_EFFORT``
+    rather than a config field, mirroring how the model itself is selected per run
+    via ``--model`` (see :func:`_oc_model_flag`) instead of a global setting. The
+    value maps directly onto one of openclaw's own ``oc agent --thinking`` levels.
+    """
+    raw = os.environ.get("AGENT_REASONING_EFFORT", "")
+    level = raw.strip().lower()
+    if not level:
+        return ""
+    if level not in _THINKING_LEVELS:
+        raise ValueError(
+            f"AGENT_REASONING_EFFORT={raw!r} is not one of {sorted(_THINKING_LEVELS)}"
+        )
+    return f"--thinking {shlex.quote(level)} "
 
 
 def _needs_anthropic_vertex_auth_profile(config: AgentConfig) -> bool:
@@ -425,7 +517,8 @@ def _build_local_command(config: AgentConfig, prompt: str, agent_name: str, oc_b
         '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
         f"{auth_setup}"
         f"{quoted_oc} --log-level debug agent --local "
-        f"--agent {shlex.quote(agent_name)} {_oc_model_flag(config)}-m {shlex.quote(prompt)}"
+        f"--agent {shlex.quote(agent_name)} {_oc_model_flag(config)}{_thinking_flag()}"
+        f"-m {shlex.quote(prompt)}"
     )
 
 
@@ -503,6 +596,9 @@ class OpenClawAgent(AgentHarness):
                 env_overlay["OPENCLAW_CONFIG_PATH"] = str(config_path)
 
             command = _build_local_command(self.config, final_prompt, self.agent_name, oc_bin)
+            reasoning_effort = os.environ.get("AGENT_REASONING_EFFORT", "").strip()
+            if reasoning_effort:
+                _log.debug("oc agent --thinking %s", reasoning_effort.lower())
 
             # Containerised execution, opt-in via BENCH_AGENT_SANDBOX=docker. Only
             # the agent turn itself moves into the container: state_dir/openclaw.json

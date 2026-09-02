@@ -199,6 +199,7 @@ your handle for monitoring and re-attaching. Outputs land on the runner host und
 | `MATRIX_AGENT_CONFIGS` | Agent-config presets, each `oc\|gcli` `[+mcp][+skills]` (e.g. `gcli+mcp+skills`). |
 | `MAX_PARALLEL` | Max combos running at once (default 3). **Each combo is its own cluster — mind your quota.** |
 | `AGENT_TIMEOUT_SEC` | Per-agent timeout (default 1200 in the matrix; the bare harness default is lower). |
+| `AGENT_REASONING_EFFORT` | Reasoning-effort level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`). Only the openclaw harness honors it, mapping it onto `oc agent --thinking <level>`. |
 | `BENCH_VERTEX` | Run agents + judges against Vertex via VM-SA ADC (no API keys). |
 | `BENCH_REMOTE` | Run on the bastion over SSH; unset runs every combo locally on this host. |
 | `SKIP_SYNC` | Skip the working-tree sync to the bastion (after you've already synced once). |

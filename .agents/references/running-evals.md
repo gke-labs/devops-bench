@@ -125,6 +125,7 @@ To run **both arms in parallel**: sync once, then start each wrapper with
 | `MATRIX_AGENT_CONFIGS` | Refactored arm only. Each `oc\|gcli` `[+mcp][+skills]` (e.g. `gcli+mcp+skills`). |
 | `MAX_PARALLEL` | Max combos running at once (default `3`). Each combo is its own cluster — mind quota. |
 | `AGENT_TIMEOUT_SEC` | Per-agent timeout (default `1200` in the matrix). |
+| `AGENT_REASONING_EFFORT` | Reasoning-effort level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `adaptive`, `max`). Only the openclaw harness honors it, mapping it onto `oc agent --thinking <level>`. |
 | `BENCH_VERTEX` | Run agents + judges on Vertex via VM-SA ADC (no API keys). |
 | `BENCH_REMOTE` | Run on the bastion over ssh; unset runs every combo locally. |
 | `SKIP_SYNC` | Skip the working-tree sync to the bastion (after one real sync). |
