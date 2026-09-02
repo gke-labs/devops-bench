@@ -1,0 +1,34 @@
+task_id: 14
+name: "troubleshoot-unhealthy-pod"
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/unhealthy-pod"
+  teardown: true
+  variables:
+    node_count: 3
+    machine_type: "e2-standard-2"
+prompt: "The `frontend` deployment in namespace {{NAMESPACE}} in cluster {{GKE_CLUSTER_NAME}} is failing. Diagnose the issue and suggest a mitigation."
+expected_output: |
+  critical requirements:
+
+  - Confirm the 'frontend' deployment in namespace '{{NAMESPACE}}' is in a failed state (e.g., `CreateContainerConfigError` or `CreateContainerError`).
+  - Identify the root cause by inspecting pod events (e.g., `warning` events indicating `configmap "frontend-config" not found`).
+  - Identify that the logs are unavailable or empty because the container failed to start due to the missing configuration.
+  - Suggest the exact mitigation: Create the missing ConfigMap named `frontend-config` in namespace `{{NAMESPACE}}` with the key `api-url`.
+
+  Expected Manifest Generated:
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: frontend-config
+    namespace: {{NAMESPACE}}
+  data:
+    api-url: "http://mock-api"
+documentation:
+  - doc_name: "Troubleshooting Applications"
+    url: "https://kubernetes.io/docs/tasks/debug/debug-application/"
+    constraints:
+      - text: "Check pod events"
+        critical: true
+      - text: "Inspect pod status"
+        critical: true
