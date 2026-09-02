@@ -173,6 +173,42 @@ def test_parse_trajectory_export_output_falls_back_to_assistant_message():
     assert output == "done."
 
 
+def test_parse_trajectory_export_surfaces_terminal_error():
+    """A model.completed with terminalError set must land on errors.
+
+    openclaw sets this (e.g. ``"non_deliverable_terminal_turn"``) when a turn's
+    underlying model call fails to deliver a response: assistantTexts is empty
+    and no assistant.message event fires either, so without this the run's
+    output silently falls back to the ``oc`` bash stdout debug log (see
+    ``OpenClawAgent._execute``) as if it were a real, if terse, final answer.
+    """
+    blob = _events(
+        _tool_call("1", "exec", {"command": "kubectl get deploy -A"}),
+        _tool_result("1", "deploy/web 2/2"),
+        {
+            "type": "model.completed",
+            "data": {
+                "usage": {"input": 1, "output": 1},
+                "assistantTexts": [],
+                "terminalError": "non_deliverable_terminal_turn",
+                "aborted": False,
+                "timedOut": False,
+            },
+        },
+    )
+    _trajectory, _tokens, output, errors = parse_trajectory_export(blob)
+    assert output == ""
+    assert any("non_deliverable_terminal_turn" in m for m in errors)
+    assert any("did not deliver a final response" in m for m in errors)
+
+
+def test_parse_trajectory_export_no_terminal_error_key_is_silent():
+    """A model.completed with no terminalError key at all must not spuriously error."""
+    blob = _events({"type": "model.completed", "data": {"usage": {"input": 1, "output": 1}}})
+    _trajectory, _tokens, _output, errors = parse_trajectory_export(blob)
+    assert errors == []
+
+
 def test_parse_trajectory_export_surfaces_decode_errors():
     blob = "{not json}\n" + json.dumps(_tool_call("1", "x", {})) + "\n"
     trajectory, _tokens, _output, errors = parse_trajectory_export(blob)
@@ -364,6 +400,39 @@ def test_execute_falls_back_to_stdout_when_bundle_has_no_answer(monkeypatch, tmp
 
     result = OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"))).run("p")
     assert result.output == "bare stdout answer"
+
+
+def test_execute_records_terminal_error_alongside_stdout_fallback(monkeypatch, tmp_path):
+    """A non_deliverable_terminal_turn must surface on result.errors, not just
+    silently fall back to raw stdout as if it were a genuine answer.
+
+    Regression test for the real failure this was built to catch: a run where
+    ``oc``'s own bash stdout ends in a bare ``"LLM request failed."`` line got
+    treated as the agent's final output and handed to every judge metric,
+    scoring as a near-total task failure that was actually a provider/harness
+    delivery hiccup. ``result.output`` still carries the raw stdout (useful for
+    debugging), but ``result.errors`` must be non-empty so the record comes
+    back ``validated: False`` instead of masquerading as a clean low score.
+    """
+    events = _events(
+        _tool_call("1", "exec", {"command": "kubectl get deploy -A"}),
+        _tool_result("1", "deploy/web 2/2"),
+        {
+            "type": "model.completed",
+            "data": {"usage": {"input": 1, "output": 1}, "terminalError": "non_deliverable_terminal_turn"},
+        },
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: _make_subprocess_result(stdout="...\nLLM request failed.", returncode=0),
+    )
+    monkeypatch.setattr(oc_mod, "run", _bundle_writer(events))
+
+    result = OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"))).run("p")
+    assert result.output == "...\nLLM request failed."
+    assert result.has_errors()
+    assert any("non_deliverable_terminal_turn" in m for m in result.errors)
 
 
 def test_execute_records_when_sessions_returns_no_rows(monkeypatch, tmp_path):
