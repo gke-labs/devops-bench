@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import subprocess
 import time
 from collections.abc import Iterator
@@ -29,12 +30,48 @@ from devops_bench.core.subprocess import CompletedProcess, _build_env, run
 __all__ = [
     "apply",
     "get_resource",
+    "is_not_found",
     "port_forward",
     "rollout_status",
     "wait",
 ]
 
 _log = get_logger("k8s.kubectl")
+
+# kubectl renders a server error with exactly two templates, one per branch of
+# whether the returned Status carries a reason:
+#   Error from server (NotFound): namespaces "hello-app" not found
+#   Error from server: namespaces "hello-app" not found
+# The second is rare but real: a hand-rolled ``metav1.Status`` from an
+# aggregated apiserver or an admission webhook can 404 with an empty reason,
+# and kubectl then drops the parenthesised code entirely.
+#
+# So the anchor is the "Error from server" prefix, not the parentheses. The
+# prefix is what does the real work of keeping an unrelated message that merely
+# contains "not found" (a missing binary, say) from passing for the reason
+# code, and matching on it covers both renderings.
+_NOT_FOUND_RE: re.Pattern[str] = re.compile(
+    r"^Error from server \(NotFound\):|^Error from server: .*\bnot found\s*$",
+    re.MULTILINE,
+)
+
+
+def is_not_found(exc: BaseException) -> bool:
+    """Report whether ``exc`` is kubectl saying the resource does not exist.
+
+    Absence reaches a caller two different ways. A selector query returns an
+    empty item list and exits zero, whereas a query naming a resource exits
+    non-zero with ``NotFound`` on stderr. Both mean the same thing, so callers
+    use this to stop the second from looking like a failure to observe.
+
+    Args:
+        exc: The exception raised by a kubectl helper.
+
+    Returns:
+        ``True`` when the apiserver reported ``NotFound``.
+    """
+    return bool(_NOT_FOUND_RE.search(getattr(exc, "stderr", None) or ""))
+
 
 # Seconds to let ``kubectl port-forward`` establish the tunnel before yielding.
 _PORT_FORWARD_SETTLE_SEC = 3
