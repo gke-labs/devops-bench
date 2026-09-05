@@ -28,6 +28,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
 
 from devops_bench.core import ClusterInfo, ConfigError
 from devops_bench.deployers.tofu import _TF_ROOT, TFDeployer
@@ -40,17 +41,32 @@ class StubProvider(Provider):
     def __init__(self) -> None:
         self.account_calls = 0
         self.cluster_calls: list[tuple[str, str, dict[str, Any]]] = []
+        self.output_calls: list[dict[str, Any] | None] = []
+        self.cleanup_calls: list[tuple[ClusterInfo, dict[str, Any] | None, bool]] = []
 
     def ensure_account_credentials(self) -> None:
         self.account_calls += 1
 
     def ensure_cluster_credentials(
-        self, cluster_name: str, location: str, variables: dict[str, Any]
+        self,
+        cluster_name: str,
+        location: str,
+        variables: dict[str, Any],
+        outputs: dict[str, Any] | None = None,
     ) -> ClusterInfo:
         self.cluster_calls.append((cluster_name, location, variables))
+        self.output_calls.append(outputs)
         return ClusterInfo.from_dict(
             {"name": cluster_name, "location": location, "project": variables.get("project_id")}
         )
+
+    def cleanup(
+        self,
+        cluster_info: ClusterInfo,
+        variables: dict[str, Any] | None = None,
+        success: bool = True,
+    ) -> None:
+        self.cleanup_calls.append((cluster_info, variables, success))
 
     def resolve_variables(
         self, ctx: ResolveContext, custom_variables: dict[str, Any]
@@ -138,6 +154,35 @@ def test_down(mocker, monkeypatch, tf_deployer, provider):
         "node_count=3",
     ]
 
+    assert len(provider.cleanup_calls) == 1
+    cleanup_info, cleanup_vars, success = provider.cleanup_calls[0]
+    assert cleanup_info.name == "test-cluster"
+    assert cleanup_info.location == "us-central1-a"
+    assert cleanup_info.project == "test-project"
+    assert cleanup_vars == tf_deployer.variables
+    assert success is True
+
+
+def test_down_missing_tf_dir_skips_destroy_but_runs_cleanup(
+    mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    tf_deployer: TFDeployer,
+    provider: StubProvider,
+) -> None:
+    monkeypatch.delenv("TF_DATA_DIR", raising=False)
+    mock_run = mocker.patch("devops_bench.deployers.tofu.run")
+    tf_deployer.work_dir = "/nonexistent/path/for/test"
+
+    tf_deployer.down()
+
+    mock_run.assert_not_called()
+    assert provider.account_calls == 0
+    assert len(provider.cleanup_calls) == 1
+    cleanup_info, cleanup_vars, success = provider.cleanup_calls[0]
+    assert cleanup_info.name == "test-cluster"
+    assert cleanup_vars == tf_deployer.variables
+    assert success is False
+
 
 def test_up_isolates_state_beside_tf_data_dir(mocker, monkeypatch, tmp_path, tf_deployer):
     monkeypatch.setenv("TF_DATA_DIR", str(tmp_path / "tf-data"))
@@ -193,6 +238,9 @@ def test_get_cluster_info_parses_and_delegates(mocker, monkeypatch, tf_deployer,
 
     # Parsed outputs are handed to the provider, which builds the ClusterInfo.
     assert provider.cluster_calls == [("test-cluster", "us-central1-a", tf_deployer.variables)]
+    assert provider.output_calls == [
+        {"cluster_name": "test-cluster", "cluster_location": "us-central1-a"}
+    ]
     assert info.name == "test-cluster"
     assert info.location == "us-central1-a"
     assert info.project == "test-project"
@@ -229,6 +277,15 @@ def test_get_cluster_info_bad_json_raises(mocker, tf_deployer):
         tf_deployer.get_cluster_info()
 
 
+def test_get_cluster_info_non_dict_json_raises(mocker, tf_deployer):
+    proc = MagicMock()
+    proc.stdout = '["not-a-dict"]'
+    mocker.patch("devops_bench.deployers.tofu.run", side_effect=[MagicMock(), proc])
+
+    with pytest.raises(ConfigError, match="Expected dict from 'tofu output -json'"):
+        tf_deployer.get_cluster_info()
+
+
 def test_init_path_resolution(tmp_path, mocker, provider):
     # Absolute path that exists on disk is used as-is.
     abs_path = tmp_path / "my-tf-stack"
@@ -253,8 +310,94 @@ def test_init_expands_user_path(tmp_path, monkeypatch, provider):
 
 
 def test_init_missing_dir_raises(provider):
-    with pytest.raises(ConfigError, match="TF stack not found in repo"):
+    with pytest.raises(ConfigError, match="TF stack not found under"):
         TFDeployer(tf_dir="non-existent-stack-xyz", provider=provider)
+
+
+def test_init_resolves_relative_stack_under_bench_tf_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: StubProvider
+) -> None:
+    """A relative stack name resolves under ``$BENCH_TF_ROOT`` when set."""
+    root = tmp_path / "stacks"
+    (root / "my-stack").mkdir(parents=True)
+    monkeypatch.setenv("BENCH_TF_ROOT", str(root))
+    monkeypatch.delenv("TF_DATA_DIR", raising=False)
+
+    deployer = TFDeployer(tf_dir="my-stack", provider=provider)
+
+    assert Path(deployer.tf_dir) == root.resolve() / "my-stack"
+    # No isolation without TF_DATA_DIR: tofu runs in the shared stack dir.
+    assert deployer.work_dir == deployer.tf_dir
+
+
+def test_init_isolates_stack_under_bench_tf_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: StubProvider
+) -> None:
+    """Per-run isolation still applies to stacks under an overridden root.
+
+    The roots are deliberately disjoint (``stacks/`` vs ``run/``): pointing
+    ``BENCH_TF_ROOT`` at an ancestor of the run scratch dir would make the
+    whole-tree copy fold run artifacts back into the stack tree.
+    """
+    root = tmp_path / "stacks"
+    (root / "my-stack").mkdir(parents=True)
+    run_dir = tmp_path / "run"
+    monkeypatch.setenv("BENCH_TF_ROOT", str(root))
+    monkeypatch.setenv("TF_DATA_DIR", str(run_dir / "tf-data"))
+
+    deployer = TFDeployer(tf_dir="my-stack", provider=provider)
+
+    assert Path(deployer.work_dir) == run_dir.resolve() / "tf" / "my-stack"
+    assert Path(deployer.work_dir).is_dir()
+    # The shared stack dir is untouched; tofu runs in the private copy.
+    assert Path(deployer.tf_dir) == root.resolve() / "my-stack"
+
+
+def test_isolation_refused_when_root_contains_scratch_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: StubProvider, caplog: Any
+) -> None:
+    """A stack root that contains the run scratch dir must not be copied.
+
+    Copying a tree into its own descendant recurses until the OS path-length
+    limit; the deployer must refuse and degrade to the shared stack dir.
+    """
+    root = tmp_path  # scratch dir lives INSIDE the stack root
+    (root / "my-stack").mkdir()
+    monkeypatch.setenv("BENCH_TF_ROOT", str(root))
+    monkeypatch.setenv("TF_DATA_DIR", str(root / "runs" / "r1" / "tf-data"))
+
+    deployer = TFDeployer(tf_dir="my-stack", provider=provider)
+
+    assert deployer.work_dir == deployer.tf_dir  # shared dir, no copy
+    assert not (root / "runs" / "r1" / "tf").exists()
+    assert "contains the run scratch dir" in caplog.text
+
+
+def test_init_missing_stack_under_bench_tf_root_names_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: StubProvider
+) -> None:
+    """The error for a missing stack names the checked root and the override."""
+    root = tmp_path / "stacks"
+    root.mkdir()
+    monkeypatch.setenv("BENCH_TF_ROOT", str(root))
+
+    with pytest.raises(ConfigError, match="TF stack not found under") as excinfo:
+        TFDeployer(tf_dir="absent-stack", provider=provider)
+
+    assert str(root.resolve()) in str(excinfo.value)
+    assert "BENCH_TF_ROOT" in str(excinfo.value)
+
+
+def test_init_blank_bench_tf_root_falls_back_to_default(
+    monkeypatch: pytest.MonkeyPatch, provider: StubProvider
+) -> None:
+    """A blank override is treated as unset (``get_env`` semantics)."""
+    monkeypatch.setenv("BENCH_TF_ROOT", "   ")
+
+    with pytest.raises(ConfigError, match="TF stack not found under") as excinfo:
+        TFDeployer(tf_dir="non-existent-stack-xyz", provider=provider)
+
+    assert str(_TF_ROOT) in str(excinfo.value)
 
 
 def test_get_declared_variables_robustness(tmp_path):
