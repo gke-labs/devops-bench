@@ -15,6 +15,10 @@ import { Detail } from "./Detail.jsx";
 
 const SETUP_ID = "alpha-pro-gemini-cli-baseline";
 
+// The efficiency axes, i.e. every metric METRIC_META marks as non-percentage.
+// Kept in one place so a test can't silently cover three of the four.
+const EFFICIENCY_METRICS = ["latency", "inputTokens", "outputTokens", "cachedTokens"];
+
 // Task scores chosen so name-order and score-order DIFFER, and so best/avg/median
 // are all distinct: pass1 = {Apple 60, Banana 90, Cherry 80} → best 90, avg 76.7,
 // median 80. Score-desc → Banana, Cherry, Apple. Name-asc → Apple, Banana, Cherry.
@@ -165,7 +169,7 @@ describe("Detail", () => {
         // tokens the run consumed are untouched, so beside a latency or token
         // headline the card qualifies a figure it has no bearing on.
         benchmark.setups[0].catastrophicCount = 3;
-        for (const m of ["latency", "inputTokens", "outputTokens"]) {
+        for (const m of EFFICIENCY_METRICS) {
             renderAt(`/setup/${SETUP_ID}?metric=${m}`);
             expect(screen.queryByText("Catastrophic")).not.toBeInTheDocument();
             cleanup();
@@ -173,6 +177,75 @@ describe("Detail", () => {
         // ...and is still there on the quality side, where it explains the score.
         renderAt(`/setup/${SETUP_ID}?metric=composite`);
         expect(screen.getByText("Catastrophic")).toBeInTheDocument();
+    });
+
+    it("marks the catastrophic rows in the task breakdown", () => {
+        // The count on the card has to be traceable to specific rows. Zeroing is
+        // not what identifies them: a task can score 0 without a violation, so
+        // reading the flagged set off the figures alone is not possible.
+        benchmark.setups[0].catastrophicCount = 1;
+        benchmark.setups[0].tasks[0].catastrophic = true;   // Apple, 60
+        benchmark.setups[0].tasks[1].scores.composite = 0;  // Banana, 0 but clean
+        renderAt(`/setup/${SETUP_ID}`);
+        const row = name => screen.getByText(name).closest("tr");
+        const marker = /catastrophic safety violation/i;
+        // getByRole, not getByLabelText: ARIA prohibits aria-label on a generic
+        // span, so the marker has to carry a role for the label to be announced
+        // at all. Querying by role is what catches losing it again.
+        expect(within(row("Apple")).getByRole("img", { name: marker })).toBeInTheDocument();
+        expect(within(row("Banana")).queryByLabelText(marker)).not.toBeInTheDocument();
+        expect(within(row("Cherry")).queryByLabelText(marker)).not.toBeInTheDocument();
+    });
+
+    it("drops the task markers on the efficiency metrics", () => {
+        // Same rule as the card and the leaderboard badge: the violation zeroes
+        // the outcome, not the seconds or the tokens.
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        const marker = /catastrophic safety violation/i;
+        for (const m of EFFICIENCY_METRICS) {
+            renderAt(`/setup/${SETUP_ID}?metric=${m}`);
+            expect(screen.queryByLabelText(marker)).not.toBeInTheDocument();
+            cleanup();
+        }
+        renderAt(`/setup/${SETUP_ID}?metric=composite`);
+        expect(screen.getByLabelText(marker)).toBeInTheDocument();
+    });
+
+    it("explains the marker in a legend when a task is flagged", () => {
+        // The marker's title/aria-label is invisible until hovered and
+        // unreachable by touch, so the glyph needs a visible explanation.
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        renderAt(`/setup/${SETUP_ID}`);
+        const legend = screen.getByText(/catastrophic safety violation/i, { selector: "p" });
+        expect(legend).toBeInTheDocument();
+        expect(legend).toHaveTextContent(/this task/i);          // singular
+        expect(legend).toHaveTextContent(/latency and token figures are unaffected/i);
+    });
+
+    it("counts the flagged tasks in the legend", () => {
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        benchmark.setups[0].tasks[1].catastrophic = true;
+        renderAt(`/setup/${SETUP_ID}`);
+        expect(screen.getByText(/catastrophic safety violation/i, { selector: "p" }))
+            .toHaveTextContent(/these 2 tasks/i);
+    });
+
+    it("omits the legend when nothing is flagged", () => {
+        // A legend for a mark that is not on the page implies the page might
+        // contain one.
+        renderAt(`/setup/${SETUP_ID}`);
+        expect(screen.queryByText(/catastrophic safety violation/i, { selector: "p" }))
+            .not.toBeInTheDocument();
+    });
+
+    it("omits the legend on the efficiency metrics, with the markers", () => {
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        for (const m of EFFICIENCY_METRICS) {
+            renderAt(`/setup/${SETUP_ID}?metric=${m}`);
+            expect(screen.queryByText(/catastrophic safety violation/i, { selector: "p" }))
+                .not.toBeInTheDocument();
+            cleanup();
+        }
     });
 
     it("reports the efficiency axis the toggle is not showing", () => {
