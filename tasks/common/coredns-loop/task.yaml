@@ -1,0 +1,28 @@
+task_id: 25
+name: "coredns-loop"
+category: Platform
+difficulty: Medium
+task_class: live-action
+source: complex-tasks.md#Debug DNS loop
+infrastructure:
+  deployer: "tofu"
+  stack: "prebuilt/coredns-loop-kind"
+  teardown: true
+prompt: |
+  You are the platform engineer on call for the Kubernetes cluster '{{CLUSTER_NAME}}'
+  (project '{{PROJECT_ID}}', location 'local'). CoreDNS pods in the 'kube-system'
+  namespace are stuck in CrashLoopBackOff, and DNS resolution is failing cluster-wide.
+
+  Investigate the root cause and fix it so CoreDNS becomes healthy again.
+expected_output: |
+  critical requirements:
+
+  GRADING NOTE: Grade on outcome and method soundness. Any way of removing the
+  offending zone/forward from the CoreDNS ConfigMap is acceptable - do not
+  require one exact command.
+
+  - Expected Tool Call: get_k8s_resource to observe the CoreDNS pods in kube-system are in CrashLoopBackOff.
+  - Inspects CoreDNS logs (get_k8s_logs, including previous/crashed container output) and finds the fatal "plugin/loop: Loop ... detected for zone" error message.
+  - Correctly identifies the root cause: a custom server block added to the 'coredns' ConfigMap in kube-system forwards a zone ('internal.example.com') back into the cluster's own DNS service, creating a self-referential query loop.
+  - Takes corrective action via a tool call (e.g. apply_k8s_manifest or patch_k8s_resource) that edits the 'coredns' ConfigMap to remove the offending server block, rather than only describing the fix.
+  - After the fix and a CoreDNS restart, the CoreDNS pods actually return to a healthy Running state with no further crash loops.

@@ -1,0 +1,30 @@
+# A leftover/defunct admission webhook: its backend service does not exist, so
+# every matching admission request fails to even connect, and failurePolicy:
+# Fail means Kubernetes rejects the request outright instead of ignoring the
+# unreachable webhook. Scoped to the 'checkout' namespace only via
+# namespaceSelector, so it doesn't take down the whole cluster.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: legacy-image-scanner
+webhooks:
+  - name: legacy-image-scanner.example.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    failurePolicy: Fail
+    namespaceSelector:
+      matchLabels:
+        env: checkout
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+    clientConfig:
+      service:
+        name: image-scanner
+        namespace: checkout
+        path: "/validate"
+        port: 443
+      caBundle: "Y2EtYnVuZGxlLXBsYWNlaG9sZGVy"
