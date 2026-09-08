@@ -21,6 +21,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { openDb, commitAll, BATCH_LIMIT } from "./firestore.mjs";
 
 // The read-model the UI renders, plus the raw rows it was derived from, so a
@@ -124,17 +125,24 @@ async function push(dir) {
         process.exit(1);
     }
 
-    console.log(`Pushing into ${info}`);
-    for (const name of SYNCED_COLLECTIONS) {
-        let docs;
+    // Every snapshot is read and parsed BEFORE the first write. writeCollection
+    // clears the collection before repopulating it, so failing partway through
+    // would leave some collections replaced and the rest holding whatever was
+    // there before — a local board silently mixing two snapshots. Same rule as
+    // ingest.mjs: a bad input aborts the batch rather than half-applying it.
+    const snapshot = SYNCED_COLLECTIONS.map(name => {
         try {
-            docs = JSON.parse(readFileSync(snapshotPath(dir, name), "utf8"));
+            return { name, docs: JSON.parse(readFileSync(snapshotPath(dir, name), "utf8")) };
         } catch {
             console.error(
-                `Missing ${snapshotPath(dir, name)} — run "npm run sync:pull" first.`
+                `Missing or unreadable ${snapshotPath(dir, name)} — run "npm run sync:pull" first.`
             );
             process.exit(1);
         }
+    });
+
+    console.log(`Pushing into ${info}`);
+    for (const { name, docs } of snapshot) {
         await writeCollection(db, name, docs);
         console.log(`  ${name}: ${docs.length} docs`);
     }
@@ -149,8 +157,11 @@ async function main() {
     process.exit(1);
 }
 
-// Importable for tests; only the CLI invocation runs main().
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+// Importable for tests; only the CLI invocation runs main(). fileURLToPath
+// rather than string-concatenating a file:// prefix: import.meta.url is a URL
+// and percent-encodes, argv[1] does not, so under a path containing a space the
+// comparison silently fails and the CLI exits 0 having done nothing.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
     main().catch(err => {
         console.error(err);
         process.exit(1);

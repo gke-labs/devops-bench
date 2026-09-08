@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 
+import { BATCH_LIMIT } from "./firestore.mjs";
 import {
     SYNCED_COLLECTIONS,
     clearCollection,
@@ -10,6 +11,11 @@ import {
 
 // Minimal in-memory stand-in for the Admin SDK surface sync.mjs uses:
 // collection().get() / collection().doc() and the batch writer commitAll drives.
+//
+// commit() enforces BATCH_LIMIT the way real Firestore does. Without that the
+// fake accepts an unbounded batch, and every chunking test passes even against
+// an implementation that sends all N ops at once — green here, rejected in
+// production. `commits` counts them so a test can assert the chunking directly.
 function fakeDb(seed = {}) {
     const store = new Map(
         Object.entries(seed).map(([name, docs]) => [name, new Map(Object.entries(docs))])
@@ -18,8 +24,10 @@ function fakeDb(seed = {}) {
         if (!store.has(name)) store.set(name, new Map());
         return store.get(name);
     };
+    const commits = [];
     return {
         dump: name => Object.fromEntries(col(name)),
+        commits,
         collection(name) {
             return {
                 async get() {
@@ -40,6 +48,12 @@ function fakeDb(seed = {}) {
                 set: (ref, data) => ops.push({ kind: "set", ref, data }),
                 delete: ref => ops.push({ kind: "delete", ref }),
                 async commit() {
+                    if (ops.length > BATCH_LIMIT) {
+                        throw new Error(
+                            `batch of ${ops.length} ops exceeds the ${BATCH_LIMIT} limit`
+                        );
+                    }
+                    commits.push(ops.length);
                     for (const op of ops) {
                         if (op.kind === "set") col(op.ref.collection).set(op.ref.id, op.data);
                         else col(op.ref.collection).delete(op.ref.id);
@@ -99,11 +113,14 @@ describe("clearCollection", () => {
 
     it("commits in batches under the Firestore op limit", async () => {
         // 1000 docs is past the 450-op batch size, so a single batch would be
-        // rejected by real Firestore.
+        // rejected by real Firestore. fakeDb rejects it too, and the commit
+        // sizes are asserted so the chunking is checked rather than inferred
+        // from the deletes having happened.
         const many = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`d${i}`, {}]));
         const db = fakeDb({ results: many });
         expect(await clearCollection(db, "results")).toBe(1000);
         expect(db.dump("results")).toEqual({});
+        expect(db.commits).toEqual([BATCH_LIMIT, BATCH_LIMIT, 1000 - 2 * BATCH_LIMIT]);
     });
 });
 
