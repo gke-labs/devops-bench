@@ -65,10 +65,17 @@ _RECOVERABLE_KEYS = (
 )
 CATASTROPHIC_SCORE_KEY = score_keys.VERIFICATION_CATASTROPHIC_KEY
 
-# Token usage aliases per provider, in lookup priority. The canonical keys
-# (``input`` / ``cached`` / ``reasoning`` / ``output``; see
-# ``devops_bench.agents.result.TOKEN_BUCKETS``) come first; the rest keep
-# historical ``results.json`` records readable.
+# Token usage aliases per provider, in lookup priority. ``AgentResult.tokens`` is
+# explicitly provider-defined and passed through unchanged, so there is no
+# canonical upstream shape to defer to — this table is the only place the
+# provider dialects are reconciled, and a bucket whose key is missing here is
+# silently dropped rather than reported. The snake_case names come first; the
+# rest keep historical and pass-through ``results.json`` records readable.
+#
+# ``cacheRead`` / ``cacheWrite`` are OpenClaw's: its session parser sums the
+# provider's ``usage`` mapping verbatim, so Anthropic's cache buckets arrive
+# camelCased. Omitting them discarded ~87% of a cached run's prompt footprint —
+# an Opus run reporting 58 ``input`` tokens had 1.6M more sitting in ``cacheRead``.
 _INPUT_TOKEN_KEYS = ("input", "prompt_tokens", "prompt_token_count", "input_tokens")
 _OUTPUT_TOKEN_KEYS = (
     "output",
@@ -77,8 +84,13 @@ _OUTPUT_TOKEN_KEYS = (
     "completion_tokens",
     "output_tokens",
 )
-_CACHED_TOKEN_KEYS = ("cached", "cache_read_input_tokens", "cached_content_token_count")
-_CACHE_WRITE_TOKEN_KEYS = ("cache_write", "cache_creation_input_tokens")
+_CACHED_TOKEN_KEYS = (
+    "cached",
+    "cacheRead",
+    "cache_read_input_tokens",
+    "cached_content_token_count",
+)
+_CACHE_WRITE_TOKEN_KEYS = ("cache_write", "cacheWrite", "cache_creation_input_tokens")
 _REASONING_TOKEN_KEYS = ("reasoning", "thoughts_token_count", "reasoning_tokens")
 _TOTAL_TOKEN_KEYS = ("total", "total_tokens", "total_token_count")
 
