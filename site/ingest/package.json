@@ -7,7 +7,11 @@
   "scripts": {
     "ingest": "node ingest.mjs",
     "ingest:test": "FIRESTORE_DATABASE_ID=leaderboard-test node ingest.mjs",
-    "derive": "node derive.mjs"
+    "ingest:dev": "FIRESTORE_DATABASE_ID=leaderboard-dev node ingest.mjs",
+    "derive": "node derive.mjs",
+    "sync:pull": "env -u FIRESTORE_EMULATOR_HOST FIRESTORE_DATABASE_ID=leaderboard-dev node sync.mjs pull",
+    "sync:push": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIRESTORE_DATABASE_ID=leaderboard-test node sync.mjs push",
+    "sync:dev": "npm run sync:pull && npm run sync:push"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0"

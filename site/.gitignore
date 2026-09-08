@@ -22,3 +22,6 @@ firestore-debug.log
 ui-debug.log
 *-debug.log
 firestore_export/
+
+# Dev DB snapshot pulled by ingest/sync.mjs (real run data; never committed)
+ingest/.cache/

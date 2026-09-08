@@ -167,6 +167,51 @@ GCLOUD_PROJECT=devops-bench-shared FIRESTORE_DATABASE_ID=leaderboard \
   ALLOW_PROD_INGEST=true node ingest.mjs ./runs/
 ```
 
+### The three databases
+
+| DB | Who can read it | What it's for |
+| --- | --- | --- |
+| `leaderboard` | anyone (public rules) | production; not currently served |
+| `leaderboard-test` | anyone (public rules) | **what the live GitHub Pages site serves** (`build:staging`) |
+| `leaderboard-dev` | project IAM only | internal; real run data the team shares before it's fit to publish |
+
+`leaderboard-dev` gets its own rules file (`site/firestore.dev.rules`) denying all
+client access. It has to: `firestore.rules` matches
+`/databases/{database}/documents`, so its world-readable `setups` / `models` /
+`harnesses` grants would otherwise apply to every named DB in the project — and
+`site/.env` carries the web API key and project id in a public repo, with App
+Check disabled. Access to the dev DB is therefore gated by IAM (the Admin SDK
+bypasses rules) rather than by anything a browser could satisfy.
+
+## Sharing dev data with the team
+
+Everyone gets the same board locally without publishing anything. Reading
+`leaderboard-dev` needs a project role that grants `datastore.entities.get` /
+`.list` — `roles/admin` (held by `devops-bench-team`) and `roles/writer` both do.
+
+```bash
+# One-off: publish a campaign to the shared dev DB (you, after a matrix run)
+cd site/ingest
+npm run ingest:dev -- /path/to/normalized-runs
+
+# Everyone else: pull it into a local emulator and look at it
+gcloud auth application-default login
+cd site && npx -y firebase-tools emulators:start --only firestore --project devops-bench-shared
+cd ingest && npm run sync:dev     # leaderboard-dev -> emulator (DB leaderboard-test)
+cd .. && npm run dev              # http://localhost:5173
+```
+
+`sync:dev` is `sync:pull` then `sync:push`. They are two processes because
+`firebase-admin` resolves the emulator from the process-wide
+`FIRESTORE_EMULATOR_HOST`, so one process cannot hold a real-Firestore and an
+emulator connection at once; the snapshot lands in `ingest/.cache/dev-snapshot`
+(gitignored) in between, which also makes it inspectable and shareable as a file.
+
+`sync push` refuses any target that is not an emulator, so a stale local
+snapshot can never overwrite a real database. `sync:push` writes the emulator's
+`leaderboard-test` namespace because that is what `npm run dev` reads
+(`.env.development`); override with `FIRESTORE_DATABASE_ID`.
+
 ## Tests
 
 ```bash
