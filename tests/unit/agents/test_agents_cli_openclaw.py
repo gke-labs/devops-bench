@@ -24,7 +24,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from devops_bench.agents import AGENTS, AgentConfig
+from devops_bench.agents import AGENTS, AgentConfig, sandbox
 from devops_bench.agents.capabilities import (
     AgentRules,
     AllCapabilities,
@@ -171,6 +171,42 @@ def test_parse_trajectory_export_output_falls_back_to_assistant_message():
     _trajectory, tokens, output, _errors = parse_trajectory_export(blob)
     assert tokens == {"input": 1, "output": 2}
     assert output == "done."
+
+
+def test_parse_trajectory_export_surfaces_terminal_error():
+    """A model.completed with terminalError set must land on errors.
+
+    openclaw sets this (e.g. ``"non_deliverable_terminal_turn"``) when a turn's
+    underlying model call fails to deliver a response: assistantTexts is empty
+    and no assistant.message event fires either, so without this the run's
+    output silently falls back to the ``oc`` bash stdout debug log (see
+    ``OpenClawAgent._execute``) as if it were a real, if terse, final answer.
+    """
+    blob = _events(
+        _tool_call("1", "exec", {"command": "kubectl get deploy -A"}),
+        _tool_result("1", "deploy/web 2/2"),
+        {
+            "type": "model.completed",
+            "data": {
+                "usage": {"input": 1, "output": 1},
+                "assistantTexts": [],
+                "terminalError": "non_deliverable_terminal_turn",
+                "aborted": False,
+                "timedOut": False,
+            },
+        },
+    )
+    _trajectory, _tokens, output, errors = parse_trajectory_export(blob)
+    assert output == ""
+    assert any("non_deliverable_terminal_turn" in m for m in errors)
+    assert any("did not deliver a final response" in m for m in errors)
+
+
+def test_parse_trajectory_export_no_terminal_error_key_is_silent():
+    """A model.completed with no terminalError key at all must not spuriously error."""
+    blob = _events({"type": "model.completed", "data": {"usage": {"input": 1, "output": 1}}})
+    _trajectory, _tokens, _output, errors = parse_trajectory_export(blob)
+    assert errors == []
 
 
 def test_parse_trajectory_export_surfaces_decode_errors():
@@ -322,6 +358,169 @@ def test_execute_happy_path_emits_canonical_trajectory(monkeypatch, tmp_path):
     assert result.output == "All pods healthy."
 
 
+def test_execute_sandboxed_wraps_argv_in_docker_run(monkeypatch, tmp_path):
+    """BENCH_AGENT_SANDBOX=docker routes the agent turn through sandbox.wrap_argv
+    as a real argv list (not shell=True), and never falls back to the host when
+    a sandbox kubeconfig can't be built.
+    """
+    monkeypatch.setenv("BENCH_AGENT_SANDBOX", "docker")
+    monkeypatch.setenv("BENCH_AGENT_IMAGE", "devops-bench/agent-sandbox:dev")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "some-vertex-project")
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+    monkeypatch.setattr(sandbox, "current_cluster_name", lambda: "eval")
+    monkeypatch.setattr(
+        sandbox, "build_agent_kubeconfig", lambda cluster, dest: dest / "kubeconfig"
+    )
+    (tmp_path / "kubeconfig").write_text("apiVersion: v1\n")
+
+    captured: dict = {}
+
+    def fake_run(argv, **kwargs):
+        # container_guard's cleanup also calls through subprocess.run (docker
+        # kill, via core.subprocess.run) on the way out -- only capture the
+        # agent turn itself (the "docker run" invocation), not that cleanup call.
+        if isinstance(argv, list) and argv[:2] == ["docker", "run"]:
+            captured["argv"] = argv
+            captured["shell"] = kwargs.get("shell")
+        return _make_subprocess_result(stdout="OK\n", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(oc_mod, "run", _bundle_writer(SAMPLE_EVENTS))
+
+    agent = OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"), timeout_sec=30.0))
+    result = agent.run("audit pods in default", workspace_path=tmp_path)
+
+    assert result.errors == []
+    assert captured["shell"] is False
+    assert captured["argv"][:2] == ["docker", "run"]
+    assert "devops-bench/agent-sandbox:dev" in captured["argv"]
+    assert ["/bin/bash", "-c"] == captured["argv"][-3:-1]
+
+    # OPENCLAW_STATE_DIR (and OPENCLAW_CONFIG_PATH, when present) must be
+    # rewritten to their /workspace equivalents -- passed through as the host's
+    # own tmp_path, oc inside the container can't find its state/config, falls
+    # back to its built-in model catalog, and any per-run catalog override
+    # (e.g. a model unknown to that catalog) fails with "Unknown model: ...".
+    env_flags = {
+        captured["argv"][i + 1].split("=", 1)[0]: captured["argv"][i + 1].split("=", 1)[1]
+        for i, arg in enumerate(captured["argv"])
+        if arg == "-e"
+    }
+    assert env_flags["OPENCLAW_STATE_DIR"] == "/workspace/state"
+    assert str(tmp_path) not in env_flags["OPENCLAW_STATE_DIR"]
+
+    # A container never inherits the host shell's environment the way the
+    # non-sandboxed branch does via os.environ merge -- the Vertex transport
+    # vars a keyless google-vertex run needs must be explicitly passed through,
+    # or oc fails inside the container with "Vertex AI requires a project ID."
+    assert env_flags["GOOGLE_CLOUD_PROJECT"] == "some-vertex-project"
+    assert env_flags["GOOGLE_GENAI_USE_VERTEXAI"] == "true"
+
+
+def test_execute_sandboxed_copies_adc_file_into_workspace(monkeypatch, tmp_path):
+    """A keyless google-vertex run needs a real ADC file on disk inside the
+    container (openclaw's vertex-adc module only accepts authorized_user /
+    external_account / service_account credentials, never a bare bearer token
+    or the metadata server the sandbox has no route to). The host's ADC file
+    sits outside the mounted workspace, so it must be copied in and the env
+    var rewritten to point at the copy's /workspace path.
+    """
+    adc_source = tmp_path.parent / "host-adc.json"
+    adc_source.write_text('{"type": "authorized_user"}')
+    monkeypatch.setenv("BENCH_AGENT_SANDBOX", "docker")
+    monkeypatch.setenv("BENCH_AGENT_IMAGE", "devops-bench/agent-sandbox:dev")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(adc_source))
+    monkeypatch.setattr(sandbox, "current_cluster_name", lambda: "eval")
+    monkeypatch.setattr(
+        sandbox, "build_agent_kubeconfig", lambda cluster, dest: dest / "kubeconfig"
+    )
+    (tmp_path / "kubeconfig").write_text("apiVersion: v1\n")
+
+    captured: dict = {}
+
+    def fake_run(argv, **kwargs):
+        if isinstance(argv, list) and argv[:2] == ["docker", "run"]:
+            captured["argv"] = argv
+        return _make_subprocess_result(stdout="OK\n", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(oc_mod, "run", _bundle_writer(SAMPLE_EVENTS))
+
+    agent = OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"), timeout_sec=30.0))
+    result = agent.run("audit pods in default", workspace_path=tmp_path)
+
+    assert result.errors == []
+    env_flags = {
+        captured["argv"][i + 1].split("=", 1)[0]: captured["argv"][i + 1].split("=", 1)[1]
+        for i, arg in enumerate(captured["argv"])
+        if arg == "-e"
+    }
+    assert env_flags["GOOGLE_APPLICATION_CREDENTIALS"] == "/workspace/adc.json"
+    assert (tmp_path / "adc.json").read_text() == '{"type": "authorized_user"}'
+
+
+def test_execute_sandboxed_rewrites_workspace_paths_in_session_state(monkeypatch, tmp_path):
+    """oc persists sessions.json / *.trajectory-path.json with the
+    /workspace-relative paths it saw from inside the container. The host-side
+    _extract_trajectory call runs against the real host directory, so a stored
+    "/workspace/..." path must be rewritten back to workdir's real path -- left
+    unrewritten, oc fails with "Session file not found for agent:main:main."
+    """
+    monkeypatch.setenv("BENCH_AGENT_SANDBOX", "docker")
+    monkeypatch.setenv("BENCH_AGENT_IMAGE", "devops-bench/agent-sandbox:dev")
+    monkeypatch.setattr(sandbox, "current_cluster_name", lambda: "eval")
+    monkeypatch.setattr(
+        sandbox, "build_agent_kubeconfig", lambda cluster, dest: dest / "kubeconfig"
+    )
+    (tmp_path / "kubeconfig").write_text("apiVersion: v1\n")
+
+    def fake_run(argv, **kwargs):
+        if isinstance(argv, list) and argv[:2] == ["docker", "run"]:
+            # Simulate what the container itself would have written: session
+            # state referencing its own /workspace view of the mounted dir.
+            sessions_dir = tmp_path / "state" / "agents" / "main" / "sessions"
+            sessions_dir.mkdir(parents=True, exist_ok=True)
+            (sessions_dir / "sessions.json").write_text(
+                '{"agent:main:main": {"sessionFile": "/workspace/state/agents/main/'
+                'sessions/abc.jsonl"}}'
+            )
+        return _make_subprocess_result(stdout="OK\n", returncode=0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(oc_mod, "run", _bundle_writer(SAMPLE_EVENTS))
+
+    agent = OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"), timeout_sec=30.0))
+    result = agent.run("audit pods in default", workspace_path=tmp_path)
+
+    assert result.errors == []
+    rewritten = (tmp_path / "state" / "agents" / "main" / "sessions" / "sessions.json").read_text()
+    assert "/workspace" not in rewritten
+    assert str(tmp_path) in rewritten
+
+
+def test_execute_sandboxed_refuses_without_kubeconfig(monkeypatch, tmp_path):
+    """A containment control that quietly degrades is worse than none: no
+    sandbox kubeconfig must error out, never fall back to an unsandboxed run.
+    """
+    monkeypatch.setenv("BENCH_AGENT_SANDBOX", "docker")
+    monkeypatch.setattr(sandbox, "current_cluster_name", lambda: None)
+    # build_agent_kubeconfig now probes the current context itself (kind vs. an
+    # exec-credential-plugin context vs. neither) rather than being skipped
+    # outright whenever current_cluster_name() is None, so it is mocked
+    # directly here to simulate the real "no kubeconfig could be built" outcome.
+    monkeypatch.setattr(sandbox, "build_agent_kubeconfig", lambda cluster, workdir: None)
+
+    def fail_run(cmd, **kwargs):
+        raise AssertionError("must not run the agent itself when the sandbox kubeconfig is missing")
+
+    monkeypatch.setattr(subprocess, "run", fail_run)
+
+    agent = OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"), timeout_sec=30.0))
+    result = agent.run("audit pods in default", workspace_path=tmp_path)
+    assert result.has_errors()
+    assert "BENCH_AGENT_SANDBOX" in result.errors[0]
+
+
 def test_execute_prefers_bundle_output_over_noisy_stdout(monkeypatch, tmp_path):
     """The agent's final answer (events.jsonl assistantTexts) must win over
     `oc --log-level debug` noise — otherwise the judge grades debug spew.
@@ -364,6 +563,39 @@ def test_execute_falls_back_to_stdout_when_bundle_has_no_answer(monkeypatch, tmp
 
     result = OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"))).run("p")
     assert result.output == "bare stdout answer"
+
+
+def test_execute_records_terminal_error_alongside_stdout_fallback(monkeypatch, tmp_path):
+    """A non_deliverable_terminal_turn must surface on result.errors, not just
+    silently fall back to raw stdout as if it were a genuine answer.
+
+    Regression test for the real failure this was built to catch: a run where
+    ``oc``'s own bash stdout ends in a bare ``"LLM request failed."`` line got
+    treated as the agent's final output and handed to every judge metric,
+    scoring as a near-total task failure that was actually a provider/harness
+    delivery hiccup. ``result.output`` still carries the raw stdout (useful for
+    debugging), but ``result.errors`` must be non-empty so the record comes
+    back ``validated: False`` instead of masquerading as a clean low score.
+    """
+    events = _events(
+        _tool_call("1", "exec", {"command": "kubectl get deploy -A"}),
+        _tool_result("1", "deploy/web 2/2"),
+        {
+            "type": "model.completed",
+            "data": {"usage": {"input": 1, "output": 1}, "terminalError": "non_deliverable_terminal_turn"},
+        },
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: _make_subprocess_result(stdout="...\nLLM request failed.", returncode=0),
+    )
+    monkeypatch.setattr(oc_mod, "run", _bundle_writer(events))
+
+    result = OpenClawAgent(AgentConfig(target=str(tmp_path / "oc"))).run("p")
+    assert result.output == "...\nLLM request failed."
+    assert result.has_errors()
+    assert any("non_deliverable_terminal_turn" in m for m in result.errors)
 
 
 def test_execute_records_when_sessions_returns_no_rows(monkeypatch, tmp_path):

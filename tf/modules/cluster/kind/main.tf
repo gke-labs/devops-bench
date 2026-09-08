@@ -25,11 +25,17 @@ resource "kind_cluster" "default" {
   name            = var.cluster_name
   node_image      = var.node_image
   kubeconfig_path = pathexpand(var.kubeconfig_path)
-  wait_for_ready  = true
+  # A kind cluster with no CNI installed never reaches node-Ready on its own;
+  # readiness is deferred to null_resource.install_cni's own waits below.
+  wait_for_ready = !var.disable_default_cni
 
   kind_config {
     kind        = "Cluster"
     api_version = "kind.x-k8s.io/v1alpha4"
+
+    networking {
+      disable_default_cni = var.disable_default_cni
+    }
 
     node {
       role = "control-plane"
@@ -41,6 +47,27 @@ resource "kind_cluster" "default" {
         role = "worker"
       }
     }
+  }
+}
+
+resource "null_resource" "install_cni" {
+  count      = var.disable_default_cni ? 1 : 0
+  depends_on = [kind_cluster.default]
+
+  triggers = {
+    kubeconfig   = pathexpand(var.kubeconfig_path)
+    manifest_url = var.cni_manifest_url
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      export KUBECONFIG="${self.triggers.kubeconfig}"
+      kubectl apply -f "${self.triggers.manifest_url}"
+      kubectl -n kube-system rollout status daemonset/calico-node --timeout='${var.cni_wait_timeout}'
+      kubectl wait --for=condition=Ready nodes --all --timeout='${var.cni_wait_timeout}'
+    EOT
   }
 }
 

@@ -15,6 +15,16 @@ output "secret_id" {
   value       = google_secret_manager_secret.db_credentials.secret_id
 }
 
+output "cache_secret_id" {
+  description = "Decoy: uncompromised sibling secret, must be left untouched."
+  value       = google_secret_manager_secret.cache_credentials.secret_id
+}
+
+output "webhook_secret_id" {
+  description = "Decoy: uncompromised sibling secret, must be left untouched."
+  value       = google_secret_manager_secret.webhook_signing_key.secret_id
+}
+
 output "endpoint" {
   value = module.cluster.endpoint
 }

@@ -55,6 +55,8 @@ module "k8s_config" {
   namespace                = var.namespace
   secret_rotation_sa_email = module.cluster.secret_rotation_sa_email
   secret_id                = module.cluster.secret_id
+  cache_secret_id          = module.cluster.cache_secret_id
+  webhook_secret_id        = module.cluster.webhook_secret_id
 
   depends_on = [module.cluster]
 }

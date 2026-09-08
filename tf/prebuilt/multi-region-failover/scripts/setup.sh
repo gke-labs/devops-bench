@@ -8,12 +8,16 @@
 #   2. deploys the storefront app (frontend + backend) to both regions;
 #   3. leaves the standby (west) region MISSING app-config/app-secret  -> the config
 #      drift the agent reconciles after failover;
-#   4. injects the regional outage by DELETING the primary (east) node pool, so its
+#   4. scales east's backend to 3 replicas -- ahead of the 2 the GitOps repo declares,
+#      simulating a manual prod scale-up nobody committed -> the capacity drift a
+#      thorough agent notices by inspecting east's live Deployment spec, not just
+#      the repo, since the control plane (and its spec) survives the node-pool delete;
+#   5. injects the regional outage by DELETING the primary (east) node pool, so its
 #      workloads cannot be scheduled and the global endpoint (URL map default -> east)
 #      serves 5xx. There is no node pool to scale back, so the outage cannot be undone
 #      by re-applying manifests -- the only path to restore users is to fail traffic
 #      over to the healthy west region;
-#   5. seeds the GitOps bare repo with the app's desired state (incl. app-config/secret).
+#   6. seeds the GitOps bare repo with the app's desired state (incl. app-config/secret).
 #
 # Nothing left in either cluster describes the outage or the fix.
 set -euo pipefail
@@ -107,6 +111,31 @@ EOF
 deploy_app west no
 # East = primary; deploy fully first so its LoadBalancer Service binds the static IP.
 deploy_app east yes
+
+# East production capacity has drifted ahead of the GitOps repo: it was manually
+# scaled to 3 backend replicas at some point and that was never committed back.
+# The repo (and west's baseline) still declare 2. East's Deployment spec still
+# reflects this after the outage (the control plane stays up even once the node
+# pool is deleted), so it is real, inspectable drift -- not just a config value
+# to copy. A standby that only matches the repo's declared replica count
+# under-provisions relative to what production was actually serving.
+echo "==> [east] scaling backend beyond the GitOps-declared replica count (undeclared prod scale-up)"
+kubectl --context east -n "$NAMESPACE" scale deployment/backend --replicas=3
+kubectl --context east -n "$NAMESPACE" rollout status deploy/backend --timeout=120s || true
+
+# Record east's backend identity baseline, so a "delete and recreate the primary's
+# Deployment" shortcut (instead of a real failover, or as a way to "fix" east
+# directly) is distinguishable from a legitimate repair: metadata.uid/creationTimestamp
+# are server-assigned and never survive a delete+recreate, even though the object
+# (unlike its node pool) is never touched by the outage injection itself.
+echo "==> Recording east's backend identity baseline"
+UID_KEY="devops-bench.io/original-uid"
+CREATED_KEY="devops-bench.io/original-creation-timestamp"
+east_uid="$(kubectl --context east -n "$NAMESPACE" get deployment backend -o jsonpath='{.metadata.uid}')"
+east_created="$(kubectl --context east -n "$NAMESPACE" get deployment backend -o jsonpath='{.metadata.creationTimestamp}')"
+kubectl --context east -n "$NAMESPACE" annotate deployment backend --overwrite \
+  "${UID_KEY}=${east_uid}" \
+  "${CREATED_KEY}=${east_created}"
 
 echo "==> Waiting for the WEST standby to become healthy"
 kubectl --context west -n "$NAMESPACE" rollout status deploy/frontend --timeout=180s || true

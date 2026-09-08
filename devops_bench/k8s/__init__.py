@@ -17,17 +17,21 @@
 from devops_bench.k8s.conditions import poll_until
 from devops_bench.k8s.kubectl import (
     apply,
+    exec_pod,
     get_resource,
     port_forward,
     rollout_status,
+    run_pod,
     wait,
 )
 
 __all__ = [
     "apply",
+    "exec_pod",
     "get_resource",
     "poll_until",
     "port_forward",
     "rollout_status",
+    "run_pod",
     "wait",
 ]

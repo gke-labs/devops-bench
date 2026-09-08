@@ -161,6 +161,10 @@ class BaseVerifier(BaseModel, ABC):
         kubeconfig: Optional path to a kubeconfig file, forwarded to the
             ``devops_bench.k8s`` wrappers so a check can target a specific
             cluster. When ``None`` the wrappers use the ambient kubeconfig.
+        context: Optional kubeconfig context name, forwarded alongside
+            ``kubeconfig`` so a check targets a specific cluster within a
+            kubeconfig that carries several, rather than whichever context
+            happens to be ambient/current.
     """
 
     # Reject any key the concrete verifier does not declare. A typo'd or
@@ -170,6 +174,7 @@ class BaseVerifier(BaseModel, ABC):
 
     name: str | None = None
     kubeconfig: str | None = None
+    context: str | None = None
 
     @abstractmethod
     def verify(self, timeout_sec: float) -> VerificationResult:

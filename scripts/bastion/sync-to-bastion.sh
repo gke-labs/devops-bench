@@ -38,6 +38,7 @@ PATHS=(
   deployers         # legacy top-level deployers used by the legacy arm
   skills            # judge/agent skill markdowns (legacy metrics read skills/*.md)
   pyproject.toml
+  uv.lock           # required by vm-setup.sh's `uv sync --frozen`
   README.md         # required by `pip install .` (pyproject readme = README.md)
   LICENSE
   tasks

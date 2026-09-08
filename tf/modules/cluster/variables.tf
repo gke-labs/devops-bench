@@ -104,3 +104,21 @@ variable "node_image" {
   default     = "kindest/node:v1.29.2"
 }
 
+variable "disable_default_cni" {
+  type        = bool
+  description = "Disable kindnet and install a real NetworkPolicy-enforcing CNI instead (KinD-only)"
+  default     = false
+}
+
+variable "cni_manifest_url" {
+  type        = string
+  description = "Manifest URL applied when disable_default_cni is true (KinD-only)"
+  default     = "https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml"
+}
+
+variable "cni_wait_timeout" {
+  type        = string
+  description = "Timeout for the replacement CNI's rollout and node-Ready wait, when disable_default_cni is true (KinD-only)"
+  default     = "180s"
+}
+

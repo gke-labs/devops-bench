@@ -41,6 +41,19 @@ def test_success_when_ready_replicas_meet_minimum() -> None:
     assert result.raw["deployment"] == deployment
 
 
+def test_get_resource_is_called_with_the_declared_context() -> None:
+    deployment = {"status": {"readyReplicas": 3}}
+    with patch(
+        "devops_bench.verification.verifiers.scaling_complete.get_resource",
+        return_value=deployment,
+    ) as mock_get:
+        ScalingCompleteVerifier(deployment="web", min_replicas=2, context="west").verify(
+            timeout_sec=5
+        )
+
+    assert mock_get.call_args.kwargs["context"] == "west"
+
+
 def test_failure_when_ready_replicas_below_minimum() -> None:
     # The poll runs once with a zero timeout, returns False, and we report the
     # last observed reason — replicas are below the threshold.
