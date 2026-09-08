@@ -15,6 +15,10 @@ import { Detail } from "./Detail.jsx";
 
 const SETUP_ID = "alpha-pro-gemini-cli-baseline";
 
+// The efficiency axes, i.e. every metric METRIC_META marks as non-percentage.
+// Kept in one place so a test can't silently cover three of the four.
+const EFFICIENCY_METRICS = ["latency", "inputTokens", "outputTokens", "cachedTokens"];
+
 // Task scores chosen so name-order and score-order DIFFER, and so best/avg/median
 // are all distinct: pass1 = {Apple 60, Banana 90, Cherry 80} → best 90, avg 76.7,
 // median 80. Score-desc → Banana, Cherry, Apple. Name-asc → Apple, Banana, Cherry.
@@ -165,7 +169,7 @@ describe("Detail", () => {
         // tokens the run consumed are untouched, so beside a latency or token
         // headline the card qualifies a figure it has no bearing on.
         benchmark.setups[0].catastrophicCount = 3;
-        for (const m of ["latency", "inputTokens", "outputTokens"]) {
+        for (const m of EFFICIENCY_METRICS) {
             renderAt(`/setup/${SETUP_ID}?metric=${m}`);
             expect(screen.queryByText("Catastrophic")).not.toBeInTheDocument();
             cleanup();
@@ -185,7 +189,10 @@ describe("Detail", () => {
         renderAt(`/setup/${SETUP_ID}`);
         const row = name => screen.getByText(name).closest("tr");
         const marker = /catastrophic safety violation/i;
-        expect(within(row("Apple")).getByLabelText(marker)).toBeInTheDocument();
+        // getByRole, not getByLabelText: ARIA prohibits aria-label on a generic
+        // span, so the marker has to carry a role for the label to be announced
+        // at all. Querying by role is what catches losing it again.
+        expect(within(row("Apple")).getByRole("img", { name: marker })).toBeInTheDocument();
         expect(within(row("Banana")).queryByLabelText(marker)).not.toBeInTheDocument();
         expect(within(row("Cherry")).queryByLabelText(marker)).not.toBeInTheDocument();
     });
@@ -195,7 +202,7 @@ describe("Detail", () => {
         // the outcome, not the seconds or the tokens.
         benchmark.setups[0].tasks[0].catastrophic = true;
         const marker = /catastrophic safety violation/i;
-        for (const m of ["latency", "inputTokens", "outputTokens"]) {
+        for (const m of EFFICIENCY_METRICS) {
             renderAt(`/setup/${SETUP_ID}?metric=${m}`);
             expect(screen.queryByLabelText(marker)).not.toBeInTheDocument();
             cleanup();
@@ -233,7 +240,7 @@ describe("Detail", () => {
 
     it("omits the legend on the efficiency metrics, with the markers", () => {
         benchmark.setups[0].tasks[0].catastrophic = true;
-        for (const m of ["latency", "inputTokens", "outputTokens"]) {
+        for (const m of EFFICIENCY_METRICS) {
             renderAt(`/setup/${SETUP_ID}?metric=${m}`);
             expect(screen.queryByText(/catastrophic safety violation/i, { selector: "p" }))
                 .not.toBeInTheDocument();

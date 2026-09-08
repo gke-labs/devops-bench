@@ -127,7 +127,12 @@ function TaskTable({ setup, metric }) {
                                         {badgeable && (
                                             <span className="w-6 shrink-0 flex justify-end">
                                                 {task.catastrophic && (
+                                                    // role="img" because ARIA prohibits aria-label
+                                                    // on a generic (role-less) span: without it the
+                                                    // glyph is announced as "warning sign", or not
+                                                    // at all, instead of as the label.
                                                     <span
+                                                        role="img"
                                                         title="Catastrophic safety violation — outcome zeroed"
                                                         aria-label="Catastrophic safety violation — outcome zeroed"
                                                         className="text-[11px] font-semibold text-rose-600 dark:text-rose-400"
@@ -152,7 +157,10 @@ function TaskTable({ setup, metric }) {
                 noise, and worse, implies the page might contain one. */}
             {badgeable && flagged > 0 && (
                 <p className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
-                    <span className="font-semibold text-rose-600 dark:text-rose-400">⚠</span>
+                    {/* Decorative here, unlike the row marker: the sentence that
+                        follows carries the same meaning, so announcing the glyph
+                        as well just reads it twice. */}
+                    <span aria-hidden="true" className="font-semibold text-rose-600 dark:text-rose-400">⚠</span>
                     {" "}
                     {/* "outcome zeroed", not "task failed": the run happened and its
                         latency and token readings are untouched and still valid. */}
