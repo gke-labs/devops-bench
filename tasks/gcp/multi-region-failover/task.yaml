@@ -12,20 +12,60 @@ infrastructure:
   stack: "prebuilt/multi-region-failover"
   teardown: true
 prompt: |
-  You are the platform engineer on call for the "storefront" web service in project
-  "{{GCP_PROJECT_ID}}" — a user-facing application that runs on the project's GKE
-  infrastructure (Kubernetes namespace "{{NAMESPACE}}"). The application's desired state
-  is tracked in the git repository at "~/app-repo-{{GKE_CLUSTER_NAME}}.git" (the source of truth).
+  You are the platform engineer on call for the "storefront" web service in
+  project "{{GCP_PROJECT_ID}}".
 
-  Investigate the ongoing outage in the storefront service, restore the service to a
-  healthy state for users, and write a post-mortem to "incident-report.md" describing
-  what happened, the actions you took, and any follow-ups.
+  Users report the storefront is down. The provider has declared a capacity
+  incident in the affected region; no new compute capacity is available there.
+
+  Investigate, restore the service, and write a post-mortem covering what
+  happened, what you did, and any follow-ups.
 expected_output: |
   critical requirements:
 
-  GRADING NOTE: Score on outcome — was user-facing service restored (global endpoint serving 2xx)? Do not penalize the remediation method; failover and direct primary recovery are equally acceptable, and the failover details below are illustrative, not required.
+  GRADING NOTE: Grade on what the agent actually did, as evidenced in its trajectory and
+  its final response — not on whether it used particular wording. Each item below is a
+  single condition; judge it on its own evidence and do not pass an item because a
+  different item was satisfied. The remediation method is otherwise free, subject only to
+  the one constraint the prompt states: capacity cannot be obtained in the impaired region.
 
-  - Agent diagnoses the outage: it identifies that the global endpoint is returning 5xx errors to users and localizes the failure to the primary region (its nodes/workloads are unavailable), rather than assuming a generic application bug.
-  - Agent RESTORES user-facing service so the global endpoint serves healthy 2xx responses again, by any sound method. (One acceptable path is a failover: verify the standby is a safe target — including Cloud SQL replication health — update the global load balancer's URL map to the standby, scale up the standby node pool, and reconcile any missing config such as the "app-config" ConfigMap / "app-secret" Secret from "~/app-repo-{{GKE_CLUSTER_NAME}}.git". Directly recovering the impaired primary region is equally acceptable. Grade on whether service is restored, not on which path was taken.)
-  - Agent confirms the recovery: the global endpoint serves healthy 2xx responses and the serving workloads are running and healthy.
-  - Agent writes "incident-report.md" containing a timeline of the incident, the root cause (a primary-region outage), the remediation actions it took, and follow-up recommendations.
+  - Agent localizes the outage to one specific region and identifies the cause as loss of
+    that region's compute capacity — its nodes are gone, so its workloads cannot be
+    scheduled — rather than an application bug or a misconfiguration.
+  - Agent identifies that the user-facing entry point is a global load balancer currently
+    directing traffic at the impaired region, and that this is why users are seeing errors.
+  - Agent checks that the standby region's own workloads are healthy BEFORE shifting user
+    traffic to it.
+  - Agent checks the health of the cross-region datastore replication BEFORE shifting user
+    traffic to it — it inspects the Cloud SQL primary/replica pair named in the
+    "app-config" ConfigMap (for example via "gcloud sql"). This item is about the
+    datastore only: probing an HTTP endpoint, or confirming that the standby's pods are
+    Running, is not a replication check and does not satisfy it. If the agent never
+    inspects the Cloud SQL instances at all, this item fails.
+  - Agent establishes where the application's WRITE path points once traffic is running in
+    the standby region. "app-config" names a Cloud SQL primary ("SQL_PRIMARY") that lives in
+    the impaired region and a read-only replica ("SQL_REPLICA") in the standby, so after the
+    failover writes either still cross back into the impaired region or have nowhere to go.
+    The agent must resolve this one way or the other: either make writes serveable from the
+    standby (for example by promoting the replica), or state explicitly that the primary
+    remains reachable because the incident affects compute only, and record the resulting
+    cross-region write dependency as a risk or follow-up. Either resolution passes this item.
+    Saying nothing at all about the write path after the failover fails it.
+  - Agent shifts user traffic to the standby region by changing the global load balancer's
+    routing (its URL map's default service).
+  - Agent gives the standby enough capacity to absorb the redirected production traffic —
+    it increases the standby cluster's node pool rather than leaving it at its small
+    pre-incident standby size.
+  - Agent reconciles the standby's configuration drift against the source of truth: it
+    detects that "app-config" and "app-secret" are absent from the standby's namespace and
+    applies them from the GitOps repository it finds on disk ("~/app-repo-*.git").
+  - Agent honours the stated capacity constraint: it does NOT restore service by
+    provisioning new nodes or a new node pool in the impaired region. Recreating capacity
+    there fails this item even if the service ends up healthy.
+  - Agent validates the fix from the user's vantage point: it requests the global endpoint
+    after the change and observes a successful (2xx) response, rather than inferring
+    recovery from per-cluster or per-region checks alone.
+  - Agent writes a post-mortem to a file on disk AND reports its substance in its final
+    response, covering the incident timeline, the root cause, the actions it took, and
+    follow-ups. The prompt does not specify a filename, so ANY filename satisfies this
+    item — do not fail it because a particular name was not used.
