@@ -358,6 +358,78 @@ class _WorkspaceWritingAgent(AgentHarness):
         return AgentResult(output="wrote a file", trajectory=[])
 
 
+class _ConfigRecordingAgent(AgentHarness):
+    """Stand-in agent that records the ``AgentConfig`` it was constructed with."""
+
+    seen_configs: list[Any] = []
+
+    def __init__(self, config: Any | None = None) -> None:
+        super().__init__(config)
+        _ConfigRecordingAgent.seen_configs.append(self.config)
+
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
+        return AgentResult(output="ok", trajectory=[])
+
+
+def test_execute_agent_applies_per_task_timeout_override(
+    isolated_env: None, tmp_path: Path
+) -> None:
+    """A task's ``timeout_sec`` overrides the harness's ``AgentConfig`` snapshot.
+
+    ``cve-remediation`` (and any task with a similarly large scope) sets
+    ``timeout_sec`` in its ``task.yaml`` because the harness-wide default
+    (600s, from ``AGENT_TIMEOUT_SEC``/``AgentConfig``'s default) is too short
+    for its wall-clock needs. This pins that the override actually reaches
+    the agent's config rather than being silently ignored.
+    """
+    AGENTS.register("fake-config-recorder")(_ConfigRecordingAgent)
+    _ConfigRecordingAgent.seen_configs = []
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p", cluster_name="c", agent_type="fake-config-recorder", no_infra=True
+        )
+        assert harness.build_agent_config().timeout_sec == 600.0
+
+        task = Task.from_dict(
+            {"task_id": "t", "name": "demo", "prompt": "p", "timeout_sec": 1500}
+        )
+        run_dir = tmp_path / "run_1"
+        run_dir.mkdir()
+
+        record = harness._run_one(task, run_dir)  # noqa: SLF001
+
+        assert record["status"] == "success"
+        assert len(_ConfigRecordingAgent.seen_configs) == 1
+        assert _ConfigRecordingAgent.seen_configs[0].timeout_sec == 1500.0
+        # The harness-wide snapshot itself must stay untouched by the override,
+        # so other records / capabilities_granted never see the per-task value.
+        assert harness.build_agent_config().timeout_sec == 600.0
+    finally:
+        AGENTS._items.pop("fake-config-recorder", None)  # noqa: SLF001
+
+
+def test_execute_agent_uses_harness_default_when_task_timeout_unset(
+    isolated_env: None, tmp_path: Path
+) -> None:
+    """A task with no ``timeout_sec`` runs with the harness's unmodified snapshot."""
+    AGENTS.register("fake-config-recorder-2")(_ConfigRecordingAgent)
+    _ConfigRecordingAgent.seen_configs = []
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p", cluster_name="c", agent_type="fake-config-recorder-2", no_infra=True
+        )
+        task = Task.from_dict({"task_id": "t", "name": "demo", "prompt": "p"})
+        run_dir = tmp_path / "run_1"
+        run_dir.mkdir()
+
+        record = harness._run_one(task, run_dir)  # noqa: SLF001
+
+        assert record["status"] == "success"
+        assert _ConfigRecordingAgent.seen_configs[0] is harness.build_agent_config()
+    finally:
+        AGENTS._items.pop("fake-config-recorder-2", None)  # noqa: SLF001
+
+
 def test_run_one_collects_files_the_agent_writes_to_its_workspace(
     isolated_env: None, tmp_path: Path
 ) -> None:
@@ -453,7 +525,7 @@ def test_run_one_evaluates_verification_on_the_exception_path_when_infra_is_up(
     """
     harness = DefaultEvalHarness(project_id="p", cluster_name="c")
 
-    def _boom(prompt: str, ctx: Any) -> Any:
+    def _boom(prompt: str, ctx: Any, task: Any = None) -> Any:
         raise RuntimeError("agent crashed")
 
     # ``execute_agent`` is patched directly, not the agent itself: AgentHarness.run()
@@ -497,7 +569,7 @@ def test_run_one_reports_evaluated_on_the_exception_path_with_no_entries_declare
     """
     harness = DefaultEvalHarness(project_id="p", cluster_name="c")
 
-    def _boom(prompt: str, ctx: Any) -> Any:
+    def _boom(prompt: str, ctx: Any, task: Any = None) -> Any:
         raise RuntimeError("agent crashed")
 
     monkeypatch.setattr(harness, "execute_agent", _boom)

@@ -4,6 +4,8 @@ apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: require-resource-limits
+  labels:
+    devops-bench.io/policy: require-resource-limits
 spec:
   validationFailureAction: Audit
   background: true

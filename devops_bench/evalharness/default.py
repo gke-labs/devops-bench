@@ -212,7 +212,7 @@ class DefaultEvalHarness(Harness):
 
     # -- agent resolution (model/provider-agnostic) -----------------------
 
-    def resolve_agent(self, agent_type: str) -> Any:
+    def resolve_agent(self, agent_type: str, config: AgentConfig | None = None) -> Any:
         """Resolve and instantiate the agent under test from the registry.
 
         The builtin agent modules are imported once so their
@@ -224,6 +224,10 @@ class DefaultEvalHarness(Harness):
         Args:
             agent_type: Configured agent type (e.g. ``gemini-cli`` / ``api`` /
                 ``gemini`` / ``openclaw``).
+            config: Optional :class:`AgentConfig` to build the agent with,
+                overriding the harness snapshot. Used by :meth:`execute_agent`
+                to apply a task-scoped ``timeout_sec`` without mutating
+                ``self._agent_config``. Defaults to the harness snapshot.
 
         Returns:
             An instantiated agent harness. The instance is built with the
@@ -239,7 +243,7 @@ class DefaultEvalHarness(Harness):
         agent_cls = AGENTS.get(key)
         if agent_cls is None:
             raise NotRegisteredError(AGENTS.name, key, AGENTS.keys())
-        return agent_cls(self.build_agent_config())
+        return agent_cls(config if config is not None else self.build_agent_config())
 
     # -- agent config + capabilities (explicit; no env detour) ------------
 
@@ -277,6 +281,29 @@ class DefaultEvalHarness(Harness):
             capabilities=capabilities,
             extra_env=base.extra_env,
         )
+
+    def _agent_config_for_task(self, task: Task | None) -> AgentConfig:
+        """Return the :class:`AgentConfig` to run ``task`` with.
+
+        The harness snapshots one :class:`AgentConfig` at construction time
+        (see :meth:`_build_agent_config_snapshot`), before any task is known,
+        so it cannot itself express a per-task override. A task whose
+        ``timeout_sec`` is set (e.g. because its scope genuinely needs more
+        wall-clock runway than the ``AGENT_TIMEOUT_SEC`` env default) gets a
+        copy of the snapshot with only that field replaced; every other run
+        keeps the exact snapshot object other code paths (manifest model,
+        ``capabilities_granted``) already read.
+
+        Args:
+            task: The task about to run, or ``None``.
+
+        Returns:
+            The harness's :class:`AgentConfig` snapshot, or a copy with
+            ``timeout_sec`` overridden when ``task.timeout_sec`` is set.
+        """
+        if task is None or task.timeout_sec is None:
+            return self._agent_config
+        return replace(self._agent_config, timeout_sec=task.timeout_sec)
 
     @staticmethod
     def _gate_capabilities(env_caps: AllCapabilities, use_mcp: bool) -> AllCapabilities:
@@ -593,7 +620,7 @@ class DefaultEvalHarness(Harness):
 
     # -- agent execution --------------------------------------------------
 
-    def execute_agent(self, prompt: str, ctx: RunContext) -> AgentResult:
+    def execute_agent(self, prompt: str, ctx: RunContext, task: Task | None = None) -> AgentResult:
         """Run the configured agent against ``prompt`` through the registry.
 
         Args:
@@ -602,11 +629,15 @@ class DefaultEvalHarness(Harness):
                 the agent so a CLI wrapper executes in the harness-owned
                 workspace instead of a throwaway directory the harness never
                 inspects.
+            task: The task being run, used only to look up a per-task
+                ``timeout_sec`` override via :meth:`_agent_config_for_task`.
+                ``None`` (the default) runs with the harness's unmodified
+                :class:`AgentConfig` snapshot.
 
         Returns:
             The typed :class:`AgentResult` the agent emitted.
         """
-        agent = self.resolve_agent(self.agent_type)
+        agent = self.resolve_agent(self.agent_type, config=self._agent_config_for_task(task))
         return agent.run(prompt, workspace_path=ctx.workspace_path)
 
     # -- pipeline ---------------------------------------------------------
@@ -800,7 +831,7 @@ class DefaultEvalHarness(Harness):
 
             _log.info("executing agent for prompt: %s", prompt)
             before_files = snapshot_dir(workspace_path)
-            agent_res = self.execute_agent(prompt, context)
+            agent_res = self.execute_agent(prompt, context, task=task)
             # NOTE/TODO: This collects ALL frontmatter from bootstrapping, not just generated files.
             # Consider a more targeted filter in a future iteration.
             # Best-effort: a collection failure (I/O, permissions, a bad link in the

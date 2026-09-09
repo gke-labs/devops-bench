@@ -104,6 +104,21 @@ def parse_trajectory_export(jsonl_text: str) -> tuple[list[dict], dict, str, lis
     agent's ``_fold_with_extraction_errors`` and the Gemini ``parse_stream_json``
     policy.
 
+    A ``model.completed`` event whose ``data.terminalError`` is set (openclaw's
+    own signal that a turn ended without delivering a response, e.g.
+    ``"non_deliverable_terminal_turn"``) is reported on ``errors`` too. Without
+    this, a turn where the underlying model call fails leaves ``assistantTexts``
+    empty and no ``assistant.message`` event ever fires, so :meth:`OpenClawAgent
+    ._execute` falls back to the raw ``oc`` bash stdout (openclaw's own
+    human-readable debug/status log, e.g. a bare ``"LLM request failed."`` line)
+    as if it were the agent's genuine final answer -- silently handing every
+    judge metric garbage text to score against, which reads as a
+    near-total task failure rather than the harness/provider hiccup it actually
+    is. Surfacing it here instead means ``AgentResult.errors`` is non-empty, so
+    the run correctly comes back ``validated: False`` (see
+    ``DefaultEvalHarness._build_success_record``) instead of masquerading as a
+    clean, low-scoring attempt.
+
     Args:
         jsonl_text: Raw contents of ``events.jsonl`` inside the export bundle.
 
@@ -182,6 +197,13 @@ def parse_trajectory_export(jsonl_text: str) -> tuple[list[dict], dict, str, lis
                 joined = "\n".join(t for t in texts if isinstance(t, str))
                 if joined:
                     output = joined
+            terminal_error = data.get("terminalError")
+            if terminal_error:
+                errors.append(
+                    f"openclaw turn ended with terminalError={terminal_error!r} "
+                    f"(aborted={data.get('aborted')}, timedOut={data.get('timedOut')}); "
+                    "the model did not deliver a final response for this turn"
+                )
         elif etype == "assistant.message":
             msg = data.get("message") if isinstance(data.get("message"), dict) else {}
             txt = _join_text(msg.get("content"))
