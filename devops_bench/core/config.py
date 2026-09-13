@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from pathlib import Path
 
 from devops_bench.core.errors import ConfigError
 
@@ -27,7 +28,11 @@ __all__ = [
     "first_env",
     "get_bool",
     "get_int",
+    "resolve_tf_root",
 ]
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_TF_ROOT = _REPO_ROOT / "tf"
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "y", "on"})
 _FALSE_VALUES = frozenset({"0", "false", "no", "n", "off", ""})
@@ -162,3 +167,15 @@ def get_int(
         raise ConfigError(
             f"environment variable {name!r} is not a valid integer: {value!r}"
         ) from exc
+
+
+def resolve_tf_root() -> Path:
+    """Return the OpenTofu stack root: ``$BENCH_TF_ROOT`` override, else ``<repo_root>/tf``.
+
+    Read per call (not at import) so setting the variable after import works.
+    Under a pip install the default points inside ``site-packages`` where no
+    ``tf/`` tree exists, so installed-library users set ``BENCH_TF_ROOT`` to the
+    directory holding their stacks.
+    """
+    override = get_env("BENCH_TF_ROOT")
+    return Path(override).expanduser().resolve() if override else _DEFAULT_TF_ROOT
