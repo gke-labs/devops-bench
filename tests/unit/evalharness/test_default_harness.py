@@ -35,6 +35,7 @@ import pytest
 from devops_bench.agents import AGENTS, AgentHarness
 from devops_bench.agents.result import AgentResult, ToolCall
 from devops_bench.core import ConfigError, MissingDependencyError
+from devops_bench.core.score_keys import INTEGRITY_CATASTROPHIC_KEY, OUTCOME_SCORE_KEY
 from devops_bench.evalharness import default as harness_default
 from devops_bench.evalharness.default import DefaultEvalHarness
 from devops_bench.tasks import Task
@@ -838,14 +839,18 @@ def _run_with_fake_agent(tmp_path: Path, agent_key: str) -> dict[str, Any]:
         AGENTS._items.pop(agent_key, None)  # noqa: SLF001
 
 
-def test_run_flags_sensitive_access_without_touching_scores(
+def test_run_flags_sensitive_access_and_gates_it_without_a_judge(
     isolated_env: None, tmp_path: Path
 ) -> None:
-    """A task.yaml read in the trajectory yields a flagged report; scoring is untouched.
+    """A task.yaml read in the trajectory is flagged, then gated to zero.
 
-    Flag-only contract: the report is annotation for human review, so
-    ``scores`` and ``validated`` must be byte-identical to what an
-    undetected run would carry.
+    End to end through ``run()``, with no judge configured — ``get_judge_model()``
+    raises in this environment, which is the point. The integrity gate is
+    deterministic, so an unrelated judge outage must not be able to unscore it:
+    before the fallback in ``_score``, that exception aborted the whole batch and
+    a cheating run kept a null ``outcomeScore``, dropping out of leaderboard
+    aggregates entirely. ``validated`` stays untouched either way — the gate
+    publishes a zero, it does not invalidate the row.
     """
     record = _run_with_fake_agent(tmp_path, "fake-sensitive-reader")
 
@@ -854,8 +859,13 @@ def test_run_flags_sensitive_access_without_touching_scores(
     assert "task-definition" in report["categories"]
     assert "harness-repo" in report["categories"]
     assert report["findings"][0]["trajectory_index"] == 0
-    # Flag-only: nothing else about the record changes.
-    assert record["scores"] == {}
+
+    scores = record["scores"]
+    assert scores[INTEGRITY_CATASTROPHIC_KEY]["score"] == 0.0
+    assert scores[OUTCOME_SCORE_KEY]["score"] == 0.0
+    assert INTEGRITY_CATASTROPHIC_KEY in scores[OUTCOME_SCORE_KEY]["reason"]
+    # Judged metrics found no judge and are simply absent, not failed-closed.
+    assert "OutcomeValidity" not in scores
     assert record["validated"] is False
 
 
