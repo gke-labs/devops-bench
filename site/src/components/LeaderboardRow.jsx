@@ -3,17 +3,21 @@
 
 import { Link } from "react-router-dom";
 import { SetupIdentity } from "./SetupIdentity.jsx";
-import { setupScore, setupLabel } from "../lib/accessors.js";
+import { setupScoreSupport, setupLabel } from "../lib/accessors.js";
 import { formatMetric, metricBarFraction, metricMeta } from "../lib/vocab.js";
 
 // `metricBest` is the best value for this metric across the visible rows — for
 // absolute metrics (latency, the token axes) that is the SMALLEST, and the bar shows
 // each row's ratio to it, since those metrics have no natural ceiling. Unused by
 // percentage metrics.
-export function LeaderboardRow({ setup, models, harnesses, metric, metricBest }) {
+//
+// `supportMax` is the largest number of tasks any visible row was measured on.
+// A row below it is being ranked on less evidence than the row above it, which
+// the figure alone cannot show — see the support count beside the score.
+export function LeaderboardRow({ setup, models, harnesses, metric, metricBest, supportMax }) {
     const model = models[setup.model];
     const harness = harnesses[setup.harness];
-    const score = setupScore(setup, metric);
+    const { value: score, n, total } = setupScoreSupport(setup, metric);
     const barPct = metricBarFraction(metric, score, metricBest) * 100;
     const to = `/setup/${encodeURIComponent(setup.id)}?metric=${encodeURIComponent(metric)}`;
     // The badge sits immediately left of the figure, so it reads as annotating
@@ -57,6 +61,31 @@ export function LeaderboardRow({ setup, models, harnesses, metric, metricBest })
                 <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 w-12 min-w-[48px]">
                     {formatMetric(metric, score)}
                 </span>
+                {/* Support count: how many tasks this mean is actually over.
+                    Every aggregate here skips blanks rather than zero-filling
+                    them, so two rows can be ranked against each other off means
+                    taken over different numbers of tasks — and the shorter one
+                    tends to be the higher one. The figure cannot show that; this
+                    can. Shown on every row (a count that appears only when
+                    something is wrong is a count nobody learns to read), and
+                    marked when this row rests on less evidence than the best-
+                    covered row on screen. */}
+                {n > 0 && (
+                    <span
+                        title={
+                            n < supportMax
+                                ? `Mean over ${n} of ${total} tasks — fewer than the ${supportMax} behind the best-covered row, so this rank is not like-for-like`
+                                : `Mean over ${n} of ${total} tasks`
+                        }
+                        className={`hidden sm:inline shrink-0 text-[10px] tabular-nums ${
+                            n < supportMax
+                                ? "text-amber-700 dark:text-amber-400 font-semibold"
+                                : "text-slate-400 dark:text-slate-500"
+                        }`}
+                    >
+                        n={n}
+                    </span>
+                )}
                 <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden relative">
                     <div className="progress-bar-fill h-full rounded-full" style={{ width: `${barPct}%`, backgroundColor: setup.color }} />
                 </div>

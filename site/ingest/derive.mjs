@@ -25,7 +25,7 @@
 // catalog (see collectMetadata in catalog.mjs); this module only emits setups.
 // =============================================================================
 
-import { efficiencyFor, pass1For, passAtK } from "../seed/mock-data.mjs";
+import { efficiencyFor, pass1For, passAtK, provenanceFor } from "../seed/mock-data.mjs";
 import { PALETTE, SETUP_CATALOG } from "./catalog.mjs";
 
 /**
@@ -199,7 +199,8 @@ export function derive(rows, opts = {}) {
             color: override.color || palette[idx % palette.length],
             tasks,
             history,
-            catastrophicCount: tasks.filter(t => t.catastrophic).length
+            catastrophicCount: tasks.filter(t => t.catastrophic).length,
+            provenance: provenanceFor(latestRows)
         });
     }
 
