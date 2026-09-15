@@ -221,6 +221,7 @@ def test_build_rows_success_record():
         "recoverableSafetyScore": None,
         "catastrophic": False,
         "scoringVersion": "",
+        "verificationCoverage": None,
         "toolScore": 0.7,
         "latencySec": 42.5,
         "inputTokens": 100,
@@ -275,6 +276,57 @@ def test_build_rows_flags_catastrophic_and_zeroed_outcome() -> None:
     assert d["catastrophic"] is True
     assert d["outcomeScore"] == 0.0
     assert d["correctnessScore"] == 1.0
+
+
+def test_build_rows_carries_verification_coverage() -> None:
+    record = {
+        "name": "Partly checked",
+        "folder": "task_z",
+        "status": "success",
+        "scores": {
+            "OutcomeScore": {"score": 0.6, "version": "v1"},
+            "VerificationCorrectness": {"score": 0.6, "success": False, "reason": "3/5"},
+            "VerificationCoverage": {"score": 0.6, "success": False, "reason": "3/5 resolved"},
+        },
+    }
+
+    d = build_rows([record], _manifest())[0].to_dict()
+
+    assert d["verificationCoverage"] == 0.6
+
+
+def test_build_rows_coverage_is_none_without_a_verification_spec() -> None:
+    # A judged-only task declares no deterministic entries, so there is nothing
+    # to have covered — that reads as absent, never as 0.0 coverage.
+    record = {
+        "name": "Judged only",
+        "folder": "task_j",
+        "status": "success",
+        "scores": {
+            "OutcomeScore": {"score": 0.8, "version": "v1"},
+            "ChecklistScore": {"score": 0.8, "success": True},
+        },
+    }
+
+    d = build_rows([record], _manifest())[0].to_dict()
+
+    assert d["verificationCoverage"] is None
+
+
+def test_build_rows_coverage_has_no_judged_fallback() -> None:
+    # Correctness falls back to a judge; coverage must not. A checklist score
+    # says nothing about how much of the deterministic spec resolved.
+    record = {
+        "name": "Checklist present",
+        "folder": "task_c",
+        "status": "success",
+        "scores": {"ChecklistScore": {"score": 1.0, "success": True}},
+    }
+
+    d = build_rows([record], _manifest())[0].to_dict()
+
+    assert d["correctnessScore"] == 1.0
+    assert d["verificationCoverage"] is None
 
 
 def test_build_rows_correctness_falls_back_to_outcome_validity() -> None:
@@ -359,6 +411,7 @@ def test_result_row_keys_match_typescript_interface():
         "recoverableSafetyScore",
         "catastrophic",
         "scoringVersion",
+        "verificationCoverage",
         "toolScore",
         "latencySec",
         "inputTokens",

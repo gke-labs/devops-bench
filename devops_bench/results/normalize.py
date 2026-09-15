@@ -31,6 +31,7 @@ from devops_bench.results.row import Manifest, ResultRow
 
 __all__ = [
     "CATASTROPHIC_SCORE_KEY",
+    "COVERAGE_SCORE_KEY",
     "OUTCOME_SCORE_KEY",
     "TOOL_SCORE_KEY",
     "NormalizedTokens",
@@ -64,6 +65,11 @@ _RECOVERABLE_KEYS = (
     score_keys.JUDGED_RECOVERABLE_KEY,
 )
 CATASTROPHIC_SCORE_KEY = score_keys.VERIFICATION_CATASTROPHIC_KEY
+
+#: Coverage has no preference chain and no judged equivalent: it is a property of
+#: the deterministic spec, so a task without one reports no coverage rather than
+#: falling back to a judge's opinion of how much was checked.
+COVERAGE_SCORE_KEY = score_keys.VERIFICATION_COVERAGE_KEY
 
 # Token usage aliases per provider, in lookup priority. ``AgentResult.tokens`` is
 # explicitly provider-defined and passed through unchanged, so there is no
@@ -322,6 +328,7 @@ def build_rows(records: Iterable[Mapping[str, Any]], manifest: Manifest) -> list
                 recoverable_safety_score=_first_score(scores, _RECOVERABLE_KEYS),
                 catastrophic=catastrophic_score == 0.0,
                 scoring_version=_scoring_version(scores),
+                verification_coverage=extract_score(scores, COVERAGE_SCORE_KEY),
                 tool_score=extract_score(scores, TOOL_SCORE_KEY),
                 latency_sec=float(record.get("latency") or 0.0),
                 input_tokens=tokens.input,

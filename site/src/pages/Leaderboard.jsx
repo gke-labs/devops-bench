@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { useBenchmark } from "../context/BenchmarkContext.jsx";
 import { buildFilterGroups, getFilteredSetups, emptyFilterState } from "../lib/filters.js";
 import { setupScore, compareByName } from "../lib/accessors.js";
-import { comparabilityNotes, supportSpread, scoringVersions, attemptsPerCell } from "../lib/comparability.js";
+import { comparabilityNotes, supportSpread, scoringVersions, attemptsPerCell, coverageSummary } from "../lib/comparability.js";
 import { METRIC_LABELS, availableMetrics, metricDescription, isLowerBetter, bestValue } from "../lib/vocab.js";
 import { FilterBar } from "../components/FilterBar.jsx";
 import { LeaderboardRow } from "../components/LeaderboardRow.jsx";
@@ -69,6 +69,7 @@ export function Leaderboard() {
     const notes = useMemo(() => comparabilityNotes(sorted, metric), [sorted, metric]);
     const versions = useMemo(() => scoringVersions(sorted), [sorted]);
     const attempts = useMemo(() => attemptsPerCell(sorted), [sorted]);
+    const coverage = useMemo(() => coverageSummary(sorted), [sorted]);
 
     function toggleFilter(groupKey, value) {
         setFilterState(prev => {
@@ -204,13 +205,21 @@ export function Leaderboard() {
                     derived from the visible rows, so the strip disappears when
                     the table is comparable as rendered — a warning that is
                     always on screen stops being read as a warning. */}
-                {!loading && !error && sorted.length > 0 && (versions.length > 0 || attempts || notes.length > 0) && (
+                {!loading && !error && sorted.length > 0 && (versions.length > 0 || attempts || coverage || notes.length > 0) && (
                     <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/20 flex flex-col gap-1.5">
-                        {(versions.length > 0 || attempts) && (
+                        {(versions.length > 0 || attempts || coverage) && (
                             <p className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
                                 <span className="uppercase tracking-wider font-semibold text-slate-400 dark:text-slate-500">Provenance</span>
                                 {versions.length > 0 && <span>Scoring {versions.join(" + ")}</span>}
                                 {attempts && <span>{attempts} attempt{attempts === "1" ? "" : "s"} per task cell</span>}
+                                {/* Mean, not a range: the range lives in the caveat
+                                    line below, where there is room to say what a
+                                    partial one means. */}
+                                {coverage && (
+                                    <span title="Share of each task's declared deterministic checks that resolved to a pass or a fail. Provenance, not a score — it is never ranked on.">
+                                        {Math.round(coverage.mean)}% mean check coverage
+                                    </span>
+                                )}
                                 <span>{sorted.length} arm{sorted.length === 1 ? "" : "s"} shown</span>
                             </p>
                         )}

@@ -43,6 +43,18 @@ describe("validateRow", () => {
         ]);
     });
 
+    it("accepts verificationCoverage of 0, and its absence, and rejects out of range", () => {
+        // Absent means the task declared no deterministic spec; 0 means it
+        // declared one and none of it resolved. Both are legal and they are not
+        // the same run, so neither may be validated away.
+        expect(validateRow(validRow)).toEqual([]);
+        expect(validateRow({ ...validRow, verificationCoverage: 0 })).toEqual([]);
+        expect(validateRow({ ...validRow, verificationCoverage: null })).toEqual([]);
+        expect(validateRow({ ...validRow, verificationCoverage: 1.4 })).toEqual([
+            "verificationCoverage: must be in [0,1]",
+        ]);
+    });
+
     it("accepts null scores and tokens (unscored/failed iteration)", () => {
         const row = {
             ...validRow, status: "failed",

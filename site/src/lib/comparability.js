@@ -15,10 +15,9 @@
 // "nothing" — a caveat strip that is always there is furniture, and gets read
 // as such.
 //
-// Scope: what the read-model can actually support. Notably absent is
-// verification coverage (how much of each task was really checked), which the
-// harness computes per run but does not carry onto a leaderboard row. Until it
-// does, this module cannot speak to it, and says nothing rather than guessing.
+// Scope: what the read-model can actually support. Every note here is a fact
+// about the visible rows; where the data is silent — a run whose rows predate a
+// field — the note is omitted rather than guessed at.
 // =============================================================================
 
 import { setupScoreSupport } from "./accessors.js";
@@ -107,6 +106,27 @@ export function comparabilityNotes(setups, metric) {
         );
     }
 
+    // Coverage bounds what a score column can be read to mean, so it belongs
+    // with the scores and nowhere near the efficiency columns — wall-clock and
+    // token counts are measured whole regardless of how much of the task the
+    // verifier resolved.
+    if (metricMeta(metric).percentage) {
+        const cov = coverageSummary(setups);
+        if (cov && cov.min < 100) {
+            notes.push(
+                cov.min === cov.max
+                    ? `Only ${fmtPct(cov.min)}% of the declared deterministic checks resolved on every cell. A score is a claim about the part that was checked, not about the task.`
+                    : `Deterministic coverage runs from ${fmtPct(cov.min)}% to ${fmtPct(cov.max)}% across cells (mean ${fmtPct(cov.mean)}%). A score is a claim about the part that was checked, not about the task.`
+            );
+        }
+        if (cov && cov.cells > cov.deterministic) {
+            const judged = cov.cells - cov.deterministic;
+            notes.push(
+                `${judged} of ${cov.cells} ${plural(cov.cells, "cell")} declared no deterministic checks, so ${plural(judged, "its", "their")} score rests on a judge alone.`
+            );
+        }
+    }
+
     if (!metricMeta(metric).percentage) {
         notes.push(
             "Telemetry, not a score: this is recorded even for attempts that never scored, so it covers cells the score columns leave blank."
@@ -114,6 +134,38 @@ export function comparabilityNotes(setups, metric) {
     }
 
     return notes;
+}
+
+/**
+ * Deterministic coverage across every visible arm, pooled. Bounds are the
+ * widest across arms (the weakest cell anywhere is the one that limits the
+ * table), and counts are summed. Null when no visible arm reports coverage.
+ *
+ * @param {Setup[]} setups
+ * @returns {{ min: number, max: number, mean: number, deterministic: number, cells: number } | null}
+ */
+export function coverageSummary(setups) {
+    const parts = setups.map(s => s.provenance?.coverage).filter(Boolean);
+    if (parts.length === 0) return null;
+    const deterministic = parts.reduce((sum, c) => sum + c.deterministic, 0);
+    return {
+        min: Math.min(...parts.map(c => c.min)),
+        max: Math.max(...parts.map(c => c.max)),
+        // Weighted by the cells behind each arm's mean, so a six-task arm does
+        // not pull the pooled figure as hard as a twenty-task one.
+        mean: deterministic
+            ? parts.reduce((sum, c) => sum + c.mean * c.deterministic, 0) / deterministic
+            : 0,
+        deterministic,
+        // Only arms that report coverage contribute cells; an arm with no
+        // reading at all is absent from this summary rather than counted as
+        // fully judged.
+        cells: parts.reduce((sum, c) => sum + c.cells, 0)
+    };
+}
+
+function fmtPct(v) {
+    return Number.isInteger(v) ? `${v}` : v.toFixed(1);
 }
 
 /** Sorted union of the scoring versions behind the visible arms. */

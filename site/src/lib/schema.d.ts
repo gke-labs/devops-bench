@@ -131,6 +131,31 @@ export interface Provenance {
     attempts: number;
     /** The latest run's id, or null when the rows carry none. */
     runId: string | null;
+    /**
+     * How much of each task was actually checked. Null when no row in the run
+     * carries a reading — the board then says nothing, rather than letting
+     * silence read as full coverage.
+     */
+    coverage: Coverage | null;
+}
+
+/**
+ * Deterministic verification coverage across one arm's latest run, as
+ * percentages. A companion to the scores, never one of them: it says how much
+ * of each task the scores were measured over, and two arms at the same score
+ * and different coverage are not making the same claim.
+ */
+export interface Coverage {
+    /** Lowest per-task coverage in the run. The cell that limits the row. */
+    min: number;
+    /** Highest per-task coverage in the run. */
+    max: number;
+    /** Mean per-task coverage over the tasks that report one. */
+    mean: number;
+    /** Task cells with a deterministic spec, i.e. with any coverage to report. */
+    deterministic: number;
+    /** Task cells in the run. `cells - deterministic` is the judged-only tail. */
+    cells: number;
 }
 
 /** The two metadata collections, keyed by doc id, as the dashboard holds them. */
@@ -180,6 +205,13 @@ export interface ResultRow {
     catastrophic?: boolean;
     /** Scoring-framework version that produced `outcomeScore` (e.g. "v1"). */
     scoringVersion?: string;
+    /**
+     * Fraction in [0,1] of the task's declared deterministic entries that
+     * resolved to a pass or a fail. Null/absent when the task declared no
+     * verification spec — which is not the same as 0, and must not be rendered
+     * as one. Provenance: never ranked on, never averaged into a score.
+     */
+    verificationCoverage?: number | null;
     /** Tool-use score in [0,1]; null when unscored. */
     toolScore: number | null;
     /**
