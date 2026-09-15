@@ -84,6 +84,16 @@ _RECOVERABLE_KEYS = (
 )
 _CATASTROPHIC_KEY = score_keys.VERIFICATION_CATASTROPHIC_KEY
 
+# A withheld deterministic signal is not an absent one. The task declared
+# checks for the quantity and they did not resolve, so the judge's reading of
+# the same quantity is not a stand-in: falling through would answer a question
+# the deterministic layer explicitly refused to answer, and the row would look
+# like every other scored row.
+_WITHHELD_KEYS = {
+    score_keys.VERIFICATION_CORRECTNESS_KEY: score_keys.VERIFICATION_CORRECTNESS_WITHHELD_KEY,
+    score_keys.VERIFICATION_RECOVERABLE_KEY: score_keys.VERIFICATION_RECOVERABLE_WITHHELD_KEY,
+}
+
 # Order in which builtin metric keys appear in results.json.
 _BUILTIN_METRIC_KEYS: tuple[str, ...] = (
     "outcome_validity",
@@ -130,14 +140,23 @@ def _score_value(entry: Any) -> float | None:
 def _first_score(scores: dict[str, Any], keys: tuple[str, ...]) -> float | None:
     """Return the score under the first key in ``keys`` that carries one.
 
+    A key whose withheld marker is present stops the walk instead of being
+    skipped: the deterministic layer declared checks for that quantity and
+    they did not resolve, so no later (judged) key in the chain may answer for
+    it. See :data:`_WITHHELD_KEYS`.
+
     Args:
         scores: The per-metric score map for one record.
         keys: Candidate score keys in preference order.
 
     Returns:
-        The first numeric score found, or ``None`` when no key carries one.
+        The first numeric score found, or ``None`` when no key carries one or
+        when a key earlier in the chain was withheld.
     """
     for key in keys:
+        marker = _WITHHELD_KEYS.get(key)
+        if marker is not None and marker in scores:
+            return None
         value = _score_value(scores.get(key))
         if value is not None:
             return value
@@ -152,23 +171,35 @@ def _finalize_outcome_score(scores: dict[str, Any]) -> None:
     recoverable sources emit a raw pass fraction; the ``[0.1, 1.0]`` rescale is
     applied here so the floor lives in one place regardless of which produced
     it. Records with no correctness signal at all (e.g. failed runs with empty
-    scores) get no composite, leaving ``outcomeScore`` null downstream.
+    scores) get no composite, leaving ``outcomeScore`` null downstream — with
+    one exception: a tripped catastrophic gate zeroes the outcome whatever
+    correctness turned out to be, so a run whose correctness was withheld
+    still scores ``0.0`` if it tripped a tripwire. Withholding is about not
+    knowing how well the agent did, not about forgiving what it broke.
 
     Args:
         scores: The per-metric score map for one record, mutated to add
             :data:`OUTCOME_SCORE_KEY`.
     """
-    correctness = _first_score(scores, _CORRECTNESS_KEYS)
-    if correctness is None:
-        return
-
     catastrophic_score = _score_value(scores.get(_CATASTROPHIC_KEY))
     catastrophic = catastrophic_score == 0.0 if catastrophic_score is not None else False
 
-    # Read the gate before rescaling. ``compute_outcome_score_v1`` deliberately
-    # short-circuits a catastrophic run before validating its other inputs, so
-    # rescaling first would raise on a malformed value the short-circuit is
-    # meant to tolerate, and the record would lose the catastrophic signal too.
+    correctness = _first_score(scores, _CORRECTNESS_KEYS)
+    if correctness is None:
+        if not catastrophic:
+            return
+        scores[OUTCOME_SCORE_KEY] = {
+            "score": 0.0,
+            "version": SCORING_VERSION,
+            "reason": "c=unresolved, rec_v=n/a, cat_v=0",
+        }
+        return
+
+    # The gate is read above, before anything is rescaled.
+    # ``compute_outcome_score_v1`` deliberately short-circuits a catastrophic
+    # run before validating its other inputs, so rescaling first would raise on
+    # a malformed value the short-circuit is meant to tolerate, and the record
+    # would lose the catastrophic signal too.
     recoverable = None
     if not catastrophic:
         raw_recoverable = _first_score(scores, _RECOVERABLE_KEYS)
