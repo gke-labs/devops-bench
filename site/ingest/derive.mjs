@@ -12,7 +12,8 @@
 //   tasks   <- distinct row.taskFolder at the LATEST run of each setup
 //   history <- one aggregate point per distinct row.t, time-ordered
 //
-// The SCORING FORMULA is NOT duplicated here — PASS_THRESHOLD, the pass@k
+// The SCORING FORMULA is NOT duplicated here — the pass@1 rule (pass1For /
+// passesAt1, which carries PASS_THRESHOLD and the catastrophic gate), the pass@k
 // estimator and the efficiency projection are imported from seed/mock-data.mjs
 // so test data and real data are scored by exactly one definition. Change the
 // formula there and re-run derive (see the CLI at the bottom) to re-score
@@ -24,7 +25,7 @@
 // catalog (see collectMetadata in catalog.mjs); this module only emits setups.
 // =============================================================================
 
-import { PASS_THRESHOLD, efficiencyFor, passAtK } from "../seed/mock-data.mjs";
+import { efficiencyFor, pass1For, passAtK } from "../seed/mock-data.mjs";
 import { PALETTE, SETUP_CATALOG } from "./catalog.mjs";
 
 /**
@@ -46,6 +47,8 @@ function round(v, dp) {
 // outcomeScore are EXCLUDED from both n and c — an unscored/failed iteration is
 // missing data, not a 0% pass — mirroring the schema's nullable Scores. A group
 // with no scored iterations yields all-null (the UI renders these as blank).
+// What counts as a pass is passesAt1/pass1For in seed/mock-data.mjs, not a copy
+// of the rule here: correctness over the threshold AND no catastrophic tripwire.
 //
 // pass5/passMax stay null today: the harness emits a single iteration per
 // (setup × task × run), so pass@k would only ever collapse onto pass1, and the
@@ -67,12 +70,6 @@ function scoresFor(rows) {
             ...efficiency
         };
     }
-    // pass1 thresholds on CORRECTNESS `c` (falling back to outcomeScore for
-    // pre-v1 rows) so the pass rate isn't distorted by the √/gate composite.
-    const c = scored.filter(r => {
-        const cv = Number.isFinite(r.correctnessScore) ? r.correctnessScore : r.outcomeScore;
-        return cv >= PASS_THRESHOLD;
-    }).length;
     // Continuous 0..100 means for the v1 dimensions. `composite` reads
     // outcomeScore (the composite); correctness/recoverableSafety read their
     // sub-score fields (null for pre-v1 rows → blank in the UI).
@@ -81,7 +78,7 @@ function scoresFor(rows) {
         return vals.length ? round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100, 1) : null;
     };
     return {
-        pass1: round((c / n) * 100, 1),
+        pass1: pass1For(scored),
         pass5: null,
         passMax: null,
         composite: mean("outcomeScore"),
