@@ -88,6 +88,34 @@ describe("derive — data-driven", () => {
         expect(task.scores.composite).toBe(90);
     });
 
+    it("carries the latest run's provenance onto the setup", () => {
+        // Provenance is not a score and is never ranked on; it is how a reader
+        // decides how much weight the scores beside it carry. It comes from the
+        // LATEST run only, like tasks[] does — an older run's scoring version
+        // says nothing about the numbers on screen.
+        const rows = loadResults([FIXTURES]);
+        const alpha = derive(rows).find(s => s.id === "alpha-pro-gemini-cli-mcp-skills");
+        expect(alpha.provenance).toEqual({
+            scoringVersions: ["v1"],
+            attempts: 2,
+            runId: "run_20260615_120000"
+        });
+    });
+
+    it("leaves provenance empty rather than guessing for rows that carry none", () => {
+        const setups = derive([
+            {
+                setupId: "s", model: "m", harness: "h", augmentation: [],
+                runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
+                taskFolder: "task-a", taskName: "Task A", status: "success",
+                toolScore: null, latencySec: 5, inputTokens: null, outputTokens: null,
+                iteration: 0, outcomeScore: 0.9
+            }
+        ]);
+        expect(setups[0].provenance.scoringVersions).toEqual([]);
+        expect(setups[0].provenance.attempts).toBe(1);
+    });
+
     it("assigns order by discovery and honors catalog overrides", () => {
         const rows = loadResults([FIXTURES]);
         const def = derive(rows);

@@ -110,6 +110,27 @@ export interface Setup {
     history: HistoryPoint[];
     /** Count of latest-run tasks with a catastrophic violation (cat_v = 0). */
     catastrophicCount: number;
+    /**
+     * How the scores above were produced. Not a score, and never ranked on: it
+     * says how much weight they can carry. Optional — rows derived before it
+     * existed carry none, and the UI omits the strip rather than inventing one.
+     */
+    provenance?: Provenance;
+}
+
+/** Latest-run provenance for one setup. */
+export interface Provenance {
+    /**
+     * Scoring versions behind the latest run, sorted. A LIST because a mixed
+     * arm is the thing worth seeing: two versions in one column means two rules
+     * produced numbers under one heading. Empty for pre-v1 rows, which never
+     * stamped a version.
+     */
+    scoringVersions: string[];
+    /** Distinct iterations per task cell. 1 until the harness repeats a task. */
+    attempts: number;
+    /** The latest run's id, or null when the rows carry none. */
+    runId: string | null;
 }
 
 /** The two metadata collections, keyed by doc id, as the dashboard holds them. */

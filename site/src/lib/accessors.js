@@ -82,8 +82,31 @@ export function setupTags(setup) {
  * @returns {number | null}
  */
 export function setupScore(setup, metric) {
+    return setupScoreSupport(setup, metric).value;
+}
+
+// The same mean, with the evidence it rests on: `n` tasks carried a reading,
+// out of `total` the arm attempted.
+//
+// Every aggregate on this board skips blanks rather than zero-filling them
+// (a blank is "not measured", not "measured as nothing"), which is the right
+// choice per-cell and a trap across rows: two arms can be ranked against each
+// other off means taken over different numbers of tasks, with nothing on
+// screen saying so. The mean alone cannot carry that; `n` is what makes it
+// legible, so it travels WITH the value rather than being recomputed by each
+// caller that happens to remember to.
+/**
+ * @param {Setup} setup
+ * @param {MetricKey} metric
+ * @returns {{ value: number | null, n: number, total: number }}
+ */
+export function setupScoreSupport(setup, metric) {
     const vals = setup.tasks.map(t => t.scores[metric]).filter(v => v != null);
-    return vals.length ? vals.reduce((sum, v) => sum + v, 0) / vals.length : null;
+    return {
+        value: vals.length ? vals.reduce((sum, v) => sum + v, 0) / vals.length : null,
+        n: vals.length,
+        total: setup.tasks.length
+    };
 }
 
 // Trend points for the metric as { x: <epoch ms>, y: <score> }, in time order.

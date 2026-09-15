@@ -500,9 +500,27 @@ export function derive(rows) {
             color: PALETTE[i % PALETTE.length],
             tasks,
             history,
-            catastrophicCount: tasks.filter(t => t.catastrophic).length
+            catastrophicCount: tasks.filter(t => t.catastrophic).length,
+            provenance: provenanceFor(setupRows.filter(r => r.t === latest))
         };
     });
+}
+
+// Provenance for one arm's latest run: not a score, and never ranked on. It
+// says how much weight the scores beside it can carry — which version produced
+// them, and how many attempts stand behind each cell.
+//
+// `scoringVersions` is a LIST because a mixed arm is the thing worth seeing: two
+// versions in one column means two rules produced numbers under one heading,
+// which no single value on the row could tell you. An empty list means pre-v1
+// rows that never stamped a version.
+/** @returns {{ scoringVersions: string[], attempts: number, runId: string | null }} */
+export function provenanceFor(rows) {
+    return {
+        scoringVersions: [...new Set(rows.map(r => r.scoringVersion).filter(Boolean))].sort(),
+        attempts: new Set(rows.map(r => r.iteration)).size,
+        runId: rows.length ? rows[0].runId ?? null : null
+    };
 }
 
 // --- helpers -----------------------------------------------------------------
