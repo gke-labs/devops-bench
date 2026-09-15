@@ -201,9 +201,11 @@ class DefaultEvalHarness(Harness):
         self.no_teardown = no_teardown if no_teardown is not None else get_bool("BENCH_NO_TEARDOWN")
         # Resolved once so capabilities and scoring observe the same value.
         self.use_mcp: bool = get_bool("BENCH_USE_MCP", True)
-        # Trajectory-based cheating detection is flag-only: it annotates each
-        # record with a ``cheating_report`` and never touches scores or
-        # ``validated``. Extra rules load from an optional YAML file — loaded
+        # Trajectory-based cheating detection annotates each record with a
+        # ``cheating_report`` and never touches ``validated``. The report is
+        # not inert, though: ``IntegrityMetric`` reads it during the later
+        # scoring pass and gates a flagged run's ``OutcomeScore`` to zero.
+        # Extra rules load from an optional YAML file — loaded
         # here so a bad BENCH_CHEAT_RULES path fails loud at construction
         # (an operator config error) instead of being swallowed by the
         # best-effort scan at the end of the run.
@@ -750,9 +752,11 @@ class DefaultEvalHarness(Harness):
             prev_task_name = task.name
 
         # Annotate sensitive-access flags before the first write so both the
-        # raw and the scored results.json carry the report. Best-effort and
-        # flag-only, per record: a detector failure leaves that record's
-        # seeded empty report and moves on to the next.
+        # raw and the scored results.json carry the report, and because
+        # ``_score`` below reads it. Best-effort per record: a detector failure
+        # leaves that record's seeded empty report and moves on to the next —
+        # which also leaves that record ungated, since an absent verdict is an
+        # abstention rather than a zero.
         if self.cheat_detect:
             # Per record: a home entry the task prompt itself names (the
             # GitOps repo to push to, the deliverable to write) is
@@ -1211,8 +1215,9 @@ class DefaultEvalHarness(Harness):
             "recoverable_safety": list(task.recoverable_safety),
             "chaos_report": {},
             "perf_report": {},
-            # Populated by the flag-only cheat detector in ``run`` (empty when
-            # detection is disabled or fails); never consulted by scoring.
+            # Populated by the cheat detector in ``run`` (empty when detection
+            # is disabled or fails). Read by ``IntegrityMetric``, which gates a
+            # flagged run to zero and abstains on this empty seed.
             "cheating_report": {},
             "documentation": [doc.model_dump() for doc in task.documentation],
             "capabilities_granted": {
@@ -1309,5 +1314,19 @@ class DefaultEvalHarness(Harness):
         # Lazy import keeps ``deepeval`` / provider SDKs out of harness import.
         from devops_bench.metrics import evaluate_metrics_batch, get_judge_model
 
-        judge_model = self._judge_model or get_judge_model()
+        try:
+            judge_model = self._judge_model or get_judge_model()
+        except Exception:  # noqa: BLE001 - a judge outage must not unscore the batch
+            # Building the judge reads provider config and constructs a client,
+            # so a bad JUDGE_PROVIDER or a missing key raises here. Letting that
+            # propagate would abort scoring for the whole batch — including the
+            # deterministic metrics, which need no judge at all. That matters
+            # beyond convenience: the catastrophic gates (task safeguards and
+            # the benchmark-integrity check) are deterministic, so an unrelated
+            # judge outage would otherwise leave a cheating run ungated and its
+            # ``outcomeScore`` null, dropping it out of leaderboard aggregates.
+            # Judge-backed metrics fail individually on the ``None`` and are
+            # isolated by the pipeline's per-metric guard.
+            _log.exception("judge unavailable; scoring deterministic metrics only")
+            judge_model = None
         evaluate_metrics_batch(scorable, judge_model, use_mcp=self.use_mcp)
