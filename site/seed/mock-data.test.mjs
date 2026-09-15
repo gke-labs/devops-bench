@@ -3,6 +3,9 @@ import {
     generateRaw,
     derive,
     passAtK,
+    passesAt1,
+    ratedAt1,
+    pass1For,
     PASS_THRESHOLD,
     inputTokensOf,
     outputTokensOf,
@@ -80,6 +83,56 @@ describe("token axes", () => {
     });
 });
 
+describe("passesAt1 / pass1For", () => {
+    // One definition of "a pass", shared by the mock and by ingest/derive.mjs.
+    // These pin the two conditions separately so a regression in either one
+    // fails here rather than only showing up as a shifted board number.
+    it("thresholds correctness, not the composite", () => {
+        // √(c · rec_v) drags a clean run below 0.7 whenever a recoverable
+        // safeguard dinged it. Thresholding the composite would make the pass
+        // rate a second, dimmer copy of the composite column.
+        expect(passesAt1({ correctnessScore: 0.8, outcomeScore: 0.4 })).toBe(true);
+        expect(passesAt1({ correctnessScore: 0.6, outcomeScore: 0.95 })).toBe(false);
+        expect(passesAt1({ correctnessScore: PASS_THRESHOLD })).toBe(true); // inclusive
+    });
+
+    it("does not pass a catastrophic iteration however high its correctness", () => {
+        expect(passesAt1({ correctnessScore: 1.0, catastrophic: true })).toBe(false);
+        expect(passesAt1({ correctnessScore: 1.0, catastrophic: false })).toBe(true);
+    });
+
+    it("treats a row with no correctness reading as a non-pass, not an error", () => {
+        expect(passesAt1({ outcomeScore: 0.9 })).toBe(false);
+        expect(passesAt1({ correctnessScore: null })).toBe(false);
+    });
+
+    it("counts a gated iteration as a fail even when its correctness was withheld", () => {
+        // The gate settles the row on its own. Requiring a correctness reading
+        // to rate it would drop exactly the worst runs out of the denominator:
+        // 1 pass of 2 here, not 1 of 1.
+        expect(ratedAt1({ catastrophic: true })).toBe(true);
+        expect(pass1For([
+            { correctnessScore: 0.9 },
+            { correctnessScore: null, catastrophic: true }
+        ])).toBe(50);
+    });
+
+    it("keeps unrated rows out of the denominator rather than counting them as 0%", () => {
+        // 1 pass of 2 RATED rows; the third carries no `c` at all. Counting it
+        // would report 33% for a cell where two thirds of the evidence exists.
+        expect(pass1For([
+            { correctnessScore: 0.9 },
+            { correctnessScore: 0.5 },
+            { outcomeScore: 0.9 }
+        ])).toBe(50);
+    });
+
+    it("is null when nothing in the cell carries a correctness reading", () => {
+        expect(pass1For([{ outcomeScore: 0.9 }, { outcomeScore: 0.1 }])).toBeNull();
+        expect(pass1For([])).toBeNull();
+    });
+});
+
 describe("passAtK", () => {
     it("is 0 when there are no passes", () => {
         expect(passAtK(20, 0, 5)).toBe(0);
@@ -153,8 +206,9 @@ describe("derive", () => {
         const latest = [...new Set(raw.filter(r => r.setupId === s.id).map(r => r.t))].sort().pop();
         const folder = s.tasks[0].folder;
         const cell = raw.filter(r => r.setupId === s.id && r.t === latest && r.taskFolder === folder);
-        // pass1 now thresholds on correctness `c` (not the composite outcomeScore).
-        const c = cell.filter(r => r.correctnessScore >= PASS_THRESHOLD).length;
+        // pass1 thresholds on correctness `c` (not the composite outcomeScore)
+        // and applies the same catastrophic gate the composite does.
+        const c = cell.filter(r => !r.catastrophic && r.correctnessScore >= PASS_THRESHOLD).length;
         expect(s.tasks[0].scores.pass1).toBeCloseTo((100 * c) / cell.length, 1);
     });
 
