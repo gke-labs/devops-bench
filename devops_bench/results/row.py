@@ -118,6 +118,14 @@ class ResultRow(BaseModel):
             a run has ``outcome_score = 0`` regardless of the other sub-scores.
         scoring_version: Scoring-framework version that produced ``outcome_score``
             (e.g. ``"v1"``); ``""`` for rows written before the framework landed.
+        verification_coverage: Fraction of the task's declared deterministic
+            entries that resolved to a pass or a fail, in ``[0, 1]``; ``None``
+            when the task declared no ``verification_spec``. Provenance, not a
+            score: it never enters a ranking, and it is what says how much of
+            the task the scores beside it were actually measured over. A run at
+            ``0.6`` and a run at ``1.0`` are not held to the same standard even
+            when both publish the same ``correctness_score``, and without this
+            field nothing downstream can tell them apart.
         tool_score: Tool-invocation judge score in ``[0, 1]``, or ``None``.
         latency_sec: Agent wall-clock seconds for the iteration.
         input_tokens: Non-cached prompt token count, or ``None`` when
@@ -154,6 +162,7 @@ class ResultRow(BaseModel):
     recoverable_safety_score: float | None = None
     catastrophic: bool = False
     scoring_version: str = ""
+    verification_coverage: float | None = None
     tool_score: float | None
     latency_sec: float
     input_tokens: int | None

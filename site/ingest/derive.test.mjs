@@ -98,8 +98,20 @@ describe("derive — data-driven", () => {
         expect(alpha.provenance).toEqual({
             scoringVersions: ["v1"],
             attempts: 2,
-            runId: "run_20260615_120000"
+            runId: "run_20260615_120000",
+            // Two iterations of ONE task: coverage counts cells, not rows, so
+            // repeating a task does not inflate how much was checked.
+            coverage: { min: 80, max: 80, mean: 80, deterministic: 1, cells: 1 }
         });
+    });
+
+    it("reports no coverage at all rather than 0 when no row carries a reading", () => {
+        // A judged-only run and a fully-unresolved one must not render alike:
+        // the first has nothing to report, the second reports 0%. Null is the
+        // only value that keeps the board silent instead of accusing.
+        const rows = loadResults([FIXTURES]);
+        const gamma = derive(rows).find(s => s.id === "gamma-coder-api-loop");
+        expect(gamma.provenance.coverage).toBeNull();
     });
 
     it("leaves provenance empty rather than guessing for rows that carry none", () => {
@@ -114,6 +126,7 @@ describe("derive — data-driven", () => {
         ]);
         expect(setups[0].provenance.scoringVersions).toEqual([]);
         expect(setups[0].provenance.attempts).toBe(1);
+        expect(setups[0].provenance.coverage).toBeNull();
     });
 
     it("assigns order by discovery and honors catalog overrides", () => {

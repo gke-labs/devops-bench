@@ -107,6 +107,9 @@ export function validateRow(row) {
     if ("scoringVersion" in row && typeof row.scoringVersion !== "string") {
         errs.push("scoringVersion: must be a string");
     }
+    // Coverage is a fraction, and 0 is in contract: it means every declared
+    // check errored, which is exactly the run a reader most needs flagged.
+    if ("verificationCoverage" in row) floatOrNull("verificationCoverage", num01);
 
     return errs;
 }

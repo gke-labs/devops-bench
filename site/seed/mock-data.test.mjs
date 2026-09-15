@@ -6,6 +6,7 @@ import {
     passesAt1,
     ratedAt1,
     pass1For,
+    coverageFor,
     PASS_THRESHOLD,
     inputTokensOf,
     outputTokensOf,
@@ -241,5 +242,56 @@ describe("derive", () => {
         expect(task.scores.latency).toBeGreaterThan(0);
         expect(task.scores.inputTokens).toBeGreaterThan(0);
         expect(task.scores.outputTokens).toBeGreaterThan(0);
+    });
+});
+
+describe("coverageFor", () => {
+    const row = (taskFolder, verificationCoverage, iteration = 0) => ({
+        taskFolder,
+        iteration,
+        ...(verificationCoverage === undefined ? {} : { verificationCoverage })
+    });
+
+    it("returns null when no row carries a reading", () => {
+        // Absent coverage and zero coverage are different claims. Pre-coverage
+        // rows have nothing to say; reporting 0 would say the run was unchecked.
+        expect(coverageFor([row("a"), row("b")])).toBeNull();
+    });
+
+    it("returns null for an empty run", () => {
+        expect(coverageFor([])).toBeNull();
+    });
+
+    it("reports min, max and mean as percentages", () => {
+        const cov = coverageFor([row("a", 0.6), row("b", 1.0), row("c", 0.8)]);
+        expect(cov.min).toBe(60);
+        expect(cov.max).toBe(100);
+        expect(cov.mean).toBe(80);
+    });
+
+    it("counts a fully unresolved spec as 0% rather than dropping it", () => {
+        // 0.0 is a reading: every declared check errored. It must pull the min
+        // down, which a truthiness filter would silently skip.
+        const cov = coverageFor([row("a", 0), row("b", 1.0)]);
+        expect(cov.min).toBe(0);
+        expect(cov.deterministic).toBe(2);
+    });
+
+    it("counts cells, not rows, so repeating a task does not inflate coverage", () => {
+        const cov = coverageFor([
+            row("a", 0.5, 0), row("a", 0.5, 1),
+            row("b", 1.0, 0), row("b", 1.0, 1)
+        ]);
+        expect(cov.deterministic).toBe(2);
+        expect(cov.cells).toBe(2);
+    });
+
+    it("separates the judged-only tail from low coverage", () => {
+        // `cells - deterministic` is the number of tasks with no deterministic
+        // spec at all — a different problem from a spec that half-resolved.
+        const cov = coverageFor([row("a", 0.5), row("b"), row("c")]);
+        expect(cov.deterministic).toBe(1);
+        expect(cov.cells).toBe(3);
+        expect(cov.mean).toBe(50);
     });
 });

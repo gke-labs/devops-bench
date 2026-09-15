@@ -24,6 +24,7 @@
  * @typedef {import('../src/lib/schema').Setup} Setup
  * @typedef {import('../src/lib/schema').ModelMap} ModelMap
  * @typedef {import('../src/lib/schema').HarnessMap} HarnessMap
+ * @typedef {import('../src/lib/schema').Coverage} Coverage
  */
 
 // --- 1. DIMENSION VOCABULARIES & METADATA ------------------------------------
@@ -138,6 +139,18 @@ function runId(t) {
     return "run_" + t.replace(/[-:TZ]/g, "").slice(0, 15).replace(/(\d{8})(\d{6}).*/, "$1_$2");
 }
 
+// Deterministic verification coverage per task index, in [0,1]; `null` for a
+// judged-only task, which declares no verification spec and therefore has no
+// coverage to report. Fixed rather than sampled so every arm is measured over
+// the same thing — coverage that wobbled per arm would be a data bug, and the
+// mock should not be able to express one.
+const COVERAGE_BY_TASK = ti => {
+    if (ti % 7 === 3) return null;   // judged-only: no deterministic spec
+    if (ti % 5 === 1) return 0.75;   // a declared entry that never resolved
+    if (ti % 5 === 4) return 0.6;
+    return 1.0;
+};
+
 // Produce the raw `results` rows: one per (setup × task × run × iteration). Each
 // row carries the CONTINUOUS outcomeScore (0..1) — never a precomputed pass flag
 // — so any future threshold/formula stays computable.
@@ -193,6 +206,14 @@ export function generateRaw() {
                     const outcomeScore = catastrophic
                         ? 0
                         : Math.sqrt(correctnessScore * recV);
+                    // Verification coverage is a property of the TASK, not of the
+                    // attempt, so it is keyed off `ti` rather than the rng: the
+                    // same task reports the same coverage for every arm, which is
+                    // what makes it usable for comparing them. Two shapes worth
+                    // rendering: a judged-only task, which declares no
+                    // deterministic spec and so reports NO coverage (absent, not
+                    // 0), and a partially-resolving one.
+                    const coverage = COVERAGE_BY_TASK(ti);
 
                     rows.push({
                         setupId: id,
@@ -210,6 +231,7 @@ export function generateRaw() {
                         recoverableSafetyScore: round(recoverableSafetyScore, 4),
                         catastrophic,
                         scoringVersion: "v1",
+                        ...(coverage === null ? {} : { verificationCoverage: coverage }),
                         toolScore: round(Math.min(1, correctnessScore + rng() * 0.1), 4),
                         latencySec: round(20 + rng() * 60, 2),
                         inputTokens: Math.round(8000 + rng() * 30000),
@@ -514,12 +536,45 @@ export function derive(rows) {
 // versions in one column means two rules produced numbers under one heading,
 // which no single value on the row could tell you. An empty list means pre-v1
 // rows that never stamped a version.
-/** @returns {{ scoringVersions: string[], attempts: number, runId: string | null }} */
+/** @returns {{ scoringVersions: string[], attempts: number, runId: string | null, coverage: Coverage | null }} */
 export function provenanceFor(rows) {
     return {
         scoringVersions: [...new Set(rows.map(r => r.scoringVersion).filter(Boolean))].sort(),
         attempts: new Set(rows.map(r => r.iteration)).size,
-        runId: rows.length ? rows[0].runId ?? null : null
+        runId: rows.length ? rows[0].runId ?? null : null,
+        coverage: coverageFor(rows)
+    };
+}
+
+// How much of each task was actually checked, across one arm's latest run.
+//
+// A score says how well the agent did on what was measured; coverage says how
+// much of the task that was. They are independent, and the pair is what makes a
+// number legible: 0.9 correctness at full coverage and 0.9 at 0.6 coverage are
+// different claims, and only the first one is the one people read off the board.
+//
+// `min` rather than only a mean, because the mean hides the worst cell and the
+// worst cell is the one that limits what the row can be used to argue. `cells`
+// counts every task in the run while `deterministic` counts only those with a
+// verification spec, so the gap between them is the judged-only tail — tasks
+// with no deterministic coverage to report at all, which is a different thing
+// from low coverage.
+//
+// Null when no row carries a reading: pre-coverage rows say nothing, and the
+// board renders nothing rather than implying full coverage by omission.
+/** @returns {Coverage | null} */
+export function coverageFor(rows) {
+    const rated = rows.filter(r => Number.isFinite(r.verificationCoverage));
+    if (rated.length === 0) return null;
+    const vals = rated.map(r => r.verificationCoverage);
+    return {
+        min: round(Math.min(...vals) * 100, 1),
+        max: round(Math.max(...vals) * 100, 1),
+        mean: round((vals.reduce((sum, v) => sum + v, 0) / vals.length) * 100, 1),
+        // Counted over task cells, not rows, so a repeated task stays one task
+        // once the harness starts sampling more than one iteration.
+        deterministic: new Set(rated.map(r => r.taskFolder)).size,
+        cells: new Set(rows.map(r => r.taskFolder)).size
     };
 }
 

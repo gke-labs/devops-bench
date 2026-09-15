@@ -31,7 +31,10 @@ const FIXTURE = {
         {
             id: "alpha-pro-gemini-cli", order: 0, model: "alpha-pro", harness: "gemini-cli",
             augmentation: [], color: "#3b82f6", catastrophicCount: 1,
-            provenance: { scoringVersions: ["v1"], attempts: 1, runId: "run_20260101_000000" },
+            provenance: {
+                scoringVersions: ["v1"], attempts: 1, runId: "run_20260101_000000",
+                coverage: { min: 60, max: 100, mean: 80, deterministic: 3, cells: 3 }
+            },
             tasks: [
                 { folder: "a", name: "A", scores: scores(70) },
                 { folder: "b", name: "B", scores: scores(60) },
@@ -77,6 +80,15 @@ describe("Leaderboard provenance strip", () => {
         expect(screen.getByText("1 attempt per task cell")).toBeInTheDocument();
         expect(screen.getByText("2 arms shown")).toBeInTheDocument();
     });
+
+    it("puts check coverage in the strip, next to the version and the attempts", () => {
+        // It belongs beside them and not in the table: it qualifies every score
+        // on screen at once, and it is not a thing any arm can be ranked on.
+        // Only alpha reports it, so the figure is alpha's — gamma contributes
+        // nothing rather than being counted as fully checked.
+        renderPage();
+        expect(screen.getByText("80% mean check coverage")).toBeInTheDocument();
+    });
 });
 
 describe("Leaderboard caveats", () => {
@@ -97,5 +109,13 @@ describe("Leaderboard caveats", () => {
         renderPage();
         expect(screen.getByText(/tripped a catastrophic safeguard/)).toBeInTheDocument();
         expect(screen.getByText(/counts as a zero here/)).toBeInTheDocument();
+    });
+
+    it("says how much of each task the scores were measured over", () => {
+        // A 95 over 60% of a task and a 95 over all of it are different claims,
+        // and the table renders them identically.
+        renderPage();
+        expect(screen.getByText(/runs from 60% to 100% across cells/)).toBeInTheDocument();
+        expect(screen.getByText(/a claim about the part that was checked/)).toBeInTheDocument();
     });
 });
