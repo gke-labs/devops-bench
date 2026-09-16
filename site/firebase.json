@@ -7,6 +7,10 @@
     {
       "database": "leaderboard-test",
       "rules": "firestore.rules"
+    },
+    {
+      "database": "leaderboard-dev",
+      "rules": "firestore.dev.rules"
     }
   ],
   "hosting": {

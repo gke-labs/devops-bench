@@ -11,7 +11,8 @@ const BRANDS = {
     gamma: { fill: "#f97316", letter: "C" },
     gemini: { fill: "#4285F4", letter: "G" },
     claude: { fill: "#d97757", letter: "C" },
-    openai: { fill: "#10a37f", letter: "O" }
+    openai: { fill: "#10a37f", letter: "O" },
+    qwen: { fill: "#615ced", letter: "Q" }
 };
 
 export const BRAND_KEYS = Object.keys(BRANDS);

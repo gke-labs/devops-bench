@@ -1,0 +1,22 @@
+rules_version = '2';
+
+// Security rules for the INTERNAL dev database (`leaderboard-dev`).
+//
+// Deliberately not `firestore.rules`. That file world-reads `models`,
+// `harnesses` and `setups` because the dashboard is a public read-only view,
+// and its `match /databases/{database}/documents` wildcard would apply the same
+// grant to every named DB in the project. The web API key and project id are
+// committed in `site/.env` in a public repo and App Check is not enabled, so a
+// world-readable collection here would be readable by anyone who clones it.
+//
+// So: no client access at all. Reads happen through the Admin SDK under
+// Application Default Credentials (`ingest/sync.mjs`), which bypasses these
+// rules, and access is therefore gated by project IAM rather than by a rule the
+// browser could satisfy. Writes go through the Admin SDK too (`ingest.mjs`).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
