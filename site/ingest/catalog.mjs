@@ -28,6 +28,15 @@ export const MODELS = {
     "gemini-3.7-flash": { name: "Gemini 3.7 Flash", provider: "Google",  license: "Proprietary", logo: "gemini" },
     "claude-opus-5":    { name: "Claude Opus 5",    provider: "Anthropic", license: "Proprietary", logo: "claude" },
     "claude-fable-5":   { name: "Claude Fable 5",   provider: "Anthropic", license: "Proprietary", logo: "claude" },
+    // Point release. Needs its own entry because the substring pass would
+    // otherwise fold "claude-fable-5-1" into "claude-fable-5" and label the
+    // 5.1 runs as 5.
+    "claude-fable-5-1": { name: "Claude Fable 5.1", provider: "Anthropic", license: "Proprietary", logo: "claude" },
+    // "-high" is a reasoning-effort setting, not a distinct model, so it shares
+    // the base model's metadata. 3.7 gets that for free through the substring
+    // pass against "gemini-3.7-flash"; 3.8 has no base key, so it is listed.
+    "gemini-3.8-flash-high": { name: "Gemini 3.8 Flash", provider: "Google", license: "Proprietary", logo: "gemini" },
+    "qwen3.8-27b-fp8":  { name: "Qwen3.8 27B (FP8)", provider: "Alibaba", license: "Open Source", logo: "qwen" },
     "gpt-5.6-sol":      { name: "GPT-5.6 Sol",      provider: "OpenAI",  license: "Proprietary", logo: "openai" }
 };
 
@@ -37,7 +46,8 @@ export const HARNESSES = {
     "openclaw":    { name: "OpenClaw",    type: "cli", accent: "#f43f5e", logo: "claw" },
     "api-loop":    { name: "API Runner",  type: "api", accent: "#8b5cf6", logo: "braces" },
     "antigravity": { name: "Antigravity", type: "cli", accent: "#f59e0b", logo: "arrow-up" },
-    "kubeagents":  { name: "KubeAgents",  type: "cli", accent: "#14b8a6", logo: "cluster" }
+    "kubeagents":  { name: "KubeAgents",  type: "cli", accent: "#14b8a6", logo: "cluster" },
+    "claude-code": { name: "Claude Code", type: "cli", accent: "#d97757", logo: "terminal" }
 };
 
 // --- raw identity -> curated id ----------------------------------------------
@@ -61,7 +71,12 @@ export const MODEL_ALIASES = {
     // there is no bare "claude" key. Dated/versioned suffixes still resolve
     // through the substring pass against these ids.
     "claude-opus-5": "claude-opus-5",
+    // Longest-first: an exact hit on "claude-fable-5-1" must be reachable before
+    // the substring pass folds it into "claude-fable-5".
+    "claude-fable-5-1": "claude-fable-5-1",
     "claude-fable-5": "claude-fable-5",
+    "gemini-3.8-flash-high": "gemini-3.8-flash-high",
+    "qwen3.8-27b-fp8": "qwen3.8-27b-fp8",
     "gpt-5.6-sol": "gpt-5.6-sol"
 };
 
@@ -82,7 +97,11 @@ export const HARNESS_ALIASES = {
     // a producer emits needs its own key. "kube-agents" is how the fleet reports
     // it in prose; "kubeagents" is the value that lands on the row.
     "kubeagents": "kubeagents",
-    "kube-agents": "kubeagents"
+    "kube-agents": "kubeagents",
+    // The runner emits the underscored spelling; both are kept so a rename in
+    // either direction still lands on one leaderboard row.
+    "claude_code": "claude-code",
+    "claude-code": "claude-code"
 };
 
 // --- presentation ------------------------------------------------------------
