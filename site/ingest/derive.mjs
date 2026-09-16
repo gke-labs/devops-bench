@@ -24,7 +24,7 @@
 // catalog (see collectMetadata in catalog.mjs); this module only emits setups.
 // =============================================================================
 
-import { PASS_THRESHOLD, efficiencyFor, passAtK } from "../seed/mock-data.mjs";
+import { PASS_THRESHOLD, efficiencyFor, passKScores } from "../seed/mock-data.mjs";
 import { PALETTE, SETUP_CATALOG } from "./catalog.mjs";
 
 /**
@@ -32,8 +32,6 @@ import { PALETTE, SETUP_CATALOG } from "./catalog.mjs";
  * @typedef {import('../src/lib/schema').Setup} Setup
  * @typedef {import('../src/lib/schema').Scores} Scores
  */
-
-const K = 5; // the k in pass@5; keep aligned with the mock's K.
 
 function round(v, dp) {
     if (typeof v !== "number" || !Number.isFinite(v)) return null;
@@ -47,11 +45,12 @@ function round(v, dp) {
 // missing data, not a 0% pass — mirroring the schema's nullable Scores. A group
 // with no scored iterations yields all-null (the UI renders these as blank).
 //
-// pass5/passMax stay null today: the harness emits a single iteration per
-// (setup × task × run), so pass@k would only ever collapse onto pass1, and the
-// dashboard's MetricToggle hides metrics that are all-null. passAtK + K are kept
-// (imported above) to re-enable here, unchanged, once multi-iteration runs land
-// — keeping mock and real data scored by exactly one definition.
+// pass5/passMax are emitted as null placeholders here: they are CROSS-RUN
+// metrics — the harness emits one iteration per (setup × task × run), so the
+// repeated attempts pass@k samples over arrive as distinct runIds. derive()
+// overrides the placeholders by spreading passKScores (imported above, shared
+// with the mock so both datasets are scored by exactly one definition) over
+// every attempt of the (setup, task).
 /** @returns {Scores} */
 function scoresFor(rows) {
     const scored = rows.filter(r => Number.isFinite(r.outcomeScore));
@@ -177,7 +176,12 @@ export function derive(rows, opts = {}) {
             return {
                 folder,
                 name: taskRows[0].taskName || folder,
-                scores: scoresFor(taskRows),
+                scores: {
+                    ...scoresFor(taskRows),
+                    // pass@k pools EVERY attempt of this task — all runs, all
+                    // iterations — overriding scoresFor's null placeholders.
+                    ...passKScores(setupRows.filter(r => r.taskFolder === folder))
+                },
                 catastrophic: taskRows.some(r => r.catastrophic === true)
             };
         });
@@ -186,9 +190,14 @@ export function derive(rows, opts = {}) {
         const history = runTimes.map(t => {
             const runRows = setupRows.filter(r => r.t === t);
             const perTaskFolders = firstSeenOrder(runRows, r => r.taskFolder);
-            const perTask = [...perTaskFolders.keys()].map(folder =>
-                scoresFor(runRows.filter(r => r.taskFolder === folder))
-            );
+            const perTask = [...perTaskFolders.keys()].map(folder => ({
+                ...scoresFor(runRows.filter(r => r.taskFolder === folder)),
+                // Cumulative: the pass@k estimate AS OF run t pools every attempt
+                // up to and including t, so the trend line shows the estimate
+                // tightening as attempts accumulate. (ISO timestamps compare
+                // lexicographically.)
+                ...passKScores(setupRows.filter(r => r.t <= t && r.taskFolder === folder))
+            }));
             return { t, scores: meanScores(perTask) };
         });
 

@@ -27,7 +27,8 @@ describe("derive — data-driven", () => {
         ]);
 
         // Latest run (June 15): both iterations >= 0.7 -> pass1 = 100. pass5/passMax
-        // stay null (pass1-only until the harness emits multi-iteration runs).
+        // are null because the task has only 4 scored attempts across both runs
+        // — fewer than K = 5, so there is no estimate (never an extrapolation).
         const arch = alpha.tasks.find(t => t.folder === "get-app-architecture");
         // toMatchObject: v1 adds composite/correctness/recoverableSafety keys;
         // assert the pass@k intent without pinning the full shape.
@@ -91,6 +92,49 @@ describe("derive — data-driven", () => {
             outputTokens: null,
             cachedTokens: null
         });
+    });
+
+    it("pools pass@k attempts across runs: 5 single-iteration runs make one estimate", () => {
+        // The real harness emits ONE iteration per (setup × task × run), so the
+        // repeated attempts pass@k needs arrive as 5 distinct runIds. 4 perfect
+        // (1.0) + 1 imperfect: n=5, c=4 -> pass@5 = 100 (fewer than 5 failures),
+        // pass^5 = 0 (not every attempt passed).
+        const base = {
+            setupId: "s", model: "m", harness: "h", augmentation: [],
+            taskFolder: "task-a", taskName: "Task A", status: "success",
+            toolScore: null, latencySec: 1, inputTokens: null, outputTokens: null,
+            iteration: 0
+        };
+        const scores = [1.0, 1.0, 1.0, 1.0, 0.9];
+        const rows = scores.map((outcomeScore, i) => ({
+            ...base,
+            runId: `run_2026010${i + 1}_000000`,
+            t: `2026-01-0${i + 1}T00:00:00Z`,
+            outcomeScore
+        }));
+        const setups = derive(rows);
+        const task = setups[0].tasks.find(t => t.folder === "task-a");
+        expect(task.scores.pass5).toBe(100);
+        expect(task.scores.passMax).toBe(0);
+        // Only a PERFECT composite counts: 0.9 cleared pass1's bar but not this one.
+        expect(task.scores.pass1).toBe(100);
+
+        // All 5 perfect -> both metrics saturate.
+        const allPerfect = derive(rows.map(r => ({ ...r, outcomeScore: 1.0 })));
+        const perfectTask = allPerfect[0].tasks.find(t => t.folder === "task-a");
+        expect(perfectTask.scores.pass5).toBe(100);
+        expect(perfectTask.scores.passMax).toBe(100);
+
+        // 4 runs only -> n < K, no estimate.
+        const four = derive(rows.slice(0, 4));
+        const fourTask = four[0].tasks.find(t => t.folder === "task-a");
+        expect(fourTask.scores.pass5).toBeNull();
+        expect(fourTask.scores.passMax).toBeNull();
+
+        // History is cumulative: the point at each run t estimates from every
+        // attempt up to t, so the first 4 points are null and the 5th reports.
+        expect(setups[0].history.map(h => h.scores.pass5)).toEqual([null, null, null, null, 100]);
+        expect(setups[0].history.map(h => h.scores.passMax)).toEqual([null, null, null, null, 0]);
     });
 
     it("treats latencySec 0 as unmeasured, so it can't rank as the fastest", () => {
