@@ -3,7 +3,11 @@ import {
     generateRaw,
     derive,
     passAtK,
+    passPowK,
+    passKScores,
     PASS_THRESHOLD,
+    PASSK_THRESHOLD,
+    K,
     inputTokensOf,
     outputTokensOf,
     cachedTokensOf,
@@ -105,6 +109,74 @@ describe("passAtK", () => {
     });
 });
 
+describe("passPowK", () => {
+    it("is 1 only when every attempt passed", () => {
+        expect(passPowK(5, 5, 5)).toBe(1);
+        expect(passPowK(20, 20, 5)).toBe(1);
+    });
+
+    it("is 0 when fewer passes than samples exist", () => {
+        // c = 4 < k = 5 → every 5-subset must contain a failure.
+        expect(passPowK(5, 4, 5)).toBe(0);
+        expect(passPowK(20, 0, 5)).toBe(0);
+    });
+
+    it("matches C(c,k)/C(n,k) on a hand-computed case", () => {
+        // C(5,5)/C(10,5) = 1/252.
+        expect(passPowK(10, 5, 5)).toBeCloseTo(1 / 252, 10);
+    });
+
+    it("equals c/n at k=1, where 'all pass' and 'one passes' coincide", () => {
+        expect(passPowK(20, 9, 1)).toBeCloseTo(9 / 20, 10);
+        expect(passPowK(20, 9, 1)).toBeCloseTo(passAtK(20, 9, 1), 10);
+    });
+
+    it("never exceeds passAtK for the same (n, c, k)", () => {
+        // "All k pass" is a sub-event of "at least one of k passes".
+        for (let c = 0; c <= 20; c++) {
+            expect(passPowK(20, c, 5)).toBeLessThanOrEqual(passAtK(20, c, 5));
+        }
+    });
+});
+
+describe("passKScores", () => {
+    const attempt = outcomeScore => ({ outcomeScore });
+
+    it("is null below K scored attempts — no estimate beats extrapolation", () => {
+        const four = Array.from({ length: K - 1 }, () => attempt(1.0));
+        expect(passKScores(four)).toEqual({ pass5: null, passMax: null });
+        expect(passKScores([])).toEqual({ pass5: null, passMax: null });
+    });
+
+    it("treats unscored attempts as missing data, not failures", () => {
+        // 5 perfect + 1 unscored: the null drops out of n entirely.
+        const rows = [...Array.from({ length: 5 }, () => attempt(1.0)), attempt(null)];
+        expect(passKScores(rows)).toEqual({ pass5: 100, passMax: 100 });
+        // ...and if the null made n dip below K, the estimate disappears.
+        expect(passKScores([...Array.from({ length: 4 }, () => attempt(1.0)), attempt(null)]))
+            .toEqual({ pass5: null, passMax: null });
+    });
+
+    it("only a PERFECT outcomeScore counts as a pass", () => {
+        // 0.9999 clears pass1's 0.7 bar but not the pass@k bar.
+        const rows = Array.from({ length: 5 }, () => attempt(0.9999));
+        expect(passKScores(rows)).toEqual({ pass5: 0, passMax: 0 });
+        expect(PASSK_THRESHOLD).toBe(1.0);
+    });
+
+    it("pools attempts into the unbiased estimators, as percentages", () => {
+        // n=10, c=5: pass@5 = 1 - C(5,5)/C(10,5), pass^5 = C(5,5)/C(10,5).
+        const rows = [
+            ...Array.from({ length: 5 }, () => attempt(1.0)),
+            ...Array.from({ length: 5 }, () => attempt(0.4))
+        ];
+        expect(passKScores(rows)).toEqual({
+            pass5: Math.round((1 - 1 / 252) * 1000) / 10,
+            passMax: Math.round((1 / 252) * 1000) / 10
+        });
+    });
+});
+
 describe("generateRaw", () => {
     it("is deterministic across calls", () => {
         expect(generateRaw()).toEqual(generateRaw());
@@ -130,14 +202,27 @@ describe("derive", () => {
         for (const s of setups) expect(s.tasks).toHaveLength(12);
     });
 
-    it("yields a numeric pass1 and null pass5/passMax per task (pass1-only today)", () => {
+    it("yields numeric pass1/pass5/passMax per task (every mock task has ≥K attempts)", () => {
         for (const s of setups) {
             for (const t of s.tasks) {
                 expect(typeof t.scores.pass1).toBe("number");
-                expect(t.scores.pass5).toBeNull();
-                expect(t.scores.passMax).toBeNull();
+                expect(typeof t.scores.pass5).toBe("number");
+                expect(typeof t.scores.passMax).toBe("number");
+                // Pass^5 ⊆ Pass@5: consistency can never exceed capability.
+                expect(t.scores.passMax).toBeLessThanOrEqual(t.scores.pass5);
             }
         }
+    });
+
+    it("pools pass@k attempts across every run, not just the latest", () => {
+        const s = setups[0];
+        const folder = s.tasks[0].folder;
+        const attempts = raw.filter(
+            r => r.setupId === s.id && r.taskFolder === folder && Number.isFinite(r.outcomeScore)
+        );
+        const c = attempts.filter(r => r.outcomeScore >= PASSK_THRESHOLD).length;
+        expect(s.tasks[0].scores.pass5).toBeCloseTo(100 * passAtK(attempts.length, c, K), 1);
+        expect(s.tasks[0].scores.passMax).toBeCloseTo(100 * passPowK(attempts.length, c, K), 1);
     });
 
     it("orders history by time ascending", () => {
@@ -176,12 +261,25 @@ describe("derive", () => {
             .tasks.find(t => t.folder === folder);
         expect(task.scores).toMatchObject({
             pass1: null,
-            pass5: null,
-            passMax: null,
             composite: null,
             correctness: null,
             recoverableSafety: null
         });
+        // pass@k pools attempts across EVERY run, so blanking the latest run's
+        // cell only shrinks n — earlier runs still provide ≥K scored attempts.
+        expect(typeof task.scores.pass5).toBe("number");
+        expect(typeof task.scores.passMax).toBe("number");
+        // Blank the task across ALL runs and the pass@k estimate disappears too.
+        const fullyBlanked = raw.map(r =>
+            r.setupId === s.id && r.taskFolder === folder
+                ? { ...r, outcomeScore: null, correctnessScore: null, recoverableSafetyScore: null }
+                : r
+        );
+        const blankTask = derive(fullyBlanked)
+            .find(x => x.id === s.id)
+            .tasks.find(t => t.folder === folder);
+        expect(blankTask.scores.pass5).toBeNull();
+        expect(blankTask.scores.passMax).toBeNull();
         // Efficiency is telemetry, not a score: the blanked cell still consumed
         // wall-clock and tokens, so those survive while every score is null.
         expect(task.scores.latency).toBeGreaterThan(0);

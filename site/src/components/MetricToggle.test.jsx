@@ -80,7 +80,7 @@ describe("MetricToggle", () => {
         // harness that reports no timings put "Available once multi-iteration
         // runs land" under Latency, which has nothing to do with iterations.
         render(<MetricToggle value="composite" onChange={() => {}} available={["composite"]} />);
-        expect(buttonFor("pass5")).toHaveAttribute("title", "Available once multi-iteration runs land");
+        expect(buttonFor("pass5")).toHaveAttribute("title", "Needs 5 scored attempts of a task (repeated runs)");
         expect(buttonFor("latency")).toHaveAttribute("title", "Not reported by these runs");
         expect(buttonFor("outputTokens")).toHaveAttribute("title", "Not reported by these runs");
     });

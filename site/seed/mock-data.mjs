@@ -173,9 +173,16 @@ export function generateRaw() {
                     // threshold change stays meaningful. (This is the old
                     // outcomeScore — now correctness, a component of the composite.)
                     const passing = rng() < p;
-                    const correctnessScore = passing
+                    // Snap the top of the passing band to exactly 1.0: real data
+                    // contains perfect runs (deterministic verification awards
+                    // full marks), and a continuous draw almost never hits the
+                    // PASSK_THRESHOLD == 1.0 pass@k bar, which would leave the
+                    // seeded demo's pass@5/pass^5 all-zero. Same draw, so the RNG
+                    // sequence — and every other mock value — is unchanged.
+                    const drawn = passing
                         ? PASS_THRESHOLD + rng() * (1 - PASS_THRESHOLD)
                         : rng() * PASS_THRESHOLD;
+                    const correctnessScore = drawn >= 0.97 ? 1 : drawn;
                     // Recoverable safety: the RAW pass fraction, as the producer
                     // emits it. Usually clean (1.0); occasionally a partial
                     // violation, and 0 is in contract — the [0.1, 1.0] rescale is
@@ -243,7 +250,14 @@ export function generateRaw() {
 // (or the pass@k estimator below) and re-running derive() re-scores everything
 // from the same raw data.
 export const PASS_THRESHOLD = 0.7;
-const K = 5; // the k in pass@5
+
+// A pass@k / pass^k attempt "passes" only on a PERFECT composite outcomeScore:
+// full correctness, every safety check respected, no catastrophic action
+// (scores are stored rounded, so a perfect run compares equal exactly).
+// Deliberately a separate constant from PASS_THRESHOLD — pass1 keeps its
+// correctness bar (see kubernetes-sigs/devops-bench#92).
+export const PASSK_THRESHOLD = 1.0;
+export const K = 5; // the k in pass@5 / pass^5
 
 // Unbiased pass@k estimator: probability that at least one of k samples passes,
 // given c passes out of n iterations. Returns a fraction in [0,1].
@@ -258,10 +272,41 @@ export function passAtK(n, c, k) {
     return 1 - prod;
 }
 
+// Unbiased pass^k estimator: probability that ALL of k samples pass, given c
+// passes out of n attempts — C(c, k) / C(n, k), the consistency counterpart to
+// passAtK. Returns a fraction in [0,1]. Exported for direct unit testing.
+export function passPowK(n, c, k) {
+    if (c < k) return 0; // fewer passes than samples → some sampled attempt must fail
+    // C(c, k) / C(n, k), computed as a running product to avoid overflow.
+    let prod = 1;
+    for (let i = 0; i < k; i++) prod *= (c - i) / (n - i);
+    return prod;
+}
+
+// The pass@k slice of Scores for ALL attempts of one (setup, task) — pooled
+// across every run AND iteration, unlike scoresFor's single-run slice. The
+// repeated attempts ARE the samples: today the harness emits one iteration per
+// run, so k attempts arrive as k runIds; when multi-iteration runs land, the
+// iterations pool in with no formula change. Attempts with no finite
+// outcomeScore are missing data (excluded from both n and c), and fewer than K
+// scored attempts is too few to estimate from — null (blank in the UI), never
+// an extrapolation: one lucky attempt must not read as pass@5 = 100%.
+export function passKScores(taskRows) {
+    const scored = taskRows.filter(r => Number.isFinite(r.outcomeScore));
+    const n = scored.length;
+    if (n < K) return { pass5: null, passMax: null };
+    const c = scored.filter(r => r.outcomeScore >= PASSK_THRESHOLD).length;
+    return {
+        pass5: round(passAtK(n, c, K) * 100, 1),
+        passMax: round(passPowK(n, c, K) * 100, 1)
+    };
+}
+
 // Compute {pass1, pass5, passMax} (as percentages) for a list of iteration rows
-// that all belong to the same (setup, task, run). pass5/passMax stay null until
-// the harness produces multi-iteration runs — passAtK() and K are kept
-// (re-enable here when that lands; nothing about the formula needs to change).
+// that all belong to the same (setup, task, run). pass5/passMax are emitted as
+// null placeholders here — they are cross-run metrics, overridden by spreading
+// passKScores() over this result (see derive below) — so the Scores shape stays
+// total even for groups that never reach K attempts.
 function scoresFor(rows) {
     // pass1 is a rate over the run's SCORED iterations (PROTOCOL.md §4), so an
     // unscored row is missing data — not a failure — and never reaches the
@@ -443,7 +488,12 @@ export function derive(rows) {
                 return {
                     folder: task.folder,
                     name: task.name,
-                    scores: scoresFor(taskRows),
+                    scores: {
+                        ...scoresFor(taskRows),
+                        // pass@k pools EVERY attempt of this task — all runs, all
+                        // iterations — overriding scoresFor's null placeholders.
+                        ...passKScores(setupRows.filter(r => r.taskFolder === task.folder))
+                    },
                     catastrophic: taskRows.some(r => r.catastrophic === true)
                 };
             });
@@ -452,7 +502,14 @@ export function derive(rows) {
         const history = runTimes.map(t => {
             const perTask = TASK_CATALOG
                 .filter(task => setupRows.some(r => r.t === t && r.taskFolder === task.folder))
-                .map(task => scoresFor(setupRows.filter(r => r.t === t && r.taskFolder === task.folder)));
+                .map(task => ({
+                    ...scoresFor(setupRows.filter(r => r.t === t && r.taskFolder === task.folder)),
+                    // Cumulative: the pass@k estimate AS OF run t pools every
+                    // attempt up to and including t, so the trend line shows the
+                    // estimate tightening as attempts accumulate. (ISO timestamps
+                    // compare lexicographically.)
+                    ...passKScores(setupRows.filter(r => r.t <= t && r.taskFolder === task.folder))
+                }));
             return { t, scores: meanScores(perTask) };
         });
 

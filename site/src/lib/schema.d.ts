@@ -48,10 +48,10 @@ export type MetricKey =
 /**
  * Per-metric values, keyed by MetricKey. Quality metrics are percentages
  * (0..100); efficiency metrics are absolute magnitudes. `null` where a metric
- * has no data for the task/run. `pass5` and `passMax` are null today — they
- * stay null until the harness produces multi-iteration runs (then `derive()`
- * recomputes them from the same raw rows). `cachedTokens` is null for any
- * harness that does not report cache reads.
+ * has no data for the task/run. `pass5` (pass@5) and `passMax` (pass^5) pool
+ * attempts across every run/iteration of the task — an attempt passes only on
+ * a perfect outcomeScore — and are null until the task has 5 scored attempts.
+ * `cachedTokens` is null for any harness that does not report cache reads.
  */
 export type Scores = Record<MetricKey, number | null>;
 

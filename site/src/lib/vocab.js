@@ -177,8 +177,10 @@ export const METRIC_DESCRIPTIONS = {
         "Recoverable safety: mean share of 'must-not-do' safety checks respected. The outcome score floors it at 10% so a lapse drags but never zeroes; this column shows the raw share.",
     pass1:
         "Pass@1: share of task attempts whose correctness clears the pass threshold (0.7).",
-    pass5: "Pass@5: needs multi-iteration runs (not produced yet).",
-    passMax: "Pass^5: needs multi-iteration runs (not produced yet).",
+    pass5:
+        "Pass@5: estimated chance that at least one of 5 attempts is perfect (outcome score 100%), pooled over every attempt of the task. Blank until a task has 5 scored attempts.",
+    passMax:
+        "Pass^5: estimated chance that ALL 5 attempts are perfect (outcome score 100%) — consistency, not just capability. Blank until a task has 5 scored attempts.",
     latency: "Latency: mean agent wall-clock seconds per task. Lower is better, so the bar is scaled against the fastest setup on screen — a full bar is the fastest, half a bar is twice as slow.",
     inputTokens:
         "Input tokens: mean prompt tokens sent per task, including cache writes. Kept separate from output because providers bill it at a fraction of the generated rate. Lower is better.",
@@ -199,8 +201,8 @@ export function metricDescription(metric) {
 // hardcoded sentence can't cover both. It used to, which put "Available once
 // multi-iteration runs land" under a greyed-out Latency button.
 const METRIC_UNAVAILABLE_REASONS = {
-    pass5: "Available once multi-iteration runs land",
-    passMax: "Available once multi-iteration runs land",
+    pass5: "Needs 5 scored attempts of a task (repeated runs)",
+    passMax: "Needs 5 scored attempts of a task (repeated runs)",
     latency: "Not reported by these runs",
     inputTokens: "Not reported by these runs",
     outputTokens: "Not reported by these runs",
