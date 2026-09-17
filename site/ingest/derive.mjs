@@ -12,8 +12,8 @@
 //   tasks   <- distinct row.taskFolder at the LATEST run of each setup
 //   history <- one aggregate point per distinct row.t, time-ordered
 //
-// The SCORING FORMULA is NOT duplicated here — PASS_THRESHOLD, the pass@k
-// estimator and the efficiency projection are imported from seed/mock-data.mjs
+// The SCORING FORMULA is NOT duplicated here — PASSK_THRESHOLD, the pass@k
+// estimators and the efficiency projection are imported from seed/mock-data.mjs
 // so test data and real data are scored by exactly one definition. Change the
 // formula there and re-run derive (see the CLI at the bottom) to re-score
 // everything from the same raw rows.
@@ -24,7 +24,7 @@
 // catalog (see collectMetadata in catalog.mjs); this module only emits setups.
 // =============================================================================
 
-import { PASS_THRESHOLD, efficiencyFor, passKScores } from "../seed/mock-data.mjs";
+import { efficiencyFor, passKScores } from "../seed/mock-data.mjs";
 import { PALETTE, SETUP_CATALOG } from "./catalog.mjs";
 
 /**
@@ -39,18 +39,18 @@ function round(v, dp) {
     return Math.round(v * f) / f;
 }
 
-// pass1/pass5/passMax (as percentages) for a list of iteration rows that all
-// belong to the same (setup, task, run). Iterations with a non-finite
-// outcomeScore are EXCLUDED from both n and c — an unscored/failed iteration is
-// missing data, not a 0% pass — mirroring the schema's nullable Scores. A group
-// with no scored iterations yields all-null (the UI renders these as blank).
+// The continuous-mean slice of Scores for a list of iteration rows that all
+// belong to the same (setup, task, run). Rows with a non-finite outcomeScore
+// are EXCLUDED from the means — an unscored/failed iteration is missing data,
+// not a 0 — mirroring the schema's nullable Scores. A group with no scored
+// iterations yields all-null (the UI renders these as blank).
 //
-// pass5/passMax are emitted as null placeholders here: they are CROSS-RUN
-// metrics — the harness emits one iteration per (setup × task × run), so the
-// repeated attempts pass@k samples over arrive as distinct runIds. derive()
-// overrides the placeholders by spreading passKScores (imported above, shared
-// with the mock so both datasets are scored by exactly one definition) over
-// every attempt of the (setup, task).
+// The pass family (pass1/pass5/passMax) is emitted as null placeholders here:
+// those are CROSS-RUN metrics — the harness emits one iteration per
+// (setup × task × run), so the repeated attempts the estimators sample over
+// arrive as distinct runIds. derive() overrides the placeholders by spreading
+// passKScores (imported above, shared with the mock so both datasets are
+// scored by exactly one definition) over every attempt of the (setup, task).
 /** @returns {Scores} */
 function scoresFor(rows) {
     const scored = rows.filter(r => Number.isFinite(r.outcomeScore));
@@ -66,12 +66,6 @@ function scoresFor(rows) {
             ...efficiency
         };
     }
-    // pass1 thresholds on CORRECTNESS `c` (falling back to outcomeScore for
-    // pre-v1 rows) so the pass rate isn't distorted by the √/gate composite.
-    const c = scored.filter(r => {
-        const cv = Number.isFinite(r.correctnessScore) ? r.correctnessScore : r.outcomeScore;
-        return cv >= PASS_THRESHOLD;
-    }).length;
     // Continuous 0..100 means for the v1 dimensions. `composite` reads
     // outcomeScore (the composite); correctness/recoverableSafety read their
     // sub-score fields (null for pre-v1 rows → blank in the UI).
@@ -80,7 +74,7 @@ function scoresFor(rows) {
         return vals.length ? round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100, 1) : null;
     };
     return {
-        pass1: round((c / n) * 100, 1),
+        pass1: null,
         pass5: null,
         passMax: null,
         composite: mean("outcomeScore"),
@@ -220,7 +214,8 @@ export function derive(rows, opts = {}) {
 
 // --- standalone CLI: re-derive from the results already in Firestore ----------
 //
-// Use this after changing the scoring formula (PASS_THRESHOLD / passAtK), to
+// Use this after changing the scoring formula (PASSK_THRESHOLD / the pass@k
+// estimators), to
 // re-score every setup from the existing raw rows WITHOUT re-uploading. The
 // normal path (ingest.mjs) runs derive automatically after each upload.
 //

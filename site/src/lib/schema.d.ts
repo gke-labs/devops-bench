@@ -48,9 +48,10 @@ export type MetricKey =
 /**
  * Per-metric values, keyed by MetricKey. Quality metrics are percentages
  * (0..100); efficiency metrics are absolute magnitudes. `null` where a metric
- * has no data for the task/run. `pass5` (pass@5) and `passMax` (pass^5) pool
- * attempts across every run/iteration of the task — an attempt passes only on
- * a perfect outcomeScore — and are null until the task has 5 scored attempts.
+ * has no data for the task/run. The pass family — `pass1` (pass@1), `pass5`
+ * (pass@5), `passMax` (pass^5) — pools attempts across every run/iteration of
+ * the task; an attempt passes only on a perfect outcomeScore, and each metric
+ * is null until the task has k scored attempts (1, 5 and 5 respectively).
  * `cachedTokens` is null for any harness that does not report cache reads.
  */
 export type Scores = Record<MetricKey, number | null>;
@@ -126,8 +127,8 @@ export interface BenchmarkData {
 // --- raw source-of-truth row (`rows.json`) -----------------------------------
 //
 // One row per (setup × task × run × iteration), emitted by the Python eval
-// harness into `rows.json`. Iteration is always 0 today (pass1-only); the
-// schema is already shaped for multi-iteration runs so pass@k stays
+// harness into `rows.json`. Iteration is always 0 today (one attempt per
+// run); the schema is already shaped for multi-iteration runs so pass@k stays
 // computable when the harness starts sampling. `derive()` turns these rows
 // into the Setup read-model above.
 

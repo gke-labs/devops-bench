@@ -26,25 +26,36 @@ describe("derive — data-driven", () => {
             "2026-06-01T12:00:00Z", "2026-06-15T12:00:00Z"
         ]);
 
-        // Latest run (June 15): both iterations >= 0.7 -> pass1 = 100. pass5/passMax
-        // are null because the task has only 4 scored attempts across both runs
-        // — fewer than K = 5, so there is no estimate (never an extrapolation).
+        // The task has 4 scored attempts across both runs (0.9, 0.5, 0.95,
+        // 0.85): none is a perfect 1.0, so pass1 = 0 under the one shared
+        // threshold; pass5/passMax are null because 4 < K = 5 — no estimate,
+        // never an extrapolation.
         const arch = alpha.tasks.find(t => t.folder === "get-app-architecture");
         // toMatchObject: v1 adds composite/correctness/recoverableSafety keys;
-        // assert the pass@k intent without pinning the full shape.
-        expect(arch.scores).toMatchObject({ pass1: 100, pass5: null, passMax: null });
+        // assert the pass-family intent without pinning the full shape.
+        expect(arch.scores).toMatchObject({ pass1: 0, pass5: null, passMax: null });
 
         // The second setup is discovered too (no hardcoded catalog).
         expect(byId["gamma-coder-api-loop"]).toBeTruthy();
     });
 
-    it("computes pass@1 from the iteration outcomeScores at a threshold of 0.7", () => {
-        // 1 pass (0.9) + 1 fail (0.5) of 2 -> 50%.
+    it("computes pass@1 as the share of PERFECT outcomes — the k=1 estimator", () => {
+        // The fixture's 0.9 would have passed the old correctness@0.7 rule; under
+        // the shared perfect-outcome threshold neither attempt passes (0 of 2).
         const rows = loadResults([path.join(FIXTURES, "run_20260601_120000", "rows.json")]);
         const setups = derive(rows);
         const alpha = setups.find(s => s.id === "alpha-pro-gemini-cli-mcp-skills");
         const arch = alpha.tasks.find(t => t.folder === "get-app-architecture");
-        expect(arch.scores.pass1).toBe(50);
+        expect(arch.scores.pass1).toBe(0);
+
+        // Promote one attempt to a perfect 1.0 and pass@1 = c/n = 1/2.
+        const promoted = rows.map((r, i) =>
+            r.taskFolder === "get-app-architecture" && i === 0 ? { ...r, outcomeScore: 1.0 } : r
+        );
+        const arch2 = derive(promoted)
+            .find(s => s.id === "alpha-pro-gemini-cli-mcp-skills")
+            .tasks.find(t => t.folder === "get-app-architecture");
+        expect(arch2.scores.pass1).toBe(50);
     });
 
     it("assigns order by discovery and honors catalog overrides", () => {
@@ -116,8 +127,9 @@ describe("derive — data-driven", () => {
         const task = setups[0].tasks.find(t => t.folder === "task-a");
         expect(task.scores.pass5).toBe(100);
         expect(task.scores.passMax).toBe(0);
-        // Only a PERFECT composite counts: 0.9 cleared pass1's bar but not this one.
-        expect(task.scores.pass1).toBe(100);
+        // pass1 is the same estimator at k=1: c/n = 4/5. The 0.9 attempt is a
+        // near-miss for the whole family — one threshold, one pooling rule.
+        expect(task.scores.pass1).toBe(80);
 
         // All 5 perfect -> both metrics saturate.
         const allPerfect = derive(rows.map(r => ({ ...r, outcomeScore: 1.0 })));
@@ -132,9 +144,11 @@ describe("derive — data-driven", () => {
         expect(fourTask.scores.passMax).toBeNull();
 
         // History is cumulative: the point at each run t estimates from every
-        // attempt up to t, so the first 4 points are null and the 5th reports.
+        // attempt up to t, so the k=5 pair is null until the 5th run while
+        // pass1 (k=1) reports from the first attempt onward.
         expect(setups[0].history.map(h => h.scores.pass5)).toEqual([null, null, null, null, 100]);
         expect(setups[0].history.map(h => h.scores.passMax)).toEqual([null, null, null, null, 0]);
+        expect(setups[0].history.map(h => h.scores.pass1)).toEqual([100, 100, 100, 100, 80]);
     });
 
     it("treats latencySec 0 as unmeasured, so it can't rank as the fastest", () => {
