@@ -42,7 +42,7 @@ this looks like when it goes wrong.
 | File | Role |
 |---|---|
 | `load.mjs` | `rows.json` files → validated, flat `ResultRow[]`. Discovers `rows.json` recursively under a dir (skips `manifest.json`). Strict: throws with file+index context on any bad row. Pure/testable. |
-| `derive.mjs` | Data-driven `derive(rows)` → `setups` read-model. Discovers setups/tasks **from the rows** (not a hardcoded catalog); reuses `PASS_THRESHOLD`/`passAtK` from `seed/mock-data.mjs`. Also a standalone re-derive CLI. |
+| `derive.mjs` | Data-driven `derive(rows)` → `setups` read-model. Discovers setups/tasks **from the rows** (not a hardcoded catalog); reuses `PASSK_THRESHOLD`/`passKScores` from `seed/mock-data.mjs`. Also a standalone re-derive CLI. |
 | `catalog.mjs` | The dashboard vocabulary: curated `model`/`harness` keys → display metadata, plus per-setup `order`/`color` overrides. Unknown keys are **synthesized, never dropped** (and warned). |
 | `firestore.mjs` | Shared plumbing: target selection, prod-write guard, batched commits, deterministic raw-row doc id. |
 | `ingest.mjs` | The CLI. Idempotent, additive upsert: upload raw → re-derive → upsert metadata. |
@@ -138,7 +138,7 @@ Each path argument is either a `rows.json` file or a directory searched
 
 ## Re-deriving without uploading
 
-Changed the scoring formula (`PASS_THRESHOLD` / pass@k in `seed/mock-data.mjs`)
+Changed the scoring formula (`PASSK_THRESHOLD` / the pass@k estimators in `seed/mock-data.mjs`)
 or `catalog.mjs` presentation? Re-score every setup from the **existing** raw
 rows — no re-upload (emulator from Option A still running, or ADC for real Firestore):
 

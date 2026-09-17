@@ -26,24 +26,36 @@ describe("derive — data-driven", () => {
             "2026-06-01T12:00:00Z", "2026-06-15T12:00:00Z"
         ]);
 
-        // Latest run (June 15): both iterations >= 0.7 -> pass1 = 100. pass5/passMax
-        // stay null (pass1-only until the harness emits multi-iteration runs).
+        // The task has 4 scored attempts across both runs (0.9, 0.5, 0.95,
+        // 0.85): none is a perfect 1.0, so pass1 = 0 under the one shared
+        // threshold; pass5/passMax are null because 4 < K = 5 — no estimate,
+        // never an extrapolation.
         const arch = alpha.tasks.find(t => t.folder === "get-app-architecture");
         // toMatchObject: v1 adds composite/correctness/recoverableSafety keys;
-        // assert the pass@k intent without pinning the full shape.
-        expect(arch.scores).toMatchObject({ pass1: 100, pass5: null, passMax: null });
+        // assert the pass-family intent without pinning the full shape.
+        expect(arch.scores).toMatchObject({ pass1: 0, pass5: null, passMax: null });
 
         // The second setup is discovered too (no hardcoded catalog).
         expect(byId["gamma-coder-api-loop"]).toBeTruthy();
     });
 
-    it("computes pass@1 from the iteration outcomeScores at a threshold of 0.7", () => {
-        // 1 pass (0.9) + 1 fail (0.5) of 2 -> 50%.
+    it("computes pass@1 as the share of PERFECT outcomes — the k=1 estimator", () => {
+        // The fixture's 0.9 would have passed the old correctness@0.7 rule; under
+        // the shared perfect-outcome threshold neither attempt passes (0 of 2).
         const rows = loadResults([path.join(FIXTURES, "run_20260601_120000", "rows.json")]);
         const setups = derive(rows);
         const alpha = setups.find(s => s.id === "alpha-pro-gemini-cli-mcp-skills");
         const arch = alpha.tasks.find(t => t.folder === "get-app-architecture");
-        expect(arch.scores.pass1).toBe(50);
+        expect(arch.scores.pass1).toBe(0);
+
+        // Promote one attempt to a perfect 1.0 and pass@1 = c/n = 1/2.
+        const promoted = rows.map((r, i) =>
+            r.taskFolder === "get-app-architecture" && i === 0 ? { ...r, outcomeScore: 1.0 } : r
+        );
+        const arch2 = derive(promoted)
+            .find(s => s.id === "alpha-pro-gemini-cli-mcp-skills")
+            .tasks.find(t => t.folder === "get-app-architecture");
+        expect(arch2.scores.pass1).toBe(50);
     });
 
     it("assigns order by discovery and honors catalog overrides", () => {
@@ -91,6 +103,52 @@ describe("derive — data-driven", () => {
             outputTokens: null,
             cachedTokens: null
         });
+    });
+
+    it("pools pass@k attempts across runs: 5 single-iteration runs make one estimate", () => {
+        // The real harness emits ONE iteration per (setup × task × run), so the
+        // repeated attempts pass@k needs arrive as 5 distinct runIds. 4 perfect
+        // (1.0) + 1 imperfect: n=5, c=4 -> pass@5 = 100 (fewer than 5 failures),
+        // pass^5 = 0 (not every attempt passed).
+        const base = {
+            setupId: "s", model: "m", harness: "h", augmentation: [],
+            taskFolder: "task-a", taskName: "Task A", status: "success",
+            toolScore: null, latencySec: 1, inputTokens: null, outputTokens: null,
+            iteration: 0
+        };
+        const scores = [1.0, 1.0, 1.0, 1.0, 0.9];
+        const rows = scores.map((outcomeScore, i) => ({
+            ...base,
+            runId: `run_2026010${i + 1}_000000`,
+            t: `2026-01-0${i + 1}T00:00:00Z`,
+            outcomeScore
+        }));
+        const setups = derive(rows);
+        const task = setups[0].tasks.find(t => t.folder === "task-a");
+        expect(task.scores.pass5).toBe(100);
+        expect(task.scores.passMax).toBe(0);
+        // pass1 is the same estimator at k=1: c/n = 4/5. The 0.9 attempt is a
+        // near-miss for the whole family — one threshold, one pooling rule.
+        expect(task.scores.pass1).toBe(80);
+
+        // All 5 perfect -> both metrics saturate.
+        const allPerfect = derive(rows.map(r => ({ ...r, outcomeScore: 1.0 })));
+        const perfectTask = allPerfect[0].tasks.find(t => t.folder === "task-a");
+        expect(perfectTask.scores.pass5).toBe(100);
+        expect(perfectTask.scores.passMax).toBe(100);
+
+        // 4 runs only -> n < K, no estimate.
+        const four = derive(rows.slice(0, 4));
+        const fourTask = four[0].tasks.find(t => t.folder === "task-a");
+        expect(fourTask.scores.pass5).toBeNull();
+        expect(fourTask.scores.passMax).toBeNull();
+
+        // History is cumulative: the point at each run t estimates from every
+        // attempt up to t, so the k=5 pair is null until the 5th run while
+        // pass1 (k=1) reports from the first attempt onward.
+        expect(setups[0].history.map(h => h.scores.pass5)).toEqual([null, null, null, null, 100]);
+        expect(setups[0].history.map(h => h.scores.passMax)).toEqual([null, null, null, null, 0]);
+        expect(setups[0].history.map(h => h.scores.pass1)).toEqual([100, 100, 100, 100, 80]);
     });
 
     it("treats latencySec 0 as unmeasured, so it can't rank as the fastest", () => {
