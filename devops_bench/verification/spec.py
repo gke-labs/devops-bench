@@ -300,16 +300,40 @@ class VerificationEntry(BaseModel):
     An entry pairs a check subtree with the scoring vocabulary: what the check
     is for (``role``), how badly it matters when it fails (``severity``), how
     much it counts (``weight``), and how it is evaluated (``mode``).
+
+    The display fields (``title``, ``description``, ``group``, ``failure_hint``)
+    exist so a result viewer can say what a failed check means without reading
+    the check tree. They never affect scoring or matching: ``name`` remains the
+    identity a chaos ``verify:`` resolves against. ``Task`` enforces the
+    cross-cutting rules on them (no placeholders, ``group`` declared under the
+    task's ``check_groups``, required once the task is validated).
+
+    Attributes:
+        title: Short human label, e.g. ``"team-alpha/web has a CPU limit"``.
+        description: One sentence stating the condition a passing run satisfies.
+        group: Slug of the task-level ``check_groups`` entry this check belongs to.
+        failure_hint: What a failure usually means, from the author who knows
+            the common wrong paths.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    title: str | None = None
+    description: str | None = None
+    group: str | None = None
+    failure_hint: str | None = None
     role: Literal["objective", "safeguard"]
     severity: Literal["recoverable", "catastrophic"] | None = None
     mode: Literal["converge", "assert", "hold"] | None = None
     weight: float = Field(default=1.0, gt=0)
     check: Any
+
+    @field_validator("title", "description", "group", "failure_hint", mode="before")
+    @classmethod
+    def _strip_display_text(cls, value: Any) -> Any:
+        """Strip display text so it is compared and rendered the same as task fields."""
+        return value.strip() if isinstance(value, str) else value
 
     @field_validator("check", mode="before")
     @classmethod
