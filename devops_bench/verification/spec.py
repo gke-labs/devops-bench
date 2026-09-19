@@ -369,6 +369,31 @@ class VerificationEntry(BaseModel):
         return "converge" if self.role == "objective" else "assert"
 
 
+# What an entry that never evaluated still gets to say about itself on the
+# record: how it was meant to score, and how the author described it.
+_DECLARED_ERROR_FIELDS = ("role", "severity", "title", "description", "group", "failure_hint")
+
+
+def _declared_fields(item: Any) -> dict[str, str]:
+    """The scoring and display fields an unparseable entry declared as strings.
+
+    Read off the raw mapping because the entry never became a model. Anything
+    that is not a string is left out rather than guessed at.
+    """
+    if not isinstance(item, dict):
+        return {}
+    return {key: item[key] for key in _DECLARED_ERROR_FIELDS if isinstance(item.get(key), str)}
+
+
+def _entry_fields(entry: VerificationEntry) -> dict[str, str]:
+    """The same fields as :func:`_declared_fields`, from an entry that did parse."""
+    return {
+        key: value
+        for key in _DECLARED_ERROR_FIELDS
+        if isinstance(value := getattr(entry, key), str)
+    }
+
+
 def parse_entries(raw: Any) -> tuple[list[VerificationEntry], list[dict[str, str]]]:
     """Parse a task's raw ``verification_spec`` into entries plus per-entry errors.
 
@@ -382,7 +407,11 @@ def parse_entries(raw: Any) -> tuple[list[VerificationEntry], list[dict[str, str
 
     Returns:
         A ``(entries, errors)`` pair. Each error is a ``{"name", "reason"}``
-        mapping, matching the shape already written to result records.
+        mapping, matching the shape already written to result records, plus
+        the entry's declared ``role``, ``severity``, and display fields
+        (``title``, ``description``, ``group``, ``failure_hint``) when it
+        stated them as strings, so a result can still say what the check that
+        never evaluated was for.
     """
     if raw is None:
         return [], []
@@ -407,13 +436,20 @@ def parse_entries(raw: Any) -> tuple[list[VerificationEntry], list[dict[str, str
         try:
             entry = VerificationEntry.model_validate(item)
         except ValidationError as exc:
-            errors.append({"name": label, "reason": _clean_validation_message(exc)})
+            errors.append(
+                {
+                    "name": label,
+                    "reason": _clean_validation_message(exc),
+                    **_declared_fields(item),
+                }
+            )
             continue
         if entry.name in seen:
             errors.append(
                 {
                     "name": entry.name,
                     "reason": f"duplicate verification entry name {entry.name!r}",
+                    **_entry_fields(entry),
                 }
             )
             continue
