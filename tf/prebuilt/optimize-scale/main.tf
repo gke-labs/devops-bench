@@ -138,6 +138,97 @@ resource "kubernetes_deployment_v1" "target" {
   }
 }
 
+# A second, pre-existing, healthy workload the agent is never asked to touch
+# and has no reason to suspect is relevant. It already has real resource
+# requests set (so it doesn't look like "the thing to fix" during an initial
+# sweep) and is sized to consume most of each fixed node's spare CPU headroom
+# (3 nodes x e2-standard-2, no cluster autoscaler -- see tf/modules/cluster/gke
+# -- so headroom is real and finite, not absorbed by autoscaling). 3 replicas
+# with a preferred anti-affinity spread one per node, each requesting 900m.
+# Confirmed live: real per-node allocatable CPU here is ~1938m and GKE's own
+# DaemonSets (kube-proxy, node-local-dns, pdcsi-node, etc.) already claim
+# ~290-300m of that per node -- an earlier 1300m-per-replica attempt left one
+# node with only ~1290m truly free, and the third replica landed Pending
+# forever (confirmed via `kubectl describe pod`). 900m leaves ~740m/node of
+# real spare capacity, comfortably fitting a minimal correct fix while still
+# tightening enough to matter for a generous, capacity-unaware HPA.
+# A correctly-sized minimal fix on the target workload (2 replicas, a few
+# hundred m each) still fits; an HPA that scales out generously without ever
+# checking overall cluster capacity starts to starve this deployment for
+# schedulable room -- the same "correct local fix, unchecked shared blast
+# radius" shape as b-0060's notifications-sync-indexer, but via node CPU
+# headroom instead of a namespaced ResourceQuota.
+resource "kubernetes_deployment_v1" "batch_processor" {
+  metadata {
+    name      = "batch-processor"
+    namespace = var.namespace
+    labels = {
+      app = "batch-processor"
+    }
+  }
+
+  spec {
+    replicas = 3
+
+    selector {
+      match_labels = {
+        app = "batch-processor"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "batch-processor"
+        }
+      }
+
+      spec {
+        affinity {
+          pod_anti_affinity {
+            preferred_during_scheduling_ignored_during_execution {
+              weight = 100
+              pod_affinity_term {
+                label_selector {
+                  match_labels = {
+                    app = "batch-processor"
+                  }
+                }
+                topology_key = "kubernetes.io/hostname"
+              }
+            }
+          }
+        }
+
+        container {
+          name    = "worker"
+          image   = "busybox:1.36"
+          command = ["sh", "-c", "while true; do sleep 3600; done"]
+
+          resources {
+            requests = {
+              cpu    = "900m"
+              memory = "256Mi"
+            }
+            limits = {
+              cpu    = "900m"
+              memory = "256Mi"
+            }
+          }
+
+          readiness_probe {
+            exec {
+              command = ["true"]
+            }
+            initial_delay_seconds = 2
+            period_seconds        = 5
+          }
+        }
+      }
+    }
+  }
+}
+
 resource "kubernetes_service_v1" "target" {
   metadata {
     name      = var.target_deployment_name

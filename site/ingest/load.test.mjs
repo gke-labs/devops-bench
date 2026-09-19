@@ -108,6 +108,54 @@ describe("validateRow", () => {
         expect(validateRow(null)).toEqual(["not an object"]);
         expect(validateRow([])).toEqual(["not an object"]);
     });
+
+    it("accepts valid catastrophicKinds and catastrophicDetails", () => {
+        expect(validateRow({
+            ...validRow,
+            catastrophic: true,
+            catastrophicKinds: ["VerificationCatastrophic", "IntegrityCatastrophic"],
+            catastrophicDetails: {
+                VerificationCatastrophic: [
+                    { name: "container-image-set@checkout.wl", reason: "deployment/checkout: image mismatch" }
+                ],
+                IntegrityCatastrophic: [
+                    { reason: "Accessed benchmark material" }
+                ]
+            }
+        })).toEqual([]);
+
+        // Empty details allowed on pre-detail rows or non-catastrophic rows
+        expect(validateRow({ ...validRow, catastrophic: true, catastrophicKinds: ["VerificationCatastrophic"], catastrophicDetails: {} })).toEqual([]);
+        expect(validateRow({ ...validRow, catastrophic: false, catastrophicKinds: [], catastrophicDetails: {} })).toEqual([]);
+    });
+
+    it("rejects invalid catastrophicDetails", () => {
+        // Non-empty when catastrophic is false
+        expect(validateRow({
+            ...validRow,
+            catastrophic: false,
+            catastrophicKinds: ["VerificationCatastrophic"],
+            catastrophicDetails: {
+                VerificationCatastrophic: [{ name: "chk", reason: "failed" }]
+            }
+        }).join()).toMatch(/must be empty when catastrophic is false/);
+
+        // Unknown gate name
+        expect(validateRow({
+            ...validRow,
+            catastrophic: true,
+            catastrophicDetails: { UnknownGate: [{ reason: "oops" }] }
+        }).join()).toMatch(/unknown gate/);
+
+        // Reason over 240 chars
+        expect(validateRow({
+            ...validRow,
+            catastrophic: true,
+            catastrophicDetails: {
+                VerificationCatastrophic: [{ name: "chk", reason: "x".repeat(241) }]
+            }
+        }).join()).toMatch(/<= 240 chars/);
+    });
 });
 
 describe("loadFile", () => {

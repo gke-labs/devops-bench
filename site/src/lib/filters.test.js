@@ -68,10 +68,12 @@ describe("buildFilterGroups", () => {
 
     it("derives model options from live setups, excluding unused models", () => {
         const model = groups().find(g => g.key === "model");
-        expect(model.options).toEqual([
+        expect(model.options.map(({ value, text }) => ({ value, text }))).toEqual([
             { value: "alpha-pro", text: "Alpha Pro" },
             { value: "gamma-coder", text: "Gamma Coder" }
         ]);
+        // The catalog entry rides along so the chip can draw the brand mark.
+        expect(model.options[0].model).toBe(models["alpha-pro"]);
         // delta-x exists in `models` but no setup uses it → no chip.
         expect(model.options.some(o => o.value === "delta-x")).toBe(false);
     });

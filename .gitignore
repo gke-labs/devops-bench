@@ -30,3 +30,7 @@ tofu
 
 # Local settings
 settings.local.json
+
+# Local caches
+.cache/
+pr_*.md

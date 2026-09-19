@@ -56,6 +56,60 @@ describe("loadBenchmarkData", () => {
         ]);
     });
 
+    it("normalizes antigravity logo and merges gemini-3.7-flash-high", async () => {
+        firestore.getDocs
+            .mockResolvedValueOnce(forEachSnap([
+                ["gemini-3.7-flash-high", { name: "Gemini 3.7 Flash (High)", logo: "gemini" }]
+            ]))
+            .mockResolvedValueOnce(forEachSnap([
+                ["antigravity", { name: "antigravity", logo: "arrow-up" }]
+            ]))
+            .mockResolvedValueOnce(docsSnap([
+                { id: "s1", order: 0, model: "gemini-3.7-flash-high", harness: "antigravity" }
+            ]));
+
+        const { models, harnesses, setups } = await loadBenchmarkData(fakeDb);
+
+        expect(models["gemini-3.7-flash-high"]).toBeUndefined();
+        expect(models["gemini-3.7-flash"]).toBeDefined();
+        expect(harnesses["antigravity"].logo).toBe("google");
+        expect(harnesses["antigravity"].name).toBe("Antigravity");
+        expect(setups[0].model).toBe("gemini-3.7-flash");
+    });
+
+    it("defensively backfills scores.cost from tokens when omitted in setup", async () => {
+        firestore.getDocs
+            .mockResolvedValueOnce(forEachSnap([
+                ["gemini-3.7-flash", { name: "Gemini 3.7 Flash" }]
+            ]))
+            .mockResolvedValueOnce(forEachSnap([
+                ["gemini-cli", { name: "Gemini CLI" }]
+            ]))
+            .mockResolvedValueOnce(docsSnap([
+                {
+                    id: "s1", order: 0, model: "gemini-3.7-flash", harness: "gemini-cli",
+                    tasks: [
+                        {
+                            folder: "task1",
+                            scores: { inputTokens: 1_000_000, outputTokens: 100_000, cachedTokens: 500_000 }
+                        }
+                    ],
+                    history: [
+                        {
+                            t: "2026-09-11T00:00:00Z",
+                            scores: { inputTokens: 1_000_000, outputTokens: 100_000, cachedTokens: 500_000 }
+                        }
+                    ]
+                }
+            ]));
+
+        const { setups } = await loadBenchmarkData(fakeDb);
+
+        // 1M * 0.75 + 100k * 3.75 + 500k * 0.075 = 0.75 + 0.375 + 0.0375 = 1.1625
+        expect(setups[0].tasks[0].scores.cost).toBe(1.1625);
+        expect(setups[0].history[0].scores.cost).toBe(1.1625);
+    });
+
     it("drops setups whose model/harness ref doesn't resolve, and warns", async () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
         firestore.getDocs

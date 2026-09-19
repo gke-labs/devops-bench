@@ -42,6 +42,34 @@ def test_kubectl_wait_success_returns_raw_output() -> None:
     assert result.children == []
 
 
+def test_kubectl_wait_is_called_with_the_declared_context() -> None:
+    completed = SimpleNamespace(stdout="pod/web condition met\n")
+    with patch(
+        "devops_bench.verification.verifiers.pod_healthy.wait",
+        return_value=completed,
+    ) as mock_wait:
+        PodHealthyVerifier(selector="app=web", context="west").verify(timeout_sec=10)
+
+    assert mock_wait.call_args.kwargs["context"] == "west"
+
+
+def test_polling_fallback_is_called_with_the_declared_context() -> None:
+    fake_pods = {"items": [{"status": {"phase": "Running"}}]}
+    with (
+        patch(
+            "devops_bench.verification.verifiers.pod_healthy.wait",
+            side_effect=SubprocessError(["kubectl"], returncode=1, stderr="timeout"),
+        ),
+        patch(
+            "devops_bench.verification.verifiers.pod_healthy.get_resource",
+            return_value=fake_pods,
+        ) as mock_get,
+    ):
+        PodHealthyVerifier(selector="app=web", context="west").verify(timeout_sec=10)
+
+    assert mock_get.call_args.kwargs["context"] == "west"
+
+
 def test_polling_fallback_when_kubectl_wait_fails_and_pods_running() -> None:
     fake_pods = {
         "items": [

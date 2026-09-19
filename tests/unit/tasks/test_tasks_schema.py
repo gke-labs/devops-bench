@@ -224,6 +224,7 @@ def test_to_dict_roundtrip_fields():
         "infrastructure",
         "documentation",
         "validated",
+        "timeout_sec",
     }
 
 
@@ -242,6 +243,25 @@ def test_validated_empty_block_coalesces_false():
 
 def test_validated_roundtrips_in_to_dict():
     assert Task.from_dict({"name": "n", "validated": True}).to_dict()["validated"] is True
+
+
+def test_timeout_sec_defaults_to_none():
+    assert Task.from_dict({"name": "n"}, name_default="d").timeout_sec is None
+
+
+def test_timeout_sec_parsed_from_spec():
+    task = Task.from_dict({"name": "n", "timeout_sec": 1500}, name_default="d")
+    assert task.timeout_sec == 1500.0
+
+
+def test_timeout_sec_empty_block_defaults_to_none():
+    task = Task.from_dict({"name": "n", "timeout_sec": None}, name_default="d")
+    assert task.timeout_sec is None
+
+
+def test_timeout_sec_non_numeric_raises():
+    with pytest.raises(ValidationError):
+        Task.from_dict({"name": "n", "timeout_sec": "not-a-number"}, name_default="d")
 
 
 def test_safety_checklists_empty_block_coalesces_to_empty_list():

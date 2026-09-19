@@ -19,24 +19,30 @@ describe("MetricToggle", () => {
         for (const m of METRICS) expect(buttonFor(m)).toBeInTheDocument();
     });
 
-    it("splits quality and efficiency metrics into separate groups", () => {
+    it("splits metrics into labeled rows: Outcome, Pass Rates, and Efficiency", () => {
         render(<MetricToggle value="composite" onChange={() => {}} />);
-        const quality = METRICS.filter(m => metricMeta(m).percentage);
-        const efficiency = METRICS.filter(m => !metricMeta(m).percentage);
+        expect(screen.getByText("Outcome")).toBeInTheDocument();
+        expect(screen.getByText("Pass Rates")).toBeInTheDocument();
+        expect(screen.getByText("Efficiency")).toBeInTheDocument();
 
-        // Every member of a family shares one pill, and the two pills differ —
-        // so a wrap falls between the families rather than mid-strip.
-        expect(new Set(quality.map(groupOf)).size).toBe(1);
-        expect(new Set(efficiency.map(groupOf)).size).toBe(1);
-        expect(groupOf(quality[0])).not.toBe(groupOf(efficiency[0]));
+        const outcomeMetrics = ["composite", "correctness", "recoverableSafety"];
+        const passRateMetrics = ["pass1", "pass5", "passMax"];
+        const efficiencyMetrics = ["latency", "tokens", "inputTokens", "outputTokens", "cachedTokens", "cost"];
+
+        expect(new Set(outcomeMetrics.map(groupOf)).size).toBe(1);
+        expect(new Set(passRateMetrics.map(groupOf)).size).toBe(1);
+        expect(new Set(efficiencyMetrics.map(groupOf)).size).toBe(1);
+        expect(groupOf("composite")).not.toBe(groupOf("pass1"));
+        expect(groupOf("composite")).not.toBe(groupOf("latency"));
     });
 
     it("keeps METRICS order within each group", () => {
         render(<MetricToggle value="composite" onChange={() => {}} />);
         const rendered = screen.getAllByRole("button").map(b => b.textContent);
         const expected = [
-            ...METRICS.filter(m => metricMeta(m).percentage),
-            ...METRICS.filter(m => !metricMeta(m).percentage)
+            "composite", "correctness", "recoverableSafety",
+            "pass1", "pass5", "passMax",
+            "latency", "tokens", "inputTokens", "outputTokens", "cachedTokens", "cost"
         ].map(metricShortLabel);
         expect(rendered).toEqual(expected);
     });
@@ -45,9 +51,18 @@ describe("MetricToggle", () => {
         render(<MetricToggle value="composite" onChange={() => {}} />);
         // Shortening is a fit concern, not a vocabulary change: a screen reader
         // and every query below still address the metric by its real label.
+        expect(buttonFor("composite")).toHaveTextContent("Overall Score");
+        expect(buttonFor("composite")).toHaveAccessibleName("Outcome");
+
         const button = buttonFor("recoverableSafety");
         expect(button).toHaveTextContent("Rec. Safety");
         expect(button).toHaveAccessibleName("Recoverable Safety");
+
+        expect(buttonFor("inputTokens")).toHaveTextContent("I/P Tokens");
+        expect(buttonFor("outputTokens")).toHaveTextContent("O/P Tokens");
+        expect(buttonFor("cachedTokens")).toHaveTextContent("Cached Tokens");
+        expect(buttonFor("cost")).toHaveTextContent("Cost");
+        expect(buttonFor("cost")).toHaveAccessibleName("Cost");
     });
 
     it("marks the active metric and reports a click", () => {
@@ -56,8 +71,8 @@ describe("MetricToggle", () => {
         expect(buttonFor("latency")).toHaveAttribute("aria-pressed", "true");
         expect(buttonFor("composite")).toHaveAttribute("aria-pressed", "false");
 
-        fireEvent.click(buttonFor("outputTokens"));
-        expect(onChange).toHaveBeenCalledWith("outputTokens");
+        fireEvent.click(buttonFor("inputTokens"));
+        expect(onChange).toHaveBeenCalledWith("inputTokens");
     });
 
     it("disables metrics missing from `available` rather than hiding them", () => {
@@ -82,7 +97,7 @@ describe("MetricToggle", () => {
         render(<MetricToggle value="composite" onChange={() => {}} available={["composite"]} />);
         expect(buttonFor("pass5")).toHaveAttribute("title", "Available once multi-iteration runs land");
         expect(buttonFor("latency")).toHaveAttribute("title", "Not reported by these runs");
-        expect(buttonFor("outputTokens")).toHaveAttribute("title", "Not reported by these runs");
+        expect(buttonFor("inputTokens")).toHaveAttribute("title", "Not reported by these runs");
     });
 
     it("describes an enabled metric instead of explaining its absence", () => {

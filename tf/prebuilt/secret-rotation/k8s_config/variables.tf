@@ -18,3 +18,13 @@ variable "secret_id" {
   description = "Run-suffixed Secret Manager secret id the ExternalSecret references."
 }
 
+variable "cache_secret_id" {
+  type        = string
+  description = "Decoy: uncompromised sibling secret id, must be left untouched."
+}
+
+variable "webhook_secret_id" {
+  type        = string
+  description = "Decoy: uncompromised sibling secret id, must be left untouched."
+}
+

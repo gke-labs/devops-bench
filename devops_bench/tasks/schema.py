@@ -132,6 +132,13 @@ class Task(BaseModel):
         validated: Whether the task has been vetted as correct and is eligible to
             promote to the leaderboard. Defaults to ``False`` so an unvetted task
             never counts until explicitly marked.
+        timeout_sec: Optional per-task override for the agent's wall-clock
+            ``AgentConfig.timeout_sec``. ``None`` means "use the harness/env
+            default"; a task whose scope genuinely needs more (or less) runway
+            than that default sets this explicitly rather than relying on an
+            operator remembering an ``AGENT_TIMEOUT_SEC`` env var at invocation
+            time. The harness applies this per-task, overriding only the
+            timeout field of the run's :class:`AgentConfig` snapshot.
     """
 
     model_config = _STRICT
@@ -148,6 +155,7 @@ class Task(BaseModel):
     infrastructure: dict[str, Any] = Field(default_factory=dict)
     documentation: list[DocumentationEntry] = Field(default_factory=list)
     validated: bool = False
+    timeout_sec: float | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -209,6 +217,7 @@ class Task(BaseModel):
         infrastructure = raw.get("infrastructure", {})
         documentation = raw.get("documentation", [])
         validated = raw.get("validated", False)
+        timeout_sec = raw.get("timeout_sec")
 
         return cls.model_validate(
             {
@@ -226,6 +235,7 @@ class Task(BaseModel):
                 "infrastructure": {} if infrastructure is None else infrastructure,
                 "documentation": [] if documentation is None else documentation,
                 "validated": False if validated is None else validated,
+                "timeout_sec": timeout_sec,
             }
         )
 

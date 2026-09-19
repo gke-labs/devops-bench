@@ -27,11 +27,9 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Let the SDK pick its transport: it probes once and falls back to long-polling
-// only where the streaming WebChannel can't establish (some corporate proxies,
-// restrictive networks). Auto-detect avoids both forced long-polling and hard
-// failures behind those proxies.
-const settings = { experimentalAutoDetectLongPolling: true };
+// Force HTTP long-polling: WebChannel streaming connections often fail or time
+// out behind corporate proxies and restrictive firewalls.
+const settings = { experimentalForceLongPolling: true };
 
 // Optional named database (e.g. "leaderboard"); empty/unset → the (default) DB.
 const databaseId = import.meta.env.VITE_FIRESTORE_DATABASE_ID;
@@ -46,5 +44,5 @@ const useEmulator =
         : import.meta.env.DEV;
 
 if (useEmulator) {
-    connectFirestoreEmulator(db, "127.0.0.1", 8080);
+    connectFirestoreEmulator(db, "127.0.0.1", 8088);
 }

@@ -870,6 +870,12 @@ def test_get_resource_is_called_with_a_floored_timeout(
     assert mock_get.call_args.kwargs["timeout"] == expected_timeout
 
 
+def test_get_resource_is_called_with_the_declared_context() -> None:
+    with patch(_GET, return_value=_deployment()) as mock_get:
+        _verifier(op="exists", resource_name="web", context="west").verify(0.0)
+    assert mock_get.call_args.kwargs["context"] == "west"
+
+
 def test_converge_mode_polls_until_the_property_holds(monkeypatch: pytest.MonkeyPatch) -> None:
     # poll_until backs off for real between failed checks (initial_delay=1.0,
     # doubling), which would make this test really sleep ~3s across the two

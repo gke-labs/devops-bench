@@ -18,10 +18,11 @@ operation.
 
 ## Safety and availability
 
-3. **Zero downtime is mandatory.** Keep services available throughout. Use
-   rolling restarts; never delete-then-recreate workloads in a way that drops
-   capacity. Check pod readiness and health between every step and wait for
-   rollouts to reach a healthy steady state before continuing.
+3. **Zero downtime is mandatory.** Keep services available throughout. Use a
+   zero-downtime rollout mechanism (e.g. a rolling restart); never
+   delete-then-recreate workloads in a way that drops capacity. Check pod
+   readiness and health between every step and wait for rollouts to reach a
+   healthy steady state before continuing.
 4. **Verify each step before the next.** Do not assume success. Confirm the new
    secret version has synced into the namespace and is actually being consumed by
    the running pods before treating the rotation as done.

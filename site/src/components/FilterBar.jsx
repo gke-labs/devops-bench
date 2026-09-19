@@ -3,6 +3,7 @@
 // renderFilterGroup in app.js.
 
 import { anyFilterActive } from "../lib/filters.js";
+import { BrandLogo, HarnessIcon } from "./Logo.jsx";
 
 function FilterGroup({ group, filterState, onToggle }) {
     if (group.options.length === 0) return null;
@@ -28,8 +29,13 @@ function FilterGroup({ group, filterState, onToggle }) {
                         type="button"
                         onClick={() => onToggle(group.key, opt.value)}
                         aria-pressed={active}
-                        className={`${sizeCls} rounded-full border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900 ${cls}`}
+                        className={`${sizeCls} rounded-full border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900 inline-flex items-center gap-1.5 ${cls}`}
                     >
+                        {/* The mark is the same one the leaderboard row and the
+                            charts draw, so a chip and a bar are recognisably the
+                            same thing. Options without one just show text. */}
+                        {opt.model ? <BrandLogo logo={opt.model.logo} /> : null}
+                        {opt.harness ? <HarnessIcon harness={opt.harness} /> : null}
                         {opt.text}
                     </button>
                 );
@@ -38,7 +44,18 @@ function FilterGroup({ group, filterState, onToggle }) {
     );
 }
 
-export function FilterBar({ groups, filterState, onToggle, onClear, shown, total }) {
+export function FilterBar({
+    groups,
+    filterState,
+    onToggle,
+    onClear,
+    shown,
+    total,
+    taskScope = "full",
+    onScopeChange,
+    fullTaskCount = 20,
+    commonTaskCount = 1
+}) {
     const primary = groups.filter(g => g.tier === "primary");
     const secondary = groups.filter(g => g.tier === "secondary");
 
@@ -46,6 +63,35 @@ export function FilterBar({ groups, filterState, onToggle, onClear, shown, total
         <div className="px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-3">
             <div className="flex items-start justify-between gap-4">
                 <div className="flex flex-col gap-2 flex-grow">
+                    {onScopeChange && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] font-bold tracking-wide uppercase text-slate-600 dark:text-slate-300 w-16 shrink-0">Scope</span>
+                            <button
+                                type="button"
+                                onClick={() => onScopeChange("full")}
+                                aria-pressed={taskScope === "full"}
+                                className={`px-3 py-1 text-xs rounded-full border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900 inline-flex items-center gap-1.5 ${
+                                    taskScope === "full"
+                                        ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                                        : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+                                }`}
+                            >
+                                Full Suite ({fullTaskCount} tasks)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onScopeChange("common")}
+                                aria-pressed={taskScope === "common"}
+                                className={`px-3 py-1 text-xs rounded-full border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900 inline-flex items-center gap-1.5 ${
+                                    taskScope === "common"
+                                        ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                                        : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+                                }`}
+                            >
+                                Common Tasks ({commonTaskCount} {commonTaskCount === 1 ? "task" : "tasks"})
+                            </button>
+                        </div>
+                    )}
                     {primary.map(g => <FilterGroup key={g.key} group={g} filterState={filterState} onToggle={onToggle} />)}
                 </div>
                 <div className="flex items-center gap-3 shrink-0 pt-0.5">

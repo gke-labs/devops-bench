@@ -34,13 +34,16 @@ module "gke" {
 }
 
 module "kind" {
-  source          = "./kind"
-  count           = var.infra_provider == "kind" ? 1 : 0
-  cluster_name    = var.cluster_name
-  kubeconfig_path = var.kubeconfig_path
-  node_image      = var.node_image
-  project_id      = var.project_id
-  location        = var.location != "" ? var.location : "local"
-  node_count      = var.node_count
+  source              = "./kind"
+  count               = var.infra_provider == "kind" ? 1 : 0
+  cluster_name        = var.cluster_name
+  kubeconfig_path     = var.kubeconfig_path
+  node_image          = var.node_image
+  project_id          = var.project_id
+  location            = var.location != "" ? var.location : "local"
+  node_count          = var.node_count
+  disable_default_cni = var.disable_default_cni
+  cni_manifest_url    = var.cni_manifest_url
+  cni_wait_timeout    = var.cni_wait_timeout
 }
 

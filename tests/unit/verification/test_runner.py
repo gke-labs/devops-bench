@@ -341,12 +341,16 @@ def test_parallel_single_shot_unfinished_child_is_error_not_fail(
 
 
 def test_parallel_converge_hung_child_alongside_an_observed_fail_stays_fail(
-    agent: VerifierAgent,
+    agent: VerifierAgent, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An observed fail still wins the group verdict over an unfinished sibling."""
     # The deadline must clear _MIN_LEAF_BUDGET_SECONDS so the hung leaf's
     # verify() is actually invoked (and outlasts the wait) rather than being
     # short-circuited by the per-leaf min-budget guard before it ever runs.
+    # _PARALLEL_WAIT_GRACE_SEC gives an already-in-flight child a little room
+    # to land past the deadline (see its own docstring); pinned to ~0 here so
+    # this test's 3s sleep still reads as genuinely hung, not just late.
+    monkeypatch.setattr("devops_bench.verification.runner._PARALLEL_WAIT_GRACE_SEC", 0.01)
     spec = {
         "type": "parallel",
         "checks": [
@@ -362,6 +366,28 @@ def test_parallel_converge_hung_child_alongside_an_observed_fail_stays_fail(
     assert {c.status for c in res.children} == {"fail", "error"}
     hung = next(c for c in res.children if c.status == "error")
     assert hung.reason == "evaluation did not complete before the deadline"
+
+
+def test_parallel_converge_child_finishing_just_past_deadline_is_still_observed(
+    agent: VerifierAgent,
+) -> None:
+    """A child landing shortly after the deadline is captured, not marked "error".
+
+    Regression test for the race this grace window closes: a child whose own
+    poll_until call was already in flight when the deadline hit must not be
+    discarded as unobserved just because it took a little longer than the
+    parent's futures_wait would otherwise allow.
+    """
+    spec = {
+        "type": "parallel",
+        "checks": [_leaf(succeed=False, tag="real-fail", sleep_for=1.5)],
+    }
+
+    res = agent.wait_for_condition(spec, timeout_sec=1.2)
+
+    assert res.status == "fail"
+    assert res.children[0].status == "fail"
+    assert res.children[0].reason == "leaf:real-fail"
 
 
 def test_parallel_single_shot_bounds_the_wait_at_the_ceiling(agent: VerifierAgent) -> None:

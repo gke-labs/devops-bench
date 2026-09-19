@@ -33,17 +33,21 @@ export function Loading() {
     );
 }
 
-export function NotFound({ id }) {
+export function NotFound({ id, message, backText, backLink }) {
     return (
         <div className="w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-100 dark:shadow-none p-10 flex flex-col items-center text-center gap-3">
             <svg className="w-10 h-10 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                No setup found for <span className="font-mono text-slate-800 dark:text-slate-100">{id || "(missing id)"}</span>.
+                {message || (
+                    <>
+                        No setup found for <span className="font-mono text-slate-800 dark:text-slate-100">{id || "(missing id)"}</span>.
+                    </>
+                )}
             </p>
-            <Link to="/" className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline">
-                Return to the leaderboard
+            <Link to={backLink || "/"} className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline">
+                {backText || "Return to the leaderboard"}
             </Link>
         </div>
     );

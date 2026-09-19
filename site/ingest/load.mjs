@@ -94,6 +94,17 @@ export function validateRow(row) {
     for (const k of ["cachedTokens", "reasoningTokens", "cacheWriteTokens", "totalTokens"]) {
         if (k in row) intOrNull(k, nonNeg);
     }
+    // Agentic-work counts — OPTIONAL, same contract as the extra token buckets,
+    // and validated for the same reason: they are averaged into the read-model,
+    // so a negative would drag a mean below zero.
+    for (const k of ["toolCalls", "toolErrors", "modelTurns"]) {
+        if (k in row) intOrNull(k, nonNeg);
+    }
+    // The model that actually answered. Optional and may be "" (the harness did
+    // not report one); pricing falls back to `model` in that case.
+    if ("servedModel" in row && typeof row.servedModel !== "string") {
+        errs.push("servedModel: must be a string");
+    }
 
     // Scoring-framework v1 fields — OPTIONAL (pre-v1 rows omit them). Validate the
     // shape only when present so old runs still ingest.
@@ -103,6 +114,50 @@ export function validateRow(row) {
     if ("recoverableSafetyScore" in row) floatOrNull("recoverableSafetyScore", num01);
     if ("catastrophic" in row && typeof row.catastrophic !== "boolean") {
         errs.push("catastrophic: must be a boolean");
+    }
+    if ("catastrophicKinds" in row) {
+        if (!Array.isArray(row.catastrophicKinds) || row.catastrophicKinds.some(k => typeof k !== "string" || k === "")) {
+            errs.push("catastrophicKinds: must be an array of non-empty strings");
+        }
+    }
+    if ("catastrophicDetails" in row) {
+        const details = row.catastrophicDetails;
+        if (!details || typeof details !== "object" || Array.isArray(details)) {
+            errs.push("catastrophicDetails: must be an object");
+        } else {
+            const entries = Object.entries(details);
+            if (entries.length > 0 && row.catastrophic === false) {
+                errs.push("catastrophicDetails: must be empty when catastrophic is false");
+            }
+            for (const [gate, items] of entries) {
+                if (gate !== "VerificationCatastrophic" && gate !== "IntegrityCatastrophic") {
+                    errs.push(`catastrophicDetails.${gate}: unknown gate (must be VerificationCatastrophic or IntegrityCatastrophic)`);
+                } else if (Array.isArray(row.catastrophicKinds) && !row.catastrophicKinds.includes(gate)) {
+                    errs.push(`catastrophicDetails.${gate}: must be listed in catastrophicKinds`);
+                }
+                if (!Array.isArray(items) || items.length < 1) {
+                    errs.push(`catastrophicDetails.${gate}: must be a non-empty array`);
+                } else {
+                    items.forEach((d, idx) => {
+                        if (!d || typeof d !== "object" || Array.isArray(d)) {
+                            errs.push(`catastrophicDetails.${gate}[${idx}]: must be an object`);
+                            return;
+                        }
+                        if (typeof d.reason !== "string" || d.reason.length > 240) {
+                            errs.push(`catastrophicDetails.${gate}[${idx}].reason: required string <= 240 chars`);
+                        }
+                        if ("name" in d && (typeof d.name !== "string" || d.name.length < 1)) {
+                            errs.push(`catastrophicDetails.${gate}[${idx}].name: must be a non-empty string`);
+                        }
+                        for (const key of Object.keys(d)) {
+                            if (key !== "name" && key !== "reason") {
+                                errs.push(`catastrophicDetails.${gate}[${idx}].${key}: unexpected property`);
+                            }
+                        }
+                    });
+                }
+            }
+        }
     }
     if ("scoringVersion" in row && typeof row.scoringVersion !== "string") {
         errs.push("scoringVersion: must be a string");
