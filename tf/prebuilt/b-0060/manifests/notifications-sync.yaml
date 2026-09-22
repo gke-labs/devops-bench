@@ -1,0 +1,264 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+---
+# Pre-existing world state, not something setup.sh creates: a zero-slack
+# quota on requests.memory only, unchanged from b-0057 (same name, same
+# 400Mi hard cap; see task/GRADING.md's arithmetic section for the full
+# derivation). At boot, with every workload below at its manifest requests,
+# including deploy-runner's own fixed 4Mi (3 web x 61Mi + 3 backend x 23Mi +
+# 3 indexer x 12Mi + deploy-runner x 4Mi = 292Mi), this leaves 108Mi of
+# slack under the 400Mi hard cap. Unlike b-0057, this quota is not what
+# setup.sh locks against directly: setup.sh inflates
+# notifications-sync-indexer's per-pod memory request to 40Mi after the
+# seeded fault lands, but because notifications-sync-web is at 0 the whole
+# time that inflation happens, admission never gets tight until AFTER the
+# agent's own ConfigMap fix brings web back to 3/3 and consumes the
+# headroom the fat indexer's next restart needed. See task/GRADING.md for
+# why this makes the second fault symptomless before the agent acts, and
+# for why deploy-runner's own requests.memory footprint is deliberately
+# kept small (4Mi, since only requests.memory counts against this quota;
+# its limits.memory is 96Mi and is not quota-relevant) so the oracle's own
+# indexer right-size patch has enough margin to admit its surge pod
+# cleanly rather than depending on a retry-loop.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: notifications-sync-compute
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+spec:
+  hard:
+    requests.memory: "400Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-sync-web
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+    app: notifications-sync-web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: notifications-sync-web
+  template:
+    metadata:
+      labels:
+        app: notifications-sync-web
+    spec:
+      containers:
+      - name: notifications-sync-web
+        image: "nginx:1.25-alpine"
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "31m"
+            memory: "61Mi"
+          limits:
+            cpu: "62m"
+            memory: "122Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notifications-sync-web
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+spec:
+  selector:
+    app: notifications-sync-web
+  ports:
+  - port: 80
+    targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-sync-backend
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+    app: notifications-sync-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: notifications-sync-backend
+  template:
+    metadata:
+      labels:
+        app: notifications-sync-backend
+    spec:
+      containers:
+      - name: notifications-sync-backend
+        image: "nginx:1.25-alpine"
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "30m"
+            memory: "23Mi"
+          limits:
+            cpu: "60m"
+            memory: "46Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notifications-sync-backend
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+spec:
+  selector:
+    app: notifications-sync-backend
+  ports:
+  - port: 80
+    targetPort: 80
+---
+# New in b-0060: the third Deployment in notifications-sync, and the second
+# fault's target. Starts at its manifest values (3 x 12Mi requests.memory,
+# 3 x 24Mi limits.memory); setup.sh inflates the per-pod requests.memory to
+# 40Mi (limits.memory to 80Mi, same patch, lockstep, same requests<=limits
+# invariant reasoning as b-0057's backend inflation) after the ConfigMap
+# corruption has already been enforced. See task/GRADING.md for the full
+# arithmetic and why this second fault produces no symptom until the agent
+# fixes the ConfigMap.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifications-sync-indexer
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+    app: notifications-sync-indexer
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: notifications-sync-indexer
+  # A quota-wedged rollout makes no progress and flips Progressing to status
+  # False within 60s, which the graded hold observes; healthy rollouts of
+  # this small image complete in seconds and never trip it.
+  progressDeadlineSeconds: 60
+  template:
+    metadata:
+      labels:
+        app: notifications-sync-indexer
+    spec:
+      containers:
+      - name: notifications-sync-indexer
+        image: "nginx:1.25-alpine"
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "12Mi"
+          limits:
+            cpu: "20m"
+            memory: "24Mi"
+---
+# New in b-0060: deploy-runner, the persona whose periodic rollout restarts
+# of notifications-sync-indexer are the mechanism that turns the fault's
+# symptomless pre-fix state into a wedge once the agent's own ConfigMap fix
+# consumes the quota headroom the fat indexer's next restart needed. Style
+# mirrors billing-sync-worker (a kubectl-capable image running an inline
+# shell loop from its own container command), except this persona lives
+# INSIDE the target namespace with a namespace-scoped Role rather than
+# cluster-scoped RBAC, so its RBAC is discoverable by reading
+# notifications-sync directly, unlike billing-sync-worker's. Poll cadence
+# 90s: `kubectl -n notifications-sync rollout restart
+# deployment/notifications-sync-indexer` every 90s, unconditionally (no
+# desired-state ConfigMap to read; this persona always restarts, it does
+# not compare against a target value the way billing-sync-worker does).
+# requests.memory stays deliberately small (4Mi) because it is a fixed,
+# always-present part of the notifications-sync-compute quota's usage and
+# the task's checkpoint arithmetic depends on it, but limits.memory is
+# 96Mi and cpu is 20m/40m to match billing-sync-worker's proven sizing:
+# kubectl is a Go binary that is OOM-killed under small memory limits
+# (verified: exit 137 under an 8Mi limit) and heavily throttled under tiny
+# cpu limits, and limits are not counted by the requests.memory-only
+# ResourceQuota.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deploy-runner
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deploy-runner
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+rules:
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deploy-runner
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+subjects:
+- kind: ServiceAccount
+  name: deploy-runner
+  namespace: notifications-sync
+roleRef:
+  kind: Role
+  name: deploy-runner
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deploy-runner
+  namespace: notifications-sync
+  labels:
+    app.kubernetes.io/managed-by: spike-substrate
+    app: deploy-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deploy-runner
+  template:
+    metadata:
+      labels:
+        app: deploy-runner
+    spec:
+      serviceAccountName: deploy-runner
+      containers:
+      - name: deploy-runner
+        image: "bitnamilegacy/kubectl:1.29"
+        command:
+        - sh
+        - "-c"
+        - "while true; do kubectl -n notifications-sync rollout restart deployment/notifications-sync-indexer >/dev/null 2>&1; RC=$?; if [ \"$RC\" -eq 0 ]; then echo \"$(date -u +%Y-%m-%dT%H:%M:%SZ) restart notifications-sync-indexer\"; else echo \"$(date -u +%Y-%m-%dT%H:%M:%SZ) restart notifications-sync-indexer failed rc=$RC\"; fi; sleep 90; done"
+        resources:
+          requests:
+            cpu: "20m"
+            memory: "4Mi"
+          limits:
+            cpu: "40m"
+            memory: "96Mi"

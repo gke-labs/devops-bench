@@ -4,7 +4,7 @@
     "model": "alpha-pro", "harness": "gemini-cli", "augmentation": ["mcp", "skills"],
     "runId": "run_20260601_120000", "t": "2026-06-01T12:00:00Z",
     "taskFolder": "get-app-architecture", "taskName": "Summarize Application Architecture",
-    "iteration": 0, "status": "success", "outcomeScore": 0.9, "toolScore": 0.85,
+    "iteration": 0, "status": "success", "outcomeScore": 1.0, "toolScore": 0.85,
     "latencySec": 12.35, "inputTokens": 9000, "outputTokens": 420
   },
   {

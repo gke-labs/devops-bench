@@ -42,25 +42,6 @@ export function setupLabel(setup, models, harnesses) {
     return parts.join(" · ");
 }
 
-// Alphabetical ordering over the identity a row actually displays — model, then
-// harness, then the augmentation chips — rather than over setup.id, which is a
-// slug and would sort "api-loop" above "Gemini CLI" on punctuation the reader
-// cannot see. `numeric` keeps gpt-5-2 ahead of gpt-5-10 instead of ordering the
-// version digits as text.
-/**
- * @param {Setup} a
- * @param {Setup} b
- * @param {ModelMap} models
- * @param {HarnessMap} harnesses
- * @returns {number}
- */
-export function compareByName(a, b, models, harnesses) {
-    const cmp = (x, y) => x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" });
-    return cmp(models[a.model].name, models[b.model].name)
-        || cmp(harnesses[a.harness].name, harnesses[b.harness].name)
-        || cmp(a.augmentation.join(","), b.augmentation.join(","));
-}
-
 // Secondary modifier chips — one per augmentation token, or a single neutral
 // "Baseline" chip when the augmentation array is empty. The harness type chip
 // is built separately at the call site (it needs the per-harness accent color).
@@ -74,6 +55,43 @@ export function setupTags(setup) {
     }));
 }
 
+// Resolve metric aliases so both inputTokens <-> tokensInput, etc. resolve smoothly.
+export const METRIC_ALIASES = {
+    inputTokens: "tokensInput",
+    tokensInput: "inputTokens",
+    outputTokens: "tokensOutput",
+    tokensOutput: "outputTokens",
+    cachedTokens: "tokensCached",
+    tokensCached: "cachedTokens"
+};
+
+// Canonical token buckets that sum to a task's total tokens.
+// Checks both new prefixed names and standard Firestore bucket names.
+const TOKEN_SUM_BUCKETS = [
+    ["tokensInput", "inputTokens"],
+    ["tokensOutput", "outputTokens"],
+    ["tokensCached", "cachedTokens"],
+    ["tokensReasoning", "reasoningTokens"],
+    ["tokensCacheWrite", "cacheWriteTokens"]
+];
+
+function taskTokensTotal(scores) {
+    const parts = TOKEN_SUM_BUCKETS.map(
+        ([a, b]) => scores[a] ?? scores[b]
+    ).filter(v => typeof v === "number" && Number.isFinite(v));
+    return parts.length ? parts.reduce((sum, v) => sum + v, 0) : null;
+}
+
+export function scoreOf(scores, metric) {
+    if (!scores) return null;
+    if (scores[metric] != null) return scores[metric];
+    if (metric === "cost" && scores.costUsd != null) return scores.costUsd;
+    const alias = METRIC_ALIASES[metric];
+    if (alias && scores[alias] != null) return scores[alias];
+    if (metric === "tokens") return taskTokensTotal(scores);
+    return null;
+}
+
 // Aggregated headline score for a setup under the selected metric. Mean over
 // tasks; null-safe (ignores tasks with no score); null if no scored tasks.
 /**
@@ -82,8 +100,45 @@ export function setupTags(setup) {
  * @returns {number | null}
  */
 export function setupScore(setup, metric) {
-    const vals = setup.tasks.map(t => t.scores[metric]).filter(v => v != null);
+    const vals = setup.tasks.map(t => scoreOf(t.scores, metric)).filter(v => v != null);
     return vals.length ? vals.reduce((sum, v) => sum + v, 0) / vals.length : null;
+}
+
+// Sum across tasks for the metric — what the whole suite cost, rather than what
+// the average task cost. Only meaningful for additive metrics (tokens, cost,
+// latency); totalling a percentage is nonsense, so callers pick the metric.
+//
+// Sums the tasks that reported, like setupScore averages them. That makes the
+// total sensitive to COVERAGE in a way the mean is not: a setup that reported
+// three of twelve tasks totals three tasks' worth and looks cheap. Null-safe;
+// null when nothing was measured.
+/**
+ * @param {Setup} setup
+ * @param {MetricKey} metric
+ * @returns {number | null}
+ */
+export function setupTotal(setup, metric) {
+    const vals = setup.tasks.map(t => scoreOf(t.scores, metric)).filter(v => v != null);
+    return vals.length ? vals.reduce((sum, v) => sum + v, 0) : null;
+}
+
+// One setup's value for a metric under a chart's task view: a single task's own
+// number, or the mean / total across the tasks it reported. The charts that
+// offer the view picker all resolve through here, so "mean", "total" and "one
+// task" mean the same thing on every one of them.
+/**
+ * @typedef {{ task?: string | null, aggregate?: "mean" | "total" }} TaskView
+ * @param {Setup} setup
+ * @param {MetricKey} metric
+ * @param {TaskView} [view]
+ * @returns {number | null}
+ */
+export function setupValue(setup, metric, view = {}) {
+    const { task = null, aggregate = "mean" } = view;
+    // A single task has one value, so mean and total coincide and `aggregate`
+    // does not apply.
+    if (task) return scoreOf(setup.tasks.find(t => t.folder === task)?.scores, metric);
+    return aggregate === "total" ? setupTotal(setup, metric) : setupScore(setup, metric);
 }
 
 // Trend points for the metric as { x: <epoch ms>, y: <score> }, in time order.
@@ -94,7 +149,7 @@ export function setupScore(setup, metric) {
  * @returns {{ x: number, y: number | null }[]}
  */
 export function setupHistory(setup, metric) {
-    return setup.history.map(h => ({ x: Date.parse(h.t), y: h.scores[metric] }));
+    return setup.history.map(h => ({ x: Date.parse(h.t), y: scoreOf(h.scores, metric) }));
 }
 
 // Sorted union of run timestamps (ISO) across the given setups. Used to build a

@@ -2,57 +2,153 @@
 // Model logos are filled squares with a letter; harness icons are line glyphs
 // tinted with the harness accent so the runner reads as its own entity class.
 
-// Keyed by the `logo` field of a catalog MODELS entry. A model whose logo key is
-// missing here renders NOTHING (see the null return below), so the two must stay
-// in step — Logo.test.jsx asserts every curated key has a brand.
-const BRANDS = {
-    alpha: { fill: "#6366f1", letter: "A" },
-    beta: { fill: "#0ea5e9", letter: "B" },
-    gamma: { fill: "#f97316", letter: "C" },
+// Exported as data, not just as components: the charts redraw the same marks
+// with the canvas 2D API, and a second copy of the glyphs would drift.
+export const BRANDS = {
+    alpha: { fill: "#64748b", letter: "A" },
+    beta: { fill: "#64748b", letter: "B" },
+    gamma: { fill: "#64748b", letter: "C" },
+    google: { fill: "#4285F4", letter: "G" },
     gemini: { fill: "#4285F4", letter: "G" },
-    claude: { fill: "#d97757", letter: "C" },
-    openai: { fill: "#10a37f", letter: "O" }
+    anthropic: { fill: "#000000", letter: "A" },
+    claude: { fill: "#000000", letter: "C" },
+    openai: { fill: "#000000", letter: "O" },
+    qwen: { fill: "#665CEE", letter: "Q" },
+    alibaba: { fill: "#665CEE", letter: "Q" }
 };
 
 export const BRAND_KEYS = Object.keys(BRANDS);
 
+export const MODEL_PATHS = {
+    google: {
+        viewBox: 24,
+        paths: [
+            { d: "M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z", fill: "#4285F4" },
+            { d: "M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z", fill: "#34A853" },
+            { d: "M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z", fill: "#FBBC05" },
+            { d: "M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z", fill: "#EA4335" }
+        ]
+    },
+    anthropic: {
+        viewBox: 24,
+        path: "M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z",
+        fill: "#000000"
+    },
+    openai: {
+        viewBox: 24,
+        path: "M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z",
+        fill: "#000000"
+    },
+    qwen: {
+        viewBox: 200,
+        paths: [
+            { d: "M174.82 108.75L155.38 75L165.64 57.75C166.46 56.31 166.46 54.53 165.64 53.09L155.38 35.84C154.86 34.91 153.87 34.33 152.78 34.33H114.88L106.14 19.03C105.62 18.1 104.63 17.52 103.54 17.52H83.3C82.21 17.52 81.22 18.1 80.7 19.03L61.26 52.77H41.02C39.93 52.77 38.94 53.35 38.42 54.28L28.16 71.53C27.34 72.97 27.34 74.75 28.16 76.19L45.52 107.5L36.78 122.8C35.96 124.24 35.96 126.02 36.78 127.46L47.04 144.71C47.56 145.64 48.55 146.22 49.64 146.22H87.54L96.28 161.52C96.8 162.45 97.79 163.03 98.88 163.03H119.12C120.21 163.03 121.2 162.45 121.72 161.52L141.16 127.78H158.52C159.61 127.78 160.6 127.2 161.12 126.27L171.38 109.02C172.2 107.58 172.2 105.8 171.38 104.36L174.82 108.75Z", fill: "#665CEE" },
+            { d: "M119.12 163.03H98.88L87.54 144.71H49.64L61.26 126.39H80.7L38.42 55.29H61.26L83.3 19.03L93.56 37.35L83.3 55.29H161.58L151.32 72.54L170.76 106.28H151.32L141.16 88.34L101.18 163.03H119.12Z", fill: "#ffffff" },
+            { d: "M127.86 79.83H76.14L101.18 122.11L127.86 79.83Z", fill: "#665CEE" }
+        ]
+    }
+};
+
+MODEL_PATHS.gemini = MODEL_PATHS.google;
+MODEL_PATHS.claude = MODEL_PATHS.anthropic;
+MODEL_PATHS.alibaba = MODEL_PATHS.qwen;
+
 export function BrandLogo({ logo }) {
     const brand = BRANDS[logo];
     if (!brand) return null;
+
+    if (logo === "google" || logo === "gemini") {
+        return (
+            <svg aria-hidden="true" focusable="false" className="w-4 h-4 min-w-[16px]" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+            </svg>
+        );
+    }
+
+    if (logo === "anthropic" || logo === "claude") {
+        return (
+            <svg aria-hidden="true" focusable="false" className="w-4 h-4 min-w-[16px] text-slate-900 dark:text-slate-100" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" />
+            </svg>
+        );
+    }
+
+    if (logo === "openai") {
+        return (
+            <svg aria-hidden="true" focusable="false" className="w-4 h-4 min-w-[16px] text-slate-900 dark:text-slate-100" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" />
+            </svg>
+        );
+    }
+
+    if (logo === "qwen" || logo === "alibaba") {
+        return (
+            <svg aria-hidden="true" focusable="false" className="w-4 h-4 min-w-[16px]" viewBox="0 0 200 200">
+                <defs>
+                    <radialGradient id="qwenGradient" cx="24.49%" cy="21.94%" r="69.75%">
+                        <stop offset="0%" stopColor="#665CEE" />
+                        <stop offset="100%" stopColor="#332E91" />
+                    </radialGradient>
+                </defs>
+                <path fill="url(#qwenGradient)" d="M174.82 108.75L155.38 75L165.64 57.75C166.46 56.31 166.46 54.53 165.64 53.09L155.38 35.84C154.86 34.91 153.87 34.33 152.78 34.33H114.88L106.14 19.03C105.62 18.1 104.63 17.52 103.54 17.52H83.3C82.21 17.52 81.22 18.1 80.7 19.03L61.26 52.77H41.02C39.93 52.77 38.94 53.35 38.42 54.28L28.16 71.53C27.34 72.97 27.34 74.75 28.16 76.19L45.52 107.5L36.78 122.8C35.96 124.24 35.96 126.02 36.78 127.46L47.04 144.71C47.56 145.64 48.55 146.22 49.64 146.22H87.54L96.28 161.52C96.8 162.45 97.79 163.03 98.88 163.03H119.12C120.21 163.03 121.2 162.45 121.72 161.52L141.16 127.78H158.52C159.61 127.78 160.6 127.2 161.12 126.27L171.38 109.02C172.2 107.58 172.2 105.8 171.38 104.36L174.82 108.75Z" />
+                <path fill="#ffffff" d="M119.12 163.03H98.88L87.54 144.71H49.64L61.26 126.39H80.7L38.42 55.29H61.26L83.3 19.03L93.56 37.35L83.3 55.29H161.58L151.32 72.54L170.76 106.28H151.32L141.16 88.34L101.18 163.03H119.12Z" />
+                <path fill="url(#qwenGradient)" d="M127.86 79.83H76.14L101.18 122.11L127.86 79.83Z" />
+            </svg>
+        );
+    }
+
     return (
         <svg aria-hidden="true" focusable="false" className="w-4 h-4 min-w-[16px]" viewBox="0 0 24 24" fill="none">
-            <rect x="2" y="2" width="20" height="20" rx="6" fill={brand.fill} />
-            <text x="12" y="16" fill="white" fontSize="12" fontFamily="system-ui, sans-serif" fontWeight="bold" textAnchor="middle">
+            <rect x="2" y="2" width="20" height="20" rx="5" fill={brand.fill ?? "#64748b"} />
+            <text
+                x="12"
+                y="12"
+                fill="white"
+                fontSize="11"
+                fontFamily="system-ui, sans-serif"
+                fontWeight="bold"
+                textAnchor="middle"
+                dominantBaseline="central"
+            >
                 {brand.letter}
             </text>
         </svg>
     );
 }
 
-const HARNESS_GLYPHS = {
-    terminal: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 8l3 3-3 3m5 1h4" />,
-    claw: (
-        <>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7l8-4 8 4-8 4-8-4z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 12l8 4 8-4M4 17l8 4 8-4" />
-        </>
-    ),
-    braces: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5c-2 0-2 2-2 3.5S6 12 4 12c2 0 2 2.5 2 4s0 3 2 3m8-14c2 0 2 2 2 3.5S18 12 20 12c-2 0-2 2.5-2 4s0 3-2 3" />,
-    "arrow-up": <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 20V5m0 0l-5 5m5-5l5 5" />,
-    cluster: (
-        <>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3l7 4v10l-7 4-7-4V7l7-4z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" />
-        </>
-    )
+// Path data against a 24x24 viewBox, shared with the canvas drawer.
+export const HARNESS_PATHS = {
+    terminal: ["M7 8l3 3-3 3m5 1h4"],
+    claw: ["M4 7l8-4 8 4-8 4-8-4z", "M4 12l8 4 8-4M4 17l8 4 8-4"],
+    braces: ["M8 5c-2 0-2 2-2 3.5S6 12 4 12c2 0 2 2.5 2 4s0 3 2 3m8-14c2 0 2 2 2 3.5S18 12 20 12c-2 0-2 2.5-2 4s0 3-2 3"],
+    "arrow-up": ["M12 20V5m0 0l-5 5m5-5l5 5"],
+    cluster: [
+        "M12 3l7 4v10l-7 4-7-4V7l7-4z",
+        "M12 9.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z"
+    ]
 };
 
-export const HARNESS_GLYPH_KEYS = Object.keys(HARNESS_GLYPHS);
+export const HARNESS_GLYPH_KEYS = [...Object.keys(HARNESS_PATHS), ...BRAND_KEYS];
 
 export function HarnessIcon({ harness }) {
+    if (!harness) return null;
+    const name = harness.name?.toLowerCase();
+    const logo = (name === "antigravity" || harness.logo === "google")
+        ? "google"
+        : (name === "claude code" || harness.logo === "anthropic")
+            ? "anthropic"
+            : harness.logo;
+    if (logo in MODEL_PATHS || logo in BRANDS) {
+        return <BrandLogo logo={logo} />;
+    }
     return (
         <svg aria-hidden="true" focusable="false" className="w-4 h-4 min-w-[16px]" fill="none" stroke={harness.accent} viewBox="0 0 24 24">
-            {HARNESS_GLYPHS[harness.logo] || null}
+            {(HARNESS_PATHS[logo] ?? []).map((d, i) => (
+                <path key={i} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={d} />
+            ))}
         </svg>
     );
 }

@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 
 import { derive } from "./derive.mjs";
 import { loadResults } from "./load.mjs";
+import { SCORE_KEYS } from "../seed/mock-data.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, "fixtures");
@@ -26,7 +27,7 @@ describe("derive — data-driven", () => {
             "2026-06-01T12:00:00Z", "2026-06-15T12:00:00Z"
         ]);
 
-        // Latest run (June 15): both iterations >= 0.7 -> pass1 = 100. pass5/passMax
+        // Latest run (June 15): both iterations >= 1.0 -> pass1 = 100. pass5/passMax
         // stay null (pass1-only until the harness emits multi-iteration runs).
         const arch = alpha.tasks.find(t => t.folder === "get-app-architecture");
         // toMatchObject: v1 adds composite/correctness/recoverableSafety keys;
@@ -37,8 +38,8 @@ describe("derive — data-driven", () => {
         expect(byId["gamma-coder-api-loop"]).toBeTruthy();
     });
 
-    it("computes pass@1 from the iteration outcomeScores at a threshold of 0.7", () => {
-        // 1 pass (0.9) + 1 fail (0.5) of 2 -> 50%.
+    it("computes pass@1 from the iteration outcomeScores at a threshold of 1.0", () => {
+        // 1 pass (1.0) + 1 fail (0.5) of 2 -> 50%.
         const rows = loadResults([path.join(FIXTURES, "run_20260601_120000", "rows.json")]);
         const setups = derive(rows);
         const alpha = setups.find(s => s.id === "alpha-pro-gemini-cli-mcp-skills");
@@ -74,23 +75,17 @@ describe("derive — data-driven", () => {
             { ...base, iteration: 1, outcomeScore: null }
         ]);
         const task = setups[0].tasks.find(t => t.folder === "task-a");
-        // Null-safe across all metrics (v1 composite/correctness/safety included).
-        expect(task.scores).toEqual({
-            pass1: null,
-            pass5: null,
-            passMax: null,
-            composite: null,
-            correctness: null,
-            recoverableSafety: null,
-            // Efficiency is telemetry, not a score: an iteration that never
-            // scored still consumed wall-clock, so latency survives while every
-            // score is null. The token axes stay null because the fixture
-            // captured no usage.
-            latency: 1,
-            inputTokens: null,
-            outputTokens: null,
-            cachedTokens: null
-        });
+        // Null-safe across EVERY metric in the vocabulary, asserted against
+        // SCORE_KEYS rather than a hand-written list so a metric added later is
+        // covered by this regression instead of quietly escaping it.
+        // Efficiency is telemetry, not a score: an iteration that never scored
+        // still consumed wall-clock, so latency survives while everything else
+        // is null (the fixture captures no tokens, cost or trajectory).
+        expect(task.scores.latency).toBe(1);
+        for (const key of SCORE_KEYS.filter(k => k !== "latency")) {
+            expect(task.scores[key], `${key} should be null`).toBeNull();
+        }
+        expect(Object.keys(task.scores).sort()).toEqual([...SCORE_KEYS].sort());
     });
 
     it("treats latencySec 0 as unmeasured, so it can't rank as the fastest", () => {
@@ -115,50 +110,111 @@ describe("derive — data-driven", () => {
         expect(mixed[0].tasks[0].scores.latency).toBe(10);
     });
 
-    it("projects the token buckets onto three axes rather than one total", () => {
-        // Regression: a single summed figure was ~the input count wearing a
-        // different label. Output was 0.7% of the fleet's summed buckets, so the
-        // most expensive axis was invisible in the number that ranked setups.
+    it("counts reasoning tokens, which are a sibling bucket of output", () => {
+        // Regression: omitting reasoningTokens undercounted every reasoning model.
         const base = {
             setupId: "s", model: "m", harness: "h", augmentation: [],
             runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
             taskFolder: "task-a", taskName: "Task A", status: "success",
             toolScore: null, latencySec: 5, outcomeScore: 0.9, iteration: 0
         };
-        const split = derive([
-            {
-                ...base,
-                inputTokens: 100,
-                cacheWriteTokens: 50,
-                outputTokens: 200,
-                reasoningTokens: 700,
-                cachedTokens: 4000,
-                // A provider total no longer overrides the buckets: it cannot be
-                // attributed to an axis.
-                totalTokens: 950
-            }
+        const summed = derive([
+            { ...base, inputTokens: 100, outputTokens: 200, reasoningTokens: 700 }
         ]);
-        expect(split[0].tasks[0].scores).toMatchObject({
-            inputTokens: 150,
-            outputTokens: 900,
-            cachedTokens: 4000
-        });
+        expect(summed[0].tasks[0].scores.tokens).toBe(1000);
+
+        // A provider-reported total still wins over the bucket sum.
+        const totalled = derive([
+            { ...base, inputTokens: 100, outputTokens: 200, reasoningTokens: 700, totalTokens: 950 }
+        ]);
+        expect(totalled[0].tasks[0].scores.tokens).toBe(950);
     });
 
-    it("leaves the cached axis null for a harness that reports no cache reads", () => {
-        // Only some harnesses report cache reads. A blank cell has to stay
-        // distinct from a 0, or a silent harness would rank best on a
-        // lower-is-better axis purely for being less talkative.
-        const setups = derive([
+    it("falls back to pricing token buckets on the fly when costUsd is not stamped", () => {
+        const base = {
+            setupId: "s", model: "claude-opus-5", harness: "openclaw", augmentation: [],
+            runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
+            taskFolder: "task-a", taskName: "Task A", status: "success",
+            toolScore: null, latencySec: 5, outcomeScore: 0.9, iteration: 0
+        };
+        // 1M input ($5/Mtok) + 1M output ($25/Mtok) = $30
+        const derived = derive([
+            { ...base, inputTokens: 1e6, outputTokens: 1e6 }
+        ]);
+        expect(derived[0].tasks[0].scores.cost).toBe(30);
+    });
+
+    it("propagates catastrophicKinds and catastrophicDetails, tagging trial numbers when multiple trials exist", () => {
+        const base = {
+            setupId: "s", model: "m", harness: "h", augmentation: [],
+            runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
+            taskFolder: "task-cat", taskName: "Task Cat", status: "success",
+            toolScore: null, latencySec: 5, outcomeScore: 0, inputTokens: 100, outputTokens: 100
+        };
+
+        // Single-trial task: no trial number tagged
+        const single = derive([
             {
-                setupId: "s", model: "m", harness: "h", augmentation: [],
-                runId: "run_20260101_000000", t: "2026-01-01T00:00:00Z",
-                taskFolder: "task-a", taskName: "Task A", status: "success",
-                toolScore: null, latencySec: 5, outcomeScore: 0.9, iteration: 0,
-                inputTokens: 100, outputTokens: 200
+                ...base,
+                iteration: 0,
+                catastrophic: true,
+                catastrophicKinds: ["VerificationCatastrophic"],
+                catastrophicDetails: {
+                    VerificationCatastrophic: [
+                        { name: "image-check", reason: "expected v1, got v2" }
+                    ]
+                }
             }
         ]);
-        expect(setups[0].tasks[0].scores.cachedTokens).toBeNull();
-        expect(setups[0].tasks[0].scores.inputTokens).toBe(100);
+        expect(single[0].tasks[0].catastrophic).toBe(true);
+        expect(single[0].tasks[0].catastrophicKinds).toEqual(["VerificationCatastrophic"]);
+        expect(single[0].tasks[0].catastrophicDetails).toEqual({
+            VerificationCatastrophic: [
+                { name: "image-check", reason: "expected v1, got v2" }
+            ]
+        });
+
+        // Multi-trial task: tags each entry with 1-based trial number
+        const multi = derive([
+            {
+                ...base,
+                iteration: 0,
+                catastrophic: false,
+                outcomeScore: 0.9
+            },
+            {
+                ...base,
+                iteration: 1,
+                catastrophic: true,
+                catastrophicKinds: ["VerificationCatastrophic"],
+                catastrophicDetails: {
+                    VerificationCatastrophic: [
+                        { name: "image-check", reason: "expected v1, got v2" }
+                    ]
+                }
+            },
+            {
+                ...base,
+                iteration: 2,
+                catastrophic: true,
+                catastrophicKinds: ["IntegrityCatastrophic"],
+                catastrophicDetails: {
+                    IntegrityCatastrophic: [
+                        { reason: "Accessed benchmark material" }
+                    ]
+                }
+            }
+        ]);
+        expect(multi[0].tasks[0].catastrophic).toBe(true);
+        expect(multi[0].tasks[0].catastrophicKinds).toEqual(["VerificationCatastrophic", "IntegrityCatastrophic"]);
+        expect(multi[0].tasks[0].catastrophicDetails).toEqual({
+            VerificationCatastrophic: [
+                { name: "image-check", reason: "expected v1, got v2", trial: 2 }
+            ],
+            IntegrityCatastrophic: [
+                { reason: "Accessed benchmark material", trial: 3 }
+            ]
+        });
     });
 });
+

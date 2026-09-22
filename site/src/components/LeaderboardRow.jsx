@@ -4,25 +4,28 @@
 import { Link } from "react-router-dom";
 import { SetupIdentity } from "./SetupIdentity.jsx";
 import { setupScore, setupLabel } from "../lib/accessors.js";
-import { formatMetric, metricBarFraction, metricMeta } from "../lib/vocab.js";
+import { formatMetric, metricBarFraction, TOKEN_BUCKET_COLORS } from "../lib/vocab.js";
 
-// `metricBest` is the best value for this metric across the visible rows — for
-// absolute metrics (latency, the token axes) that is the SMALLEST, and the bar shows
-// each row's ratio to it, since those metrics have no natural ceiling. Unused by
-// percentage metrics.
-export function LeaderboardRow({ setup, models, harnesses, metric, metricBest }) {
+// `metricMax` is the maximum value for this metric across the visible rows — for
+// absolute metrics (latency, tokens, cost), the bar width directly represents
+// the actual magnitude relative to this ceiling. Unused by percentage metrics.
+export function LeaderboardRow({ setup, models, harnesses, metric, metricMax, metricBest, taskScope = "full" }) {
     const model = models[setup.model];
     const harness = harnesses[setup.harness];
     const score = setupScore(setup, metric);
-    const barPct = metricBarFraction(metric, score, metricBest) * 100;
-    const to = `/setup/${encodeURIComponent(setup.id)}?metric=${encodeURIComponent(metric)}`;
-    // The badge sits immediately left of the figure, so it reads as annotating
-    // it — and what a catastrophic violation zeroes is the OUTCOME score, not
-    // the seconds or tokens a run consumed. Those readings are unaffected and
-    // still valid, so under an efficiency metric the badge would flag a number
-    // it has no bearing on. It stays on the quality columns, where the zeroing
-    // is what the reader is looking at.
-    const badgeable = metricMeta(metric).percentage;
+    const scale = metricMax ?? metricBest;
+    const barPct = metricBarFraction(metric, score, scale) * 100;
+    const to = `/setup/${encodeURIComponent(setup.id)}?metric=${encodeURIComponent(metric)}${taskScope === "common" ? "&scope=common" : ""}`;
+
+    const isTokens = metric === "tokens";
+    const inputTokens = isTokens ? setupScore(setup, "inputTokens") : null;
+    const cachedTokens = isTokens ? setupScore(setup, "cachedTokens") : null;
+    const outputTokens = isTokens ? setupScore(setup, "outputTokens") : null;
+    const sumBuckets = (inputTokens || 0) + (cachedTokens || 0) + (outputTokens || 0);
+
+    const tokensTooltip = isTokens
+        ? `Total: ${formatMetric("tokens", score)} (Input: ${formatMetric("inputTokens", inputTokens)}, Cached: ${formatMetric("cachedTokens", cachedTokens)}, Output: ${formatMetric("outputTokens", outputTokens)}) (task average)`
+        : `${formatMetric(metric, score)} (task average)`;
 
     return (
         <Link
@@ -35,31 +38,69 @@ export function LeaderboardRow({ setup, models, harnesses, metric, metricBest })
                 <SetupIdentity setup={setup} model={model} harness={harness} variant="row" />
             </div>
 
-            {/* Score progression meter. On a quality metric the badge slot is a
-                fixed width reserved on EVERY row, so the figure, bar and column
-                start line up whether or not a given row carries a badge. An
-                efficiency metric drops the slot entirely rather than reserving
-                empty space — no row can badge there, so the columns still agree
-                with each other and the bar gets the width back. */}
-            <div className="col-span-4 sm:col-span-4 flex items-center gap-3 w-full sm:w-auto mt-2 sm:mt-0">
-                {badgeable && (
-                    <span className="w-10 shrink-0 flex justify-end">
-                        {setup.catastrophicCount > 0 && (
-                            <span
-                                title={`${setup.catastrophicCount} task(s) with a catastrophic safety violation (outcome zeroed)`}
-                                className="inline-flex items-center gap-0.5 rounded-full bg-rose-50 dark:bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-500/30"
-                            >
-                                ⚠ {setup.catastrophicCount}
-                            </span>
-                        )}
+            {/* Score progression meter */}
+            <div className="col-span-4 sm:col-span-4 flex flex-col justify-center gap-1 w-full sm:w-auto mt-2 sm:mt-0">
+                <div className="flex items-center gap-3 w-full">
+                    <span
+                        title={tokensTooltip}
+                        className="text-sm font-semibold text-slate-900 dark:text-slate-100 w-12 min-w-[48px]"
+                    >
+                        {formatMetric(metric, score)}
                     </span>
-                )}
-                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 w-12 min-w-[48px]">
-                    {formatMetric(metric, score)}
-                </span>
-                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden relative">
-                    <div className="progress-bar-fill h-full rounded-full" style={{ width: `${barPct}%`, backgroundColor: setup.color }} />
+                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden relative" title={tokensTooltip}>
+                        {isTokens && sumBuckets > 0 ? (
+                            <div className="progress-bar-fill h-full rounded-full flex overflow-hidden" style={{ width: `${barPct}%` }}>
+                                {inputTokens > 0 && (
+                                    <div
+                                        style={{
+                                            width: `${((inputTokens || 0) / sumBuckets) * 100}%`,
+                                            backgroundColor: TOKEN_BUCKET_COLORS.tokensInput
+                                        }}
+                                        title={`Input: ${formatMetric("inputTokens", inputTokens)}`}
+                                    />
+                                )}
+                                {cachedTokens > 0 && (
+                                    <div
+                                        style={{
+                                            width: `${((cachedTokens || 0) / sumBuckets) * 100}%`,
+                                            backgroundColor: TOKEN_BUCKET_COLORS.tokensCached
+                                        }}
+                                        title={`Cached: ${formatMetric("cachedTokens", cachedTokens)}`}
+                                    />
+                                )}
+                                {outputTokens > 0 && (
+                                    <div
+                                        style={{
+                                            width: `${((outputTokens || 0) / sumBuckets) * 100}%`,
+                                            backgroundColor: TOKEN_BUCKET_COLORS.tokensOutput
+                                        }}
+                                        title={`Output: ${formatMetric("outputTokens", outputTokens)}`}
+                                    />
+                                )}
+                            </div>
+                        ) : (
+                            <div className="progress-bar-fill h-full rounded-full" style={{ width: `${barPct}%`, backgroundColor: setup.color }} />
+                        )}
+                    </div>
                 </div>
+                {isTokens && (
+                    <div className="flex items-center justify-end gap-1.5 sm:gap-2 text-[10px] text-slate-500 dark:text-slate-400 flex-wrap">
+                        <span className="inline-flex items-center gap-1" title="Input tokens">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: TOKEN_BUCKET_COLORS.tokensInput }} />
+                            <span>{formatMetric("inputTokens", inputTokens)} in</span>
+                        </span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1" title="Cached tokens">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: TOKEN_BUCKET_COLORS.tokensCached }} />
+                            <span>{formatMetric("cachedTokens", cachedTokens)} cached</span>
+                        </span>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1" title="Output tokens">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: TOKEN_BUCKET_COLORS.tokensOutput }} />
+                            <span>{formatMetric("outputTokens", outputTokens)} out</span>
+                        </span>
+                    </div>
+                )}
             </div>
 
             {/* View-details affordance */}

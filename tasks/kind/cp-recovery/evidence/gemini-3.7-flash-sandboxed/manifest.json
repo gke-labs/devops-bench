@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 2,
+  "runId": "run_20260828_090422",
+  "t": "2026-08-28T09:22:13Z",
+  "setupId": "gemini-3-7-flash-openclaw-mcp",
+  "model": "gemini-3.7-flash",
+  "harness": "openclaw",
+  "augmentation": [
+    "mcp"
+  ]
+}

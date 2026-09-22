@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Security rules for the dev database (`leaderboard-dev`).
+//
+// Like leaderboard and leaderboard-test, the client requires read-only access
+// to the derived read-model (models, harnesses, setups) so that preview and
+// internal services (like Corp Run) can render the live dev database directly.
+//
+// Raw results and all writes remain strictly denied.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /models/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /harnesses/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /setups/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Raw results: no client access at all.
+    match /results/{id} {
+      allow read, write: if false;
+    }
+
+    // Everything else: locked down.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

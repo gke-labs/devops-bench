@@ -17,7 +17,13 @@ export function useBenchmarkData() {
 
     useEffect(() => {
         let cancelled = false;
-        loadBenchmarkData(db)
+        // A demo build ships its own dataset and never opens a connection. The
+        // import is dynamic so the generator is only fetched by that build.
+        const demo = import.meta.env.VITE_DEMO_DATA === "true";
+        const load = demo
+            ? import("../lib/demoData.js").then(m => m.demoBenchmarkData())
+            : loadBenchmarkData(db);
+        load
             .then(({ models, harnesses, setups }) => {
                 if (!cancelled) setState({ models, harnesses, setups, loading: false, error: null });
                 // This dashboard reads once and uses no realtime listeners, so close
@@ -25,7 +31,7 @@ export function useBenchmarkData() {
                 // (especially noisy under forced long-polling behind a proxy).
                 // Prod-only: in dev, StrictMode double-invokes this effect and would
                 // re-read on an already-terminated client.
-                if (import.meta.env.PROD) terminate(db).catch(() => {});
+                if (!demo && import.meta.env.PROD) terminate(db).catch(() => {});
             })
             .catch(err => {
                 console.error("Failed to load benchmark data from Firestore:", err);

@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from devops_bench.core import ClusterInfo, ConfigError, get_bool, get_env, get_logger
@@ -25,6 +26,14 @@ from devops_bench.providers.base import PROVIDERS, Provider, ResolveContext
 __all__ = ["GcpProvider"]
 
 _log = get_logger("providers.gcp")
+
+# Contract with devops_bench.agents.sandbox.ADMIN_TOKEN_CMD_ENV: that module
+# stays cloud-agnostic by design (see tests/unit/agents/test_agents_no_gke_strings.py),
+# so it never names a specific vendor's CLI itself. This is the one place that
+# knows the sandboxed container's fallback admin credential -- when a task
+# seeds no scoped agent ServiceAccount -- is a `gcloud` access token, since
+# this provider is the one that knows the cluster is GKE.
+_SANDBOX_ADMIN_TOKEN_CMD_ENV = "BENCH_SANDBOX_ADMIN_TOKEN_CMD"
 
 
 @PROVIDERS.register("gcp")
@@ -75,6 +84,7 @@ class GcpProvider(Provider):
             ],
             capture=False,
         )
+        os.environ.setdefault(_SANDBOX_ADMIN_TOKEN_CMD_ENV, "gcloud auth application-default print-access-token")
 
         context_name = f"gke_{project}_{location}_{cluster_name}"
         if get_bool("GCP_USE_ADC", False):

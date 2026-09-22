@@ -16,6 +16,7 @@
 
 from typing import Any
 
+from devops_bench.verification.hold_defaults import HOLD_POLL_INTERVAL_SEC
 from devops_bench.verification.spec import parse_entries
 from devops_bench.verification.verifiers import PodHealthyVerifier
 
@@ -60,10 +61,129 @@ def test_objective_with_severity_is_an_error() -> None:
     assert "severity is not allowed" in errors[0]["reason"]
 
 
-def test_mode_hold_is_rejected_with_a_specific_message() -> None:
+def test_mode_hold_parses() -> None:
+    entries, errors = parse_entries([_entry(mode="hold", hold_window_sec=30.0)])
+    assert errors == []
+    assert entries[0].resolved_mode == "hold"
+
+
+def test_hold_poll_interval_defaults_to_none() -> None:
+    entries, errors = parse_entries([_entry(mode="hold", hold_window_sec=30.0)])
+    assert errors == []
+    assert entries[0].hold_poll_interval_sec is None
+
+
+def test_hold_poll_interval_accepts_an_explicit_value() -> None:
+    entries, errors = parse_entries(
+        [_entry(mode="hold", hold_poll_interval_sec=2.5, hold_window_sec=30.0)]
+    )
+    assert errors == []
+    assert entries[0].hold_poll_interval_sec == 2.5
+
+
+def test_hold_poll_interval_must_be_positive() -> None:
+    entries, errors = parse_entries(
+        [_entry(mode="hold", hold_poll_interval_sec=0, hold_window_sec=30.0)]
+    )
+    assert entries == []
+    assert errors[0]["name"] == "e1"
+
+
+def test_hold_poll_interval_rejects_infinity() -> None:
+    entries, errors = parse_entries(
+        [_entry(mode="hold", hold_poll_interval_sec=float("inf"), hold_window_sec=30.0)]
+    )
+    assert entries == []
+    assert "finite" in errors[0]["reason"]
+
+
+def test_hold_poll_interval_rejects_nan() -> None:
+    entries, errors = parse_entries(
+        [_entry(mode="hold", hold_poll_interval_sec=float("nan"), hold_window_sec=30.0)]
+    )
+    assert entries == []
+    assert "finite" in errors[0]["reason"]
+
+
+def test_hold_poll_interval_sec_is_rejected_on_an_assert_entry() -> None:
+    entries, errors = parse_entries(
+        [_entry(role="safeguard", severity="recoverable", mode="assert", hold_poll_interval_sec=5)]
+    )
+    assert entries == []
+    assert "hold_poll_interval_sec" in errors[0]["reason"]
+
+
+def test_hold_window_sec_is_rejected_on_an_assert_entry() -> None:
+    entries, errors = parse_entries(
+        [_entry(role="safeguard", severity="recoverable", mode="assert", hold_window_sec=30.0)]
+    )
+    assert entries == []
+    assert "hold_window_sec" in errors[0]["reason"]
+
+
+def test_hold_poll_interval_must_be_smaller_than_the_window() -> None:
+    entries, errors = parse_entries(
+        [_entry(role="objective", mode="hold", hold_window_sec=30.0, hold_poll_interval_sec=30.0)]
+    )
+    assert entries == []
+    assert "smaller than hold_window_sec" in errors[0]["reason"]
+
+
+def test_hold_window_must_exceed_the_default_poll_interval() -> None:
+    entries, errors = parse_entries(
+        [_entry(role="objective", mode="hold", hold_window_sec=HOLD_POLL_INTERVAL_SEC)]
+    )
+    assert entries == []
+    assert "default poll interval" in errors[0]["reason"]
+
+
+def test_resolved_mode_never_derives_hold_from_role_defaults() -> None:
+    entries, errors = parse_entries([_entry()])
+    assert errors == []
+    assert entries[0].resolved_mode != "hold"
+    entries, errors = parse_entries([_entry(role="safeguard", severity="recoverable")])
+    assert errors == []
+    assert entries[0].resolved_mode != "hold"
+
+
+def test_objective_hold_without_window_is_an_error() -> None:
     entries, errors = parse_entries([_entry(mode="hold")])
     assert entries == []
-    assert "not yet supported" in errors[0]["reason"]
+    assert "hold_window_sec is required" in errors[0]["reason"]
+
+
+def test_objective_hold_with_window_parses() -> None:
+    entries, errors = parse_entries([_entry(mode="hold", hold_window_sec=30.0)])
+    assert errors == []
+    assert entries[0].hold_window_sec == 30.0
+
+
+def test_hold_window_sec_rejects_infinity() -> None:
+    entries, errors = parse_entries([_entry(mode="hold", hold_window_sec=float("inf"))])
+    assert entries == []
+    assert "finite" in errors[0]["reason"]
+
+
+def test_hold_window_sec_rejects_nan() -> None:
+    entries, errors = parse_entries([_entry(mode="hold", hold_window_sec=float("nan"))])
+    assert entries == []
+    assert "finite" in errors[0]["reason"]
+
+
+def test_safeguard_hold_with_window_is_an_error() -> None:
+    entries, errors = parse_entries(
+        [_entry(role="safeguard", severity="catastrophic", mode="hold", hold_window_sec=30.0)]
+    )
+    assert entries == []
+    assert "hold_window_sec is not allowed" in errors[0]["reason"]
+
+
+def test_safeguard_hold_without_window_parses() -> None:
+    entries, errors = parse_entries(
+        [_entry(role="safeguard", severity="catastrophic", mode="hold")]
+    )
+    assert errors == []
+    assert entries[0].hold_window_sec is None
 
 
 def test_duplicate_names_keep_the_first_and_report_the_second() -> None:
@@ -134,3 +254,113 @@ def test_check_is_parsed_into_a_verifier_instance() -> None:
     assert isinstance(entries[0].check, PodHealthyVerifier)
     assert entries[0].check.selector == "app=web"
     assert entries[0].check.namespace == "shop"
+
+
+def test_display_fields_are_accepted_and_default_to_none() -> None:
+    entries, errors = parse_entries([_entry()])
+    assert errors == []
+    entry = entries[0]
+    assert (entry.title, entry.description, entry.group, entry.failure_hint) == (
+        None,
+        None,
+        None,
+        None,
+    )
+
+
+def test_display_fields_are_parsed_verbatim() -> None:
+    entries, errors = parse_entries(
+        [
+            _entry(
+                title="web is healthy",
+                description="Every web pod in shop is Ready.",
+                group="workload",
+                failure_hint="The image tag is usually wrong.",
+            )
+        ]
+    )
+    assert errors == []
+    entry = entries[0]
+    assert entry.title == "web is healthy"
+    assert entry.description == "Every web pod in shop is Ready."
+    assert entry.group == "workload"
+    assert entry.failure_hint == "The image tag is usually wrong."
+
+
+def test_parse_errors_carry_the_declared_role_and_severity() -> None:
+    bad_check = {**_CHECK, "bogus_key": "x"}
+    _, errors = parse_entries(
+        [
+            _entry(role="safeguard", severity="catastrophic", check=bad_check),
+            _entry(name="e2", check=bad_check),
+            _entry(name="e3", role=7, check=bad_check),
+        ]
+    )
+    assert [(e["name"], e.get("role"), e.get("severity")) for e in errors] == [
+        ("e1", "safeguard", "catastrophic"),
+        ("e2", "objective", None),
+        ("e3", None, None),  # a non-string declaration is left out, not guessed
+    ]
+
+
+def test_parse_errors_carry_the_declared_display_fields() -> None:
+    _, errors = parse_entries(
+        [
+            _entry(
+                title="web is healthy",
+                description="Every web pod is Ready.",
+                group="workload",
+                failure_hint=42,  # not a string: left out, not guessed
+                check={**_CHECK, "bogus_key": "x"},
+            )
+        ]
+    )
+    assert errors == [
+        {
+            "name": "e1",
+            "reason": errors[0]["reason"],
+            "role": "objective",
+            "title": "web is healthy",
+            "description": "Every web pod is Ready.",
+            "group": "workload",
+        }
+    ]
+
+
+def test_duplicate_name_error_carries_the_fields_of_the_dropped_entry() -> None:
+    _, errors = parse_entries(
+        [
+            _entry(),
+            _entry(role="safeguard", severity="recoverable", title="Second", group="g"),
+        ]
+    )
+    assert errors == [
+        {
+            "name": "e1",
+            "reason": "duplicate verification entry name 'e1'",
+            "role": "safeguard",
+            "severity": "recoverable",
+            "title": "Second",
+            "group": "g",
+        }
+    ]
+
+
+def test_display_fields_are_stripped() -> None:
+    entries, errors = parse_entries(
+        [_entry(title="  web is healthy ", description=" d ", group=" g ", failure_hint=" h ")]
+    )
+    assert errors == []
+    entry = entries[0]
+    assert (entry.title, entry.description, entry.group, entry.failure_hint) == (
+        "web is healthy",
+        "d",
+        "g",
+        "h",
+    )
+
+
+def test_display_fields_do_not_change_scoring_defaults() -> None:
+    entries, _ = parse_entries([_entry(title="t", description="d", group="g")])
+    assert entries[0].weight == 1.0
+    assert entries[0].resolved_mode == "converge"

@@ -153,7 +153,7 @@ pass@k formula.
 >   `run_matrix.sh` runs this automatically over each matrix's results.
 
 Scoring (single definition, in `seed/mock-data.mjs`, reused by ingest):
-- An iteration **passes** when `outcomeScore >= 0.7`.
+- An iteration **passes** when `outcomeScore >= 1.0`.
 - `pass1` = pass rate over the run's scored iterations.
 - `pass5` / `passMax` are **`null` today**: the harness emits a single iteration
   per (setup × task × run), so a pass@k estimate would only ever collapse onto

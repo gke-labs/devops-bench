@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+    scoreOf,
     setupScore,
+    setupTotal,
     setupHistory,
     allRunDates,
     formatRunDate,
@@ -49,6 +51,57 @@ describe("setupScore", () => {
     it("returns null when no task has a score", () => {
         const s = makeSetup({ tasks: [{ folder: "a", name: "A", scores: {} }] });
         expect(setupScore(s, "pass1")).toBeNull();
+    });
+
+    it("sums token buckets when tasks omit precomputed tokens", () => {
+        const s = makeSetup({
+            tasks: [
+                { folder: "a", name: "A", scores: { inputTokens: 500, outputTokens: 100, cachedTokens: 400 } },
+                { folder: "b", name: "B", scores: { inputTokens: 300, outputTokens: 50, cachedTokens: 150 } }
+            ]
+        });
+        expect(setupScore(s, "tokens")).toBe(750); // (1000 + 500) / 2
+        expect(setupTotal(s, "tokens")).toBe(1500); // 1000 + 500
+    });
+});
+
+describe("scoreOf", () => {
+    it("returns explicit metric score if present", () => {
+        expect(scoreOf({ tokens: 5000 }, "tokens")).toBe(5000);
+    });
+
+    it("resolves metric aliases", () => {
+        expect(scoreOf({ inputTokens: 100 }, "tokensInput")).toBe(100);
+        expect(scoreOf({ tokensInput: 200 }, "inputTokens")).toBe(200);
+    });
+
+    it("sums token buckets when tokens is not present", () => {
+        expect(scoreOf({ inputTokens: 500, outputTokens: 100, cachedTokens: 400 }, "tokens")).toBe(1000);
+        expect(scoreOf({ tokensInput: 300, tokensOutput: 50, tokensCached: 150 }, "tokens")).toBe(500);
+        expect(scoreOf({ pass1: 100 }, "tokens")).toBeNull();
+    });
+});
+
+describe("setupTotal", () => {
+    it("is the sum over tasks for the metric", () => {
+        expect(setupTotal(makeSetup(), "pass1")).toBe(170); // 90+80
+    });
+
+    it("sums only the tasks that reported, so coverage moves the total", () => {
+        // The mean of these is 90 either way; the total is not.
+        const s = makeSetup({
+            tasks: [
+                { folder: "a", name: "A", scores: { pass1: 90 } },
+                { folder: "b", name: "B", scores: { pass1: null } }
+            ]
+        });
+        expect(setupTotal(s, "pass1")).toBe(90);
+        expect(setupScore(s, "pass1")).toBe(90);
+    });
+
+    it("returns null when no task has a score, rather than a zero total", () => {
+        const s = makeSetup({ tasks: [{ folder: "a", name: "A", scores: {} }] });
+        expect(setupTotal(s, "pass1")).toBeNull();
     });
 });
 
@@ -140,7 +193,7 @@ describe("yAxisBounds", () => {
         it("follows the data instead of clamping to 100", () => {
             // Token means run to five figures; a [0, 100] clamp would push every
             // series off the top of the chart.
-            const b = yAxisBounds([withHistory("outputTokens", [23200, 24100, 25200])], "outputTokens");
+            const b = yAxisBounds([withHistory("tokens", [23200, 24100, 25200])], "tokens");
             expect(b.min).toBeGreaterThan(100);
             expect(b.min).toBeLessThan(23200);
             expect(b.max).toBeGreaterThan(25200);
@@ -150,7 +203,7 @@ describe("yAxisBounds", () => {
             // Raw padding gave [45.3, 54.7], printing "54.8s" against "54.0s".
             expect(yAxisBounds([withHistory("latency", [47.9, 50.1, 52.2])], "latency"))
                 .toEqual({ min: 44, max: 56 });
-            expect(yAxisBounds([withHistory("outputTokens", [23200, 24100, 25200])], "outputTokens"))
+            expect(yAxisBounds([withHistory("tokens", [23200, 24100, 25200])], "tokens"))
                 .toEqual({ min: 21000, max: 27000 });
         });
 

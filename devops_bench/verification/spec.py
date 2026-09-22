@@ -300,16 +300,73 @@ class VerificationEntry(BaseModel):
     An entry pairs a check subtree with the scoring vocabulary: what the check
     is for (``role``), how badly it matters when it fails (``severity``), how
     much it counts (``weight``), and how it is evaluated (``mode``).
+
+    The display fields (``title``, ``description``, ``group``, ``failure_hint``)
+    exist so a result viewer can say what a failed check means without reading
+    the check tree. They never affect scoring or matching: ``name`` remains the
+    identity a chaos ``verify:`` resolves against. ``Task`` enforces the
+    cross-cutting rules on them (no placeholders, ``group`` declared under the
+    task's ``check_groups``, required once the task is validated).
+
+    Attributes:
+        name: Unique label for this entry within its task.
+        title: Short human label, e.g. ``"team-alpha/web has a CPU limit"``.
+        description: One sentence stating the condition a passing run satisfies.
+        group: Slug of the task-level ``check_groups`` entry this check belongs to.
+        failure_hint: What a failure usually means, from the author who knows
+            the common wrong paths.
+        role: ``"objective"`` (a state the agent is working toward) or
+            ``"safeguard"`` (a state that must never be entered).
+        severity: Required for safeguards; unset for objectives.
+        mode: How the check is evaluated. ``"converge"`` polls toward success
+            until a deadline. ``"assert"`` evaluates once, after the agent's
+            turn ends. ``"hold"`` requires the condition to hold continuously
+            over some window, sampled repeatedly rather than evaluated once;
+            what the window is depends on ``role`` (see ``hold_window_sec``
+            below). Sampling cannot see a violation shorter than the poll
+            interval between two samples; this is a fidelity limit, not a
+            guarantee of continuous observation. Left unset, the mode is
+            derived from ``role``.
+        weight: How much this entry counts toward its role's score.
+        check: The parsed check subtree.
+        hold_poll_interval_sec: Seconds between samples for a ``hold`` entry.
+            Ignored for every other mode. ``None`` defers to the module-level
+            default (``BENCH_HOLD_INTERVAL_SEC``, see
+            ``devops_bench.evalharness.hold``). Must be positive when set.
+            Setting this on an entry whose mode is not ``hold`` is a
+            validation error, since it would otherwise silently do nothing.
+        hold_window_sec: Length, in seconds, of the post-run soak window for
+            an ``objective`` entry in ``hold`` mode. Required in that case:
+            there is no default, since a silent default would quietly
+            consume the shared post-run verification budget
+            (``VERIFICATION_TOTAL_BUDGET_SEC``) on every task in a suite. Not
+            allowed for a ``safeguard`` entry in ``hold`` mode, whose window
+            is always the agent's turn; setting it there would be
+            meaningless and silently ignored, which would mislead. Setting
+            this on an entry whose mode is not ``hold`` is likewise a
+            validation error rather than a silent no-op.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    title: str | None = None
+    description: str | None = None
+    group: str | None = None
+    failure_hint: str | None = None
     role: Literal["objective", "safeguard"]
     severity: Literal["recoverable", "catastrophic"] | None = None
     mode: Literal["converge", "assert", "hold"] | None = None
     weight: float = Field(default=1.0, gt=0)
     check: Any
+    hold_poll_interval_sec: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    hold_window_sec: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+    @field_validator("title", "description", "group", "failure_hint", mode="before")
+    @classmethod
+    def _strip_display_text(cls, value: Any) -> Any:
+        """Strip display text so it is compared and rendered the same as task fields."""
+        return value.strip() if isinstance(value, str) else value
 
     @field_validator("check", mode="before")
     @classmethod
@@ -322,13 +379,46 @@ class VerificationEntry(BaseModel):
 
     @model_validator(mode="after")
     def _check_role_and_mode(self) -> VerificationEntry:
-        """Enforce the role/severity pairing and reject the unbuilt mode."""
+        """Enforce the role/severity pairing and the hold-field couplings.
+
+        ``hold_poll_interval_sec`` and ``hold_window_sec`` only mean something
+        when ``mode`` is explicitly ``"hold"``; setting either on any other
+        entry is rejected by name rather than silently ignored, since a
+        silent no-op is exactly how a misconfigured entry hides.
+        ``hold_window_sec`` is further coupled to the entry's role once
+        ``mode`` is ``"hold"``.
+        """
         if self.role == "safeguard" and self.severity is None:
             raise ValueError("severity is required when role is 'safeguard'")
         if self.role == "objective" and self.severity is not None:
             raise ValueError("severity is not allowed when role is 'objective'")
-        if self.mode == "hold":
-            raise ValueError("mode 'hold' is not yet supported; use 'converge' or 'assert'")
+        if self.mode != "hold" and self.hold_poll_interval_sec is not None:
+            raise ValueError("hold_poll_interval_sec is only valid when mode is 'hold'")
+        if self.mode != "hold" and self.hold_window_sec is not None:
+            raise ValueError("hold_window_sec is only valid when mode is 'hold'")
+        if self.resolved_mode == "hold":
+            if self.role == "objective" and self.hold_window_sec is None:
+                raise ValueError(
+                    "hold_window_sec is required when role is 'objective' and mode is "
+                    "'hold': an objective hold is a post-run soak with no default "
+                    "window, since a silent default would quietly consume the shared "
+                    "verification budget on every task in a suite"
+                )
+            if self.role == "safeguard" and self.hold_window_sec is not None:
+                raise ValueError(
+                    "hold_window_sec is not allowed when role is 'safeguard' and mode "
+                    "is 'hold': a safeguard hold's window is always the agent's turn, "
+                    "so this field would be silently ignored"
+                )
+            if (
+                self.hold_window_sec is not None
+                and self.hold_poll_interval_sec is not None
+                and self.hold_poll_interval_sec >= self.hold_window_sec
+            ):
+                raise ValueError(
+                    "hold_poll_interval_sec must be smaller than hold_window_sec: a window that "
+                    "fits a single sample is an assert, not a hold"
+                )
         return self
 
     @property
@@ -338,11 +428,41 @@ class VerificationEntry(BaseModel):
         Objectives converge because they describe a state the agent is working
         toward. Safeguards assert because they describe a state that must never
         have been entered, and polling one would just wait for a violation to
-        heal.
+        heal. A safeguard can opt into ``hold`` explicitly to require the
+        condition to have held continuously through the agent's turn instead
+        of only at the moment verification runs after the agent finishes.
+        ``hold`` is never derived here, only ever explicit: it is significant
+        enough that an entry must opt into it by name rather than inherit it
+        from a role default.
         """
         if self.mode is not None:
             return self.mode
         return "converge" if self.role == "objective" else "assert"
+
+
+# What an entry that never evaluated still gets to say about itself on the
+# record: how it was meant to score, and how the author described it.
+_DECLARED_ERROR_FIELDS = ("role", "severity", "title", "description", "group", "failure_hint")
+
+
+def _declared_fields(item: Any) -> dict[str, str]:
+    """The scoring and display fields an unparseable entry declared as strings.
+
+    Read off the raw mapping because the entry never became a model. Anything
+    that is not a string is left out rather than guessed at.
+    """
+    if not isinstance(item, dict):
+        return {}
+    return {key: item[key] for key in _DECLARED_ERROR_FIELDS if isinstance(item.get(key), str)}
+
+
+def _entry_fields(entry: VerificationEntry) -> dict[str, str]:
+    """The same fields as :func:`_declared_fields`, from an entry that did parse."""
+    return {
+        key: value
+        for key in _DECLARED_ERROR_FIELDS
+        if isinstance(value := getattr(entry, key), str)
+    }
 
 
 def parse_entries(raw: Any) -> tuple[list[VerificationEntry], list[dict[str, str]]]:
@@ -358,7 +478,11 @@ def parse_entries(raw: Any) -> tuple[list[VerificationEntry], list[dict[str, str
 
     Returns:
         A ``(entries, errors)`` pair. Each error is a ``{"name", "reason"}``
-        mapping, matching the shape already written to result records.
+        mapping, matching the shape already written to result records, plus
+        the entry's declared ``role``, ``severity``, and display fields
+        (``title``, ``description``, ``group``, ``failure_hint``) when it
+        stated them as strings, so a result can still say what the check that
+        never evaluated was for.
     """
     if raw is None:
         return [], []
@@ -383,13 +507,20 @@ def parse_entries(raw: Any) -> tuple[list[VerificationEntry], list[dict[str, str
         try:
             entry = VerificationEntry.model_validate(item)
         except ValidationError as exc:
-            errors.append({"name": label, "reason": _clean_validation_message(exc)})
+            errors.append(
+                {
+                    "name": label,
+                    "reason": _clean_validation_message(exc),
+                    **_declared_fields(item),
+                }
+            )
             continue
         if entry.name in seen:
             errors.append(
                 {
                     "name": entry.name,
                     "reason": f"duplicate verification entry name {entry.name!r}",
+                    **_entry_fields(entry),
                 }
             )
             continue

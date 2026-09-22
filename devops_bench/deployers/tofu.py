@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -280,4 +281,19 @@ class TFDeployer(Deployer):
         if not location:
             raise ConfigError("Failed to retrieve 'cluster_location' from TF outputs.")
 
-        return self.provider.ensure_cluster_credentials(cluster_name, location, self.variables)
+        info = self.provider.ensure_cluster_credentials(cluster_name, location, self.variables)
+
+        # Surface every other scalar, non-sensitive output too (e.g. a global LB
+        # IP) so a task's prompt/chaos_spec/verification_spec can reference it as
+        # a {{OUTPUT_NAME}} placeholder without new plumbing per stack. Sensitive
+        # outputs are dropped here, never carried into a placeholder-substitutable
+        # value; non-scalar ones (lists/maps) have no string form to substitute.
+        extra_outputs = {
+            key: str(entry["value"])
+            for key, entry in outputs.items()
+            if key not in ("cluster_name", "cluster_location")
+            and isinstance(entry, dict)
+            and not entry.get("sensitive")
+            and isinstance(entry.get("value"), str | int | float | bool)
+        }
+        return replace(info, outputs=extra_outputs)

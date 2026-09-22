@@ -114,6 +114,65 @@ def test_get_resource_with_name(mocker):
     assert argv == ["kubectl", "get", "deployment", "my-dep", "-o", "json"]
 
 
+def test_get_resource_threads_context_into_argv(mocker):
+    mock_run = mocker.patch(
+        "devops_bench.k8s.kubectl.run",
+        return_value=_completed(stdout=json.dumps({})),
+    )
+
+    kubectl.get_resource("deployment", "my-dep", context="kind-devops-bench-kind")
+
+    argv = mock_run.call_args.args[0]
+    assert argv == [
+        "kubectl",
+        "get",
+        "deployment",
+        "my-dep",
+        "-o",
+        "json",
+        "--context",
+        "kind-devops-bench-kind",
+    ]
+
+
+def test_get_resource_without_context_omits_context_flag(mocker):
+    mock_run = mocker.patch(
+        "devops_bench.k8s.kubectl.run",
+        return_value=_completed(stdout=json.dumps({})),
+    )
+
+    kubectl.get_resource("deployment", "my-dep")
+
+    argv = mock_run.call_args.args[0]
+    assert "--context" not in argv
+
+
+def test_exec_pod_threads_context_into_argv(mocker):
+    mock_run = mocker.patch("devops_bench.k8s.kubectl.run", return_value=_completed(stdout="ok"))
+
+    kubectl.exec_pod("my-pod", ["true"], context="kind-devops-bench-kind")
+
+    argv = mock_run.call_args.args[0]
+    assert argv == [
+        "kubectl",
+        "exec",
+        "my-pod",
+        "--context",
+        "kind-devops-bench-kind",
+        "--",
+        "true",
+    ]
+
+
+def test_exec_pod_without_context_omits_context_flag(mocker):
+    mock_run = mocker.patch("devops_bench.k8s.kubectl.run", return_value=_completed(stdout="ok"))
+
+    kubectl.exec_pod("my-pod", ["true"])
+
+    argv = mock_run.call_args.args[0]
+    assert "--context" not in argv
+
+
 def test_apply_builds_argv(mocker):
     mock_run = mocker.patch("devops_bench.k8s.kubectl.run", return_value=_completed())
 
@@ -197,3 +256,99 @@ def test_wait_propagates_subprocess_error(mocker):
 
     with pytest.raises(SubprocessError):
         kubectl.wait("pod", timeout_sec=10)
+
+
+def test_run_pod_builds_argv_and_returns_stdout(mocker):
+    mock_run = mocker.patch(
+        "devops_bench.k8s.kubectl.run", return_value=_completed(stdout="hello\n200")
+    )
+
+    out = kubectl.run_pod(
+        "http-probe-abc",
+        "curlimages/curl",
+        ["curl", "-s", "http://svc"],
+        namespace="hello-app",
+        kubeconfig="/tmp/kc",
+        timeout=40,
+    )
+
+    assert out == "hello\n200"
+    argv = mock_run.call_args.args[0]
+    assert argv == [
+        "kubectl",
+        "run",
+        "http-probe-abc",
+        "--rm",
+        "-i",
+        "--restart=Never",
+        "--image=curlimages/curl",
+        "-n",
+        "hello-app",
+        "--command",
+        "--",
+        "curl",
+        "-s",
+        "http://svc",
+    ]
+    assert mock_run.call_args.kwargs["extra_env"] == {"KUBECONFIG": "/tmp/kc"}
+    assert mock_run.call_args.kwargs["timeout"] == 40
+
+
+def test_run_pod_threads_context_into_argv(mocker):
+    mock_run = mocker.patch("devops_bench.k8s.kubectl.run", return_value=_completed(stdout=""))
+
+    kubectl.run_pod("p", "busybox", ["true"], context="kind-devops-bench-kind")
+
+    argv = mock_run.call_args.args[0]
+    assert argv == [
+        "kubectl",
+        "run",
+        "p",
+        "--rm",
+        "-i",
+        "--restart=Never",
+        "--image=busybox",
+        "--command",
+        "--context",
+        "kind-devops-bench-kind",
+        "--",
+        "true",
+    ]
+
+
+def test_run_pod_places_context_before_the_separator(mocker):
+    mock_run = mocker.patch("devops_bench.k8s.kubectl.run", return_value=_completed(stdout=""))
+
+    kubectl.run_pod("p", "busybox", ["true"], context="kind-devops-bench-kind")
+
+    argv = mock_run.call_args.args[0]
+    assert argv.index("--context") < argv.index("--")
+
+
+def test_run_pod_without_context_omits_context_flag(mocker):
+    mock_run = mocker.patch("devops_bench.k8s.kubectl.run", return_value=_completed(stdout=""))
+
+    kubectl.run_pod("p", "busybox", ["true"])
+
+    argv = mock_run.call_args.args[0]
+    assert "--context" not in argv
+
+
+def test_run_pod_injects_env_args(mocker):
+    mock_run = mocker.patch("devops_bench.k8s.kubectl.run", return_value=_completed(stdout=""))
+
+    kubectl.run_pod("p", "busybox", ["true"], env={"A": "1", "B": "2"})
+
+    argv = mock_run.call_args.args[0]
+    assert "--env=A=1" in argv and "--env=B=2" in argv
+    # No timeout supplied -> run is called without a timeout kwarg.
+    assert "timeout" not in mock_run.call_args.kwargs
+
+
+def test_run_pod_propagates_subprocess_error(mocker):
+    mocker.patch(
+        "devops_bench.k8s.kubectl.run",
+        side_effect=SubprocessError(["kubectl", "run"], returncode=1),
+    )
+    with pytest.raises(SubprocessError):
+        kubectl.run_pod("p", "busybox", ["true"])

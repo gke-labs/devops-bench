@@ -27,6 +27,21 @@ ETCD_CERTS=(
 echo "==> Waiting for all nodes to be Ready..."
 kubectl wait --for=condition=Ready nodes --all --timeout=180s
 
+# Record pre-run identity baselines for workload-1/workload-2, so a "delete and
+# redeploy from the gitops-state ConfigMap" reconciliation shortcut is distinguishable
+# from an in-place fix: metadata.uid/creationTimestamp are server-assigned and never
+# survive a delete+recreate, even if every other field looks identical afterward.
+echo "==> Recording pre-run identity baselines for workload-1/workload-2..."
+UID_KEY="devops-bench.io/original-uid"
+CREATED_KEY="devops-bench.io/original-creation-timestamp"
+for name in workload-1 workload-2; do
+  uid="$(kubectl -n "${NAMESPACE}" get deployment "${name}" -o jsonpath='{.metadata.uid}')"
+  created="$(kubectl -n "${NAMESPACE}" get deployment "${name}" -o jsonpath='{.metadata.creationTimestamp}')"
+  kubectl -n "${NAMESPACE}" annotate deployment "${name}" --overwrite \
+    "${UID_KEY}=${uid}" \
+    "${CREATED_KEY}=${created}"
+done
+
 # Discover node names dynamically (kind names the docker containers the same as
 # the Kubernetes node names, e.g. <cluster>-control-plane / <cluster>-worker).
 mapfile -t CP_NODES < <(kubectl get nodes \

@@ -24,14 +24,14 @@ export function buildFilterGroups(models, harnesses, setups) {
             valueOf: s => s.model,
             options: Object.keys(models)
                 .filter(id => setups.some(s => s.model === id))
-                .map(id => ({ value: id, text: models[id].name }))
+                .map(id => ({ value: id, text: models[id].name, model: models[id] }))
         },
         {
             key: "harness", label: "Harness", tier: "primary",
             valueOf: s => s.harness,
             options: Object.keys(harnesses)
                 .filter(id => setups.some(s => s.harness === id))
-                .map(id => ({ value: id, text: harnesses[id].name }))
+                .map(id => ({ value: id, text: harnesses[id].name, harness: harnesses[id] }))
         },
         {
             key: "augmentation", label: "Augment", tier: "secondary",

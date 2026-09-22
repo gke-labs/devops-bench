@@ -31,16 +31,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-__all__ = ["SCHEMA_VERSION", "Manifest", "ResultRow"]
+__all__ = ["SCHEMA_VERSION", "CheckGroupRow", "CheckRow", "Manifest", "ResultRow"]
 
 #: Version of the ``rows.json`` / ``manifest.json`` contract. Bump on any
-#: breaking field change so a downstream ingest can detect a shape mismatch.
-#: v2 adds the scoring-framework v1 fields (``outcomeScore`` becomes the composite
-#: score; ``correctnessScore`` / ``recoverableSafetyScore`` / ``catastrophic`` /
-#: ``scoringVersion`` are added).
+#: breaking field change (a rename, a removal, a changed meaning) so a
+#: downstream ingest can detect a shape mismatch. A field added with a default
+#: is additive within the current version and does not bump it. v2 made
+#: ``outcomeScore`` the scoring-framework composite and added its sub-scores.
 SCHEMA_VERSION = 2
 
 # Frozen + camelCase aliases. ``populate_by_name`` keeps the snake_case
@@ -80,6 +80,62 @@ class Manifest(BaseModel):
         return self.model_dump(by_alias=True)
 
 
+class CheckGroupRow(BaseModel):
+    """A display group for checks, as declared under the task's ``check_groups``.
+
+    Attributes:
+        title: Short human label for the group.
+        description: What a run that passes every check in the group achieved.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    title: str = ""
+    description: str = ""
+
+
+class CheckRow(BaseModel):
+    """One verification entry's outcome, flattened for the dashboard.
+
+    Mirrors one item of the record's ``verification_report`` without the
+    per-child diagnostics. The display fields come from the task author and
+    say what the check means; ``reason`` is the verifier's own explanation of
+    what it observed.
+
+    Attributes:
+        name: The entry's stable identity (``verification_spec[*].name``).
+        title: Author-written short label; ``""`` when the task declared none.
+        description: Author-written statement of the passing condition.
+        group: Key into the row's ``check_groups``; ``""`` when ungrouped.
+        failure_hint: Author-written note on what a failure usually means.
+        role: ``objective`` or ``safeguard``.
+        severity: ``recoverable`` or ``catastrophic`` for safeguards; ``""``
+            for objectives.
+        weight: Relative weight within the role.
+        mode: ``converge`` (polled until true) or ``assert`` (evaluated once);
+            ``""`` on records that predate it. Explains why a safeguard was
+            single-shot.
+        status: ``pass``, ``fail``, or ``error`` (could not be evaluated). A
+            parse error on the task's spec surfaces here as an ``error`` row
+            too, since it already counts against the correctness score.
+        reason: The verifier's machine-generated explanation.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    name: str
+    title: str = ""
+    description: str = ""
+    group: str = ""
+    failure_hint: str = ""
+    role: str
+    severity: str = ""
+    weight: float = 1.0
+    mode: str = ""
+    status: str
+    reason: str = ""
+
+
 class ResultRow(BaseModel):
     """One flattened iteration row, the producer-side leaderboard contract.
 
@@ -99,6 +155,17 @@ class ResultRow(BaseModel):
         t: UTC ISO-8601 run timestamp; matches :attr:`Manifest.t`.
         task_folder: The task's directory name.
         task_name: The task's human-readable name (the spec ``name:`` field).
+        task_title: Display title from the task's ``title``; ``""`` when unset.
+        task_summary: Plain-English summary from the task's ``summary``.
+        task_category: Primary bucket from the task's ``category``.
+        task_tags: Secondary facets from the task's ``tags``.
+        check_groups: Display groups from the task's ``check_groups``, keyed by
+            the slug each :class:`CheckRow` may reference via ``group``.
+        checks: One :class:`CheckRow` per verification entry: the evaluated
+            entries in declaration order, then any entry that never evaluated
+            because it failed to parse or was dropped as a duplicate name.
+            Empty when the task declared no entries or the record predates
+            verification.
         iteration: Zero-based repeat index; always ``0`` until multi-iteration
             runs land.
         outcome_score: Composite scoring-framework score in ``[0, 1]``
@@ -114,8 +181,19 @@ class ResultRow(BaseModel):
             scores, so this value will not reconcile by hand against
             ``outcome_score``. ``None`` when the task declared no recoverable
             safeguards.
-        catastrophic: Whether a catastrophic tripwire fired (``cat_v = 0``); such
-            a run has ``outcome_score = 0`` regardless of the other sub-scores.
+        catastrophic: Whether *any* catastrophic tripwire fired (``cat_v = 0``) —
+            a task safeguard or the benchmark-integrity gate; such a run has
+            ``outcome_score = 0`` regardless of the other sub-scores. Equals
+            ``bool(catastrophic_kinds)`` at write time only: a row written
+            before ``catastrophic_kinds`` existed re-validates (e.g. through
+            ``aggregate.rebatch_rows``) with a genuine ``True`` beside the
+            defaulted empty list, so never derive this flag from the list.
+        catastrophic_kinds: The score keys of the gates that fired, verbatim
+            (``"VerificationCatastrophic"`` for a task safeguard,
+            ``"IntegrityCatastrophic"`` for the benchmark-integrity gate). A
+            list because both gates can fire on one run; empty when none did —
+            or when the row predates this field, so an empty list is not
+            evidence of a clean run unless ``catastrophic`` is also ``False``.
         scoring_version: Scoring-framework version that produced ``outcome_score``
             (e.g. ``"v1"``); ``""`` for rows written before the framework landed.
         tool_score: Tool-invocation judge score in ``[0, 1]``, or ``None``.
@@ -148,11 +226,18 @@ class ResultRow(BaseModel):
     t: str
     task_folder: str
     task_name: str
+    task_title: str = ""
+    task_summary: str = ""
+    task_category: str = ""
+    task_tags: list[str] = Field(default_factory=list)
+    check_groups: dict[str, CheckGroupRow] = Field(default_factory=dict)
+    checks: list[CheckRow] = Field(default_factory=list)
     iteration: int
     outcome_score: float | None
     correctness_score: float | None = None
     recoverable_safety_score: float | None = None
     catastrophic: bool = False
+    catastrophic_kinds: list[str] = Field(default_factory=list)
     scoring_version: str = ""
     tool_score: float | None
     latency_sec: float

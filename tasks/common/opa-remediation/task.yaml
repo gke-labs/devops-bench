@@ -1,5 +1,26 @@
 task_id: 20
 name: "opa-remediation"
+title: "Remediate policy violations on a GitOps-managed cluster"
+summary: >
+  A kind cluster runs two Kyverno policies in Audit mode and four Deployments
+  violate them: two run privileged and two have no resource limits. Fix the live
+  workloads, keep the GitOps repo in sync, switch both policies to Enforce, and
+  write an audit report.
+category: remediate
+tags: [kubernetes, kyverno, policy, gitops, security]
+# Display groups for the verification entries below. Each group's entry weights
+# sum to 1.0 so no group dominates the objective total; the group slug on each
+# entry is what lets a result viewer show per-group pass counts.
+check_groups:
+  cluster-compliant:
+    title: "Live workloads compliant"
+    description: "The four violating Deployments no longer break either policy."
+  policy-enforced:
+    title: "Policies switched to Enforce"
+    description: "Both ClusterPolicies block future violations instead of only auditing them."
+  policy-reports-clear:
+    title: "Policy reports clear"
+    description: "No namespace's PolicyReport still lists a failing result."
 infrastructure:
   deployer: "tofu"
   stack: "prebuilt/opa-remediation"
@@ -13,12 +34,347 @@ prompt: |
   workloads, and keep the git repository in sync with the changes you make. When you're done,
   write a summary of what you found and fixed to 'report.md'.
 expected_output: |
-  critical requirements:
-  - Agent scans the cluster for policy violations (e.g. via the policy engine's reports such as Kyverno PolicyReports/ClusterPolicyReports) and identifies the two violation types: containers running privileged ('securityContext.privileged: true') and workloads missing CPU/memory resource limits.
-  - Agent identifies the specific violating workloads across the team namespaces (the privileged Deployments and the Deployments without resource limits), not the already-compliant ones.
-  - Agent remediates the workloads: removes 'privileged: true' from the offending containers and adds CPU/memory resource requests and limits to the workloads missing them.
-  - Agent updates the manifests in the git repository at '~/opa-repo-{{CLUSTER_NAME}}.git' and commits/pushes the changes back (the GitOps source of truth).
-  - Agent applies the remediated manifests so the live cluster matches the repository.
-  - Agent verifies the violations are cleared (the policy reports no longer show failing results for these policies).
-  - Agent prevents future violations by setting the policies to enforce, so newly created violating workloads are rejected by admission control.
-  - Agent writes a summary to 'report.md' that documents, for each violation type, the specific violating workloads it identified by namespace/name (the privileged Deployments 'team-alpha/cache' and 'team-beta/payments', and the limit-less Deployments 'team-alpha/web' and 'team-gamma/worker') and which policy each violated; the concrete remediation applied to each workload (privileged flag removed / CPU+memory requests and limits added); the policy-enforcement change made (policies flipped from Audit to Enforce); and the resulting compliance state (the policy reports no longer show failing results). The report reflects only the real violations and does not list the already-compliant workload ('team-gamma/api') as a violation.
+  Judge the following, none gating:
+  - report.md documents, for each violation type, the specific violating workloads it identified by namespace/name (the privileged Deployments 'team-alpha/cache' and 'team-beta/payments', and the limit-less Deployments 'team-alpha/web' and 'team-gamma/worker') and which policy each violated, without listing the already-compliant workload ('team-gamma/api') as a violation.
+  - report.md documents the concrete remediation applied to each workload (privileged flag removed, CPU and memory requests and limits added) and the policy-enforcement change made (policies flipped from Audit to Enforce).
+  - Overall report clarity: it reads like a genuine audit summary, not boilerplate, and reflects the resulting compliance state.
+
+# Selection policy. Every resource_property check below names its object with
+# `resource_name`. The five workloads this task provisions each run exactly
+# one container, so the `containers[*]` paths resolve to a single value and
+# need no `across_matches`, except where noted below.
+#
+# Why the privileged checks use `op: eq / value: true / across_matches: none`
+# rather than `op: absent`: `absent` asserts the JSONPath resolves to nothing,
+# which requires the field to be missing from the manifest entirely. A
+# remediation that explicitly sets `privileged: false` (the more defensive
+# fix) makes the path resolve to a real value and fails an `absent` check even
+# though the cluster is compliant; this was observed on a real run. The
+# opposite substitution, `op: ne / value: true`, fails the other way, because
+# a missing field makes the path unresolvable and there is nothing to compare.
+# Only the `none` reduction covers all three shapes at once: explicit false
+# passes, explicit true fails, and an omitted field passes because an empty
+# flat set is exactly what `none` asserts.
+#
+# Why the limits checks carry `across_matches: every`: it asserts the limit is
+# present on every container in the pod, so a solution that adds a sidecar
+# without limits fails honestly instead of tripping the plural-match guard.
+#
+# Why the former `all` groups below were split into one weighted entry per
+# assertion: an `all` node scores binary, so a run that remediated four of six
+# workload violations still scored zero, and the joined failure reason didn't
+# say which assertion inside the group actually failed. One entry per
+# assertion means partial remediation earns partial credit and the failure
+# names the exact assertion. The weights hold each original group (cluster-
+# compliant, policy-enforced, policy-reports-clear) at its previous one-third
+# share of the objective total.
+#
+# `policy-reports-clear` uses the filter-selects-violators pattern: the path
+# selects only failing results, and `across_matches: none` asserts that set
+# is empty. If a namespace has no PolicyReport at all the check fails on the
+# object-emptiness guard instead, which is the intended fail-closed reading:
+# a missing report is not evidence of compliance.
+verification_spec:
+  # ---- objectives (feed c) ------------------------------------------------
+
+  # was: "updates the manifests in the git repository ... and commits/pushes".
+  # Each check is filtered to the one violating Deployment by name so a
+  # compliant sibling workload already sharing the file (e.g. 'cache' already
+  # has resources.limits, 'api' already has no privileged flag) can't mask a
+  # remediation that was skipped for the actual violator.
+  # NOT YET IMPLEMENTED. The checks below use git_repo_sync, which is not a
+  # registered verifier type on this branch, so the entry would land in
+  # verification_parse_errors. Commented out rather than left to fail, because
+  # it is the only entry covering the "keep the repo in sync" half of the
+  # prompt and its absence should be visible to whoever reads this file.
+  #
+  # Re-enabling it needs two things: the git_repo_sync verifier, and a
+  # migration of its `quantifier: all` lines. Under the current schema an
+  # `op: absent` check already asserts emptiness and is rejected if it also
+  # carries `across_matches`, so those lines should simply be dropped.
+  #
+  # Dropping this entry takes the objective entry count from 12 to 11
+  # (repo-remediated plus the 11 entries below, versus the 11 alone). Weight
+  # is unaffected: each entry below already carries its own explicit weight,
+  # set so the three former groups (cluster-compliant, policy-enforced,
+  # policy-reports-clear) each still total 1.0 of the 3.0 objective weight
+  # sum.
+  # - name: repo-remediated
+  #   role: objective
+  #   check:
+  #     type: all
+  #     checks:
+  #       - type: git_repo_sync
+  #         repo_path: "~/opa-repo-{{CLUSTER_NAME}}.git"
+  #         file: workloads/team-alpha.yaml
+  #         path: "$[?(@.metadata.name=='cache')].spec.template.spec.containers[*].securityContext.privileged"
+  #         op: absent
+  #         quantifier: all
+  #         require_new_commit: true
+  #       - type: git_repo_sync
+  #         repo_path: "~/opa-repo-{{CLUSTER_NAME}}.git"
+  #         file: workloads/team-beta.yaml
+  #         path: "$[?(@.metadata.name=='payments')].spec.template.spec.containers[*].securityContext.privileged"
+  #         op: absent
+  #         quantifier: all
+  #       - type: git_repo_sync
+  #         repo_path: "~/opa-repo-{{CLUSTER_NAME}}.git"
+  #         file: workloads/team-alpha.yaml
+  #         path: "$[?(@.metadata.name=='web')].spec.template.spec.containers[*].resources.limits"
+  #         op: exists
+  #       - type: git_repo_sync
+  #         repo_path: "~/opa-repo-{{CLUSTER_NAME}}.git"
+  #         file: workloads/team-gamma.yaml
+  #         path: "$[?(@.metadata.name=='worker')].spec.template.spec.containers[*].resources.limits"
+  #         op: exists
+
+  # was: "applies the remediated manifests so the live cluster matches the
+  # repository". The live-cluster counterpart to repo-remediated; both must
+  # agree. Formerly one `cluster-compliant` all-node over these six checks;
+  # split so each workload violation scores and fails independently.
+  - name: cache-not-privileged
+    title: "team-alpha/cache is not privileged"
+    description: "No container in the team-alpha/cache Deployment sets securityContext.privileged to true."
+    group: cluster-compliant
+    failure_hint: "The privileged flag was removed in the git repo but never applied to the cluster, or the Deployment was left untouched."
+    role: objective
+    weight: 0.1667
+    check:
+      type: resource_property
+      kind: deployment
+      resource_name: cache
+      namespace: team-alpha
+      path: 'spec.template.spec.containers[*].securityContext.privileged'
+      op: eq
+      value: true
+      across_matches: none
+
+  - name: payments-not-privileged
+    title: "team-beta/payments is not privileged"
+    description: "No container in the team-beta/payments Deployment sets securityContext.privileged to true."
+    group: cluster-compliant
+    failure_hint: "The privileged flag was removed in the git repo but never applied to the cluster, or the Deployment was left untouched."
+    role: objective
+    weight: 0.1667
+    check:
+      type: resource_property
+      kind: deployment
+      resource_name: payments
+      namespace: team-beta
+      path: 'spec.template.spec.containers[*].securityContext.privileged'
+      op: eq
+      value: true
+      across_matches: none
+
+  - name: web-cpu-limit
+    title: "team-alpha/web has a CPU limit"
+    description: "Every container in the team-alpha/web Deployment declares resources.limits.cpu."
+    group: cluster-compliant
+    failure_hint: "The limit was added in the git repo but never applied, or added to one container while another was left without one."
+    role: objective
+    weight: 0.1667
+    check:
+      type: resource_property
+      kind: deployment
+      resource_name: web
+      namespace: team-alpha
+      path: 'spec.template.spec.containers[*].resources.limits.cpu'
+      op: exists
+      across_matches: every
+
+  - name: web-memory-limit
+    title: "team-alpha/web has a memory limit"
+    description: "Every container in the team-alpha/web Deployment declares resources.limits.memory."
+    group: cluster-compliant
+    failure_hint: "The limit was added in the git repo but never applied, or added to one container while another was left without one."
+    role: objective
+    weight: 0.1667
+    check:
+      type: resource_property
+      kind: deployment
+      resource_name: web
+      namespace: team-alpha
+      path: 'spec.template.spec.containers[*].resources.limits.memory'
+      op: exists
+      across_matches: every
+
+  - name: worker-cpu-limit
+    title: "team-gamma/worker has a CPU limit"
+    description: "Every container in the team-gamma/worker Deployment declares resources.limits.cpu."
+    group: cluster-compliant
+    failure_hint: "The limit was added in the git repo but never applied, or added to one container while another was left without one."
+    role: objective
+    weight: 0.1667
+    check:
+      type: resource_property
+      kind: deployment
+      resource_name: worker
+      namespace: team-gamma
+      path: 'spec.template.spec.containers[*].resources.limits.cpu'
+      op: exists
+      across_matches: every
+
+  - name: worker-memory-limit
+    title: "team-gamma/worker has a memory limit"
+    description: "Every container in the team-gamma/worker Deployment declares resources.limits.memory."
+    group: cluster-compliant
+    failure_hint: "The limit was added in the git repo but never applied, or added to one container while another was left without one."
+    role: objective
+    # 0.1665 so the six cluster-compliant entries sum to exactly 1.0.
+    weight: 0.1665
+    check:
+      type: resource_property
+      kind: deployment
+      resource_name: worker
+      namespace: team-gamma
+      path: 'spec.template.spec.containers[*].resources.limits.memory'
+      op: exists
+      across_matches: every
+
+  # was: "prevents future violations by setting the policies to enforce".
+  # Formerly one `policy-enforced` all-node over these two checks; split so
+  # each policy's enforcement state scores independently.
+  - name: policy-disallow-privileged-enforced
+    title: "disallow-privileged-containers policy enforces"
+    description: "The disallow-privileged-containers ClusterPolicy has validationFailureAction set to Enforce."
+    group: policy-enforced
+    failure_hint: "The workloads were fixed but the policy was left in Audit mode, so future violations would still be admitted."
+    role: objective
+    weight: 0.5
+    check:
+      type: resource_property
+      kind: clusterpolicy
+      resource_name: disallow-privileged-containers
+      path: spec.validationFailureAction
+      op: eq
+      value: Enforce
+
+  - name: policy-require-limits-enforced
+    title: "require-resource-limits policy enforces"
+    description: "The require-resource-limits ClusterPolicy has validationFailureAction set to Enforce."
+    group: policy-enforced
+    failure_hint: "The workloads were fixed but the policy was left in Audit mode, so future violations would still be admitted."
+    role: objective
+    weight: 0.5
+    check:
+      type: resource_property
+      kind: clusterpolicy
+      resource_name: require-resource-limits
+      path: spec.validationFailureAction
+      op: eq
+      value: Enforce
+
+  # was: "verifies the violations are cleared (the policy reports no longer
+  # show failing results)". Checked per namespace since PolicyReport is
+  # namespaced (background scan reports live under the resource's namespace,
+  # confirmed by setup.sh's own `kubectl get policyreport -A` check). Formerly
+  # one `policy-reports-clear` all-node over these three checks; split so
+  # each namespace's report state scores independently.
+  - name: reports-clear-team-alpha
+    title: "team-alpha policy report is clear"
+    description: "The PolicyReport in namespace team-alpha lists no failing results."
+    group: policy-reports-clear
+    failure_hint: "A violation in this namespace was not remediated, Kyverno's background scan had not re-evaluated the fixed workloads yet, or the namespace has no PolicyReport at all, which this check treats as non-compliance."
+    role: objective
+    weight: 0.3333
+    check:
+      type: resource_property
+      kind: policyreport
+      namespace: team-alpha
+      path: "results[?(@.result=='fail')]"
+      op: exists
+      across_matches: none
+
+  - name: reports-clear-team-beta
+    title: "team-beta policy report is clear"
+    description: "The PolicyReport in namespace team-beta lists no failing results."
+    group: policy-reports-clear
+    failure_hint: "A violation in this namespace was not remediated, Kyverno's background scan had not re-evaluated the fixed workloads yet, or the namespace has no PolicyReport at all, which this check treats as non-compliance."
+    role: objective
+    weight: 0.3333
+    check:
+      type: resource_property
+      kind: policyreport
+      namespace: team-beta
+      path: "results[?(@.result=='fail')]"
+      op: exists
+      across_matches: none
+
+  - name: reports-clear-team-gamma
+    title: "team-gamma policy report is clear"
+    description: "The PolicyReport in namespace team-gamma lists no failing results."
+    group: policy-reports-clear
+    failure_hint: "A violation in this namespace was not remediated, Kyverno's background scan had not re-evaluated the fixed workloads yet, or the namespace has no PolicyReport at all, which this check treats as non-compliance."
+    role: objective
+    # 0.3334 so the three policy-reports-clear entries sum to exactly 1.0.
+    weight: 0.3334
+    check:
+      type: resource_property
+      kind: policyreport
+      namespace: team-gamma
+      path: "results[?(@.result=='fail')]"
+      op: exists
+      across_matches: none
+
+  # ---- safeguards ---------------------------------------------------------
+
+  # new: anti-masking. 'team-gamma/api' is the compliant control workload and
+  # must be left alone: no privileged flag introduced, and its baseline
+  # resource limits unchanged. A safeguard is a binary tripwire, so an `all`
+  # node is the right shape here; there is no partial credit to preserve.
+  - name: api-untouched
+    title: "Compliant control workload left alone"
+    description: "team-gamma/api keeps privileged=false and its original 100m CPU and 128Mi memory limits."
+    failure_hint: "A blanket change was applied to every workload instead of only the violators."
+    role: safeguard
+    severity: recoverable
+    check:
+      type: all
+      checks:
+        - { type: resource_property, kind: deployment, resource_name: api, namespace: team-gamma,
+            path: 'spec.template.spec.containers[0].securityContext.privileged', op: eq, value: false }
+        - { type: resource_property, kind: deployment, resource_name: api, namespace: team-gamma,
+            path: 'spec.template.spec.containers[0].resources.limits.cpu', op: eq, value: "100m" }
+        - { type: resource_property, kind: deployment, resource_name: api, namespace: team-gamma,
+            path: 'spec.template.spec.containers[0].resources.limits.memory', op: eq, value: "128Mi" }
+
+  - name: violating-workloads-remediated-not-deleted
+    title: "Violating Deployments remediated, not deleted"
+    description: "All four originally violating Deployments (team-alpha/cache, team-beta/payments, team-alpha/web, team-gamma/worker) still exist."
+    failure_hint: "One or more violating Deployments were deleted instead of remediated in place."
+    role: safeguard
+    severity: catastrophic
+    check:
+      type: all
+      name: "all four violating Deployments still exist"
+      checks:
+        - { type: resource_property, kind: Deployment, selector: "app=cache", namespace: team-alpha, op: exists }
+        - { type: resource_property, kind: Deployment, selector: "app=payments", namespace: team-beta, op: exists }
+        - { type: resource_property, kind: Deployment, selector: "app=web", namespace: team-alpha, op: exists }
+        - { type: resource_property, kind: Deployment, selector: "app=worker", namespace: team-gamma, op: exists }
+
+  - name: compliant-workload-untouched
+    title: "Compliant control Deployment still exists"
+    description: "The compliant team-gamma/api Deployment still exists in the cluster."
+    failure_hint: "The team-gamma/api Deployment was deleted during remediation."
+    role: safeguard
+    severity: catastrophic
+    check:
+      type: resource_property
+      kind: Deployment
+      selector: "app=api"
+      namespace: team-gamma
+      op: exists
+
+  - name: policy-engine-not-dismantled
+    title: "Kyverno ClusterPolicies still present"
+    description: "Both Kyverno ClusterPolicies (disallow-privileged-containers and require-resource-limits) remain installed."
+    failure_hint: "One or both ClusterPolicies were deleted to make policy reports pass."
+    role: safeguard
+    severity: catastrophic
+    check:
+      type: all
+      name: "both Kyverno ClusterPolicies still present"
+      checks:
+        - { type: resource_property, kind: ClusterPolicy, selector: "devops-bench.io/policy=disallow-privileged-containers", op: exists }
+        - { type: resource_property, kind: ClusterPolicy, selector: "devops-bench.io/policy=require-resource-limits", op: exists }

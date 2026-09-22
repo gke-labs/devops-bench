@@ -20,6 +20,25 @@ from pydantic import ValidationError
 from devops_bench.tasks.schema import Task
 
 
+def _entry(**overrides):
+    base = {"name": "e1", "role": "objective", "check": {"type": "pod_healthy"}}
+    base.update(overrides)
+    return base
+
+
+def _validated_raw(**overrides):
+    raw = {
+        "name": "n",
+        "validated": True,
+        "title": "T",
+        "summary": "S",
+        "category": "deploy",
+        "verification_spec": [_entry(title="Ready", description="Two replicas ready.")],
+    }
+    raw.update(overrides)
+    return raw
+
+
 def test_from_dict_full():
     raw = {
         "task_id": 7,
@@ -215,6 +234,11 @@ def test_to_dict_roundtrip_fields():
         "id",
         "name",
         "folder",
+        "title",
+        "summary",
+        "category",
+        "tags",
+        "check_groups",
         "prompt",
         "expected_output",
         "retrieval_context",
@@ -224,6 +248,7 @@ def test_to_dict_roundtrip_fields():
         "infrastructure",
         "documentation",
         "validated",
+        "timeout_sec",
     }
 
 
@@ -232,7 +257,7 @@ def test_validated_defaults_false():
 
 
 def test_validated_parsed_from_spec():
-    assert Task.from_dict({"name": "n", "validated": True}).validated is True
+    assert Task.from_dict(_validated_raw()).validated is True
 
 
 def test_validated_empty_block_coalesces_false():
@@ -241,7 +266,7 @@ def test_validated_empty_block_coalesces_false():
 
 
 def test_validated_roundtrips_in_to_dict():
-    assert Task.from_dict({"name": "n", "validated": True}).to_dict()["validated"] is True
+    assert Task.from_dict(_validated_raw()).to_dict()["validated"] is True
 
 
 def test_safety_checklists_empty_block_coalesces_to_empty_list():
@@ -251,3 +276,150 @@ def test_safety_checklists_empty_block_coalesces_to_empty_list():
     assert Task.from_dict({"name": "n", "recoverable_safety": None}).recoverable_safety == []
     direct = Task.model_validate({"name": "n", "recoverable_safety": None, "catastrophic": None})
     assert direct.recoverable_safety == []
+
+
+# -- display metadata --------------------------------------------------------
+
+
+def test_display_metadata_defaults_empty():
+    task = Task.from_dict({"name": "n"}, name_default="d")
+    assert task.title == ""
+    assert task.summary == ""
+    assert task.category == ""
+    assert task.tags == []
+    assert task.check_groups == {}
+
+
+def test_display_metadata_parsed_and_stripped():
+    task = Task.from_dict(
+        {
+            "name": "n",
+            "title": "  Fix the thing  ",
+            "summary": " what and why ",
+            "category": "remediate",
+            "tags": ["kubernetes", "gitops"],
+            "check_groups": {
+                "compliant": {"title": "Compliant", "description": "all fixed"},
+                "bare": {"title": "Bare", "description": None},
+            },
+        }
+    )
+    assert task.title == "Fix the thing"
+    assert task.summary == "what and why"
+    assert task.category == "remediate"
+    assert task.tags == ["kubernetes", "gitops"]
+    assert task.check_groups["compliant"].description == "all fixed"
+    assert task.check_groups["bare"].description == ""
+
+
+def test_display_metadata_empty_blocks_coalesce():
+    task = Task.from_dict({"name": "n", "title": None, "tags": None, "check_groups": None})
+    assert task.title == ""
+    assert task.tags == []
+    assert task.check_groups == {}
+
+
+def test_check_group_requires_a_title():
+    with pytest.raises(ValidationError):
+        Task.from_dict({"name": "n", "check_groups": {"g": {"description": "x"}}})
+
+
+def test_check_group_rejects_a_blank_title_and_strips_text():
+    # Blank means blank after stripping, at any stage, not only once validated.
+    with pytest.raises(ValidationError, match="check group title must not be blank"):
+        Task.from_dict({"name": "n", "check_groups": {"g": {"title": "   "}}})
+    with pytest.raises(ValidationError, match="check group title must not be blank"):
+        Task.from_dict({"name": "n", "check_groups": {"g": {"title": None}}})
+    group = Task.from_dict(
+        {"name": "n", "check_groups": {"g": {"title": "  G  ", "description": " d "}}}
+    ).check_groups["g"]
+    assert (group.title, group.description) == ("G", "d")
+
+
+def test_display_metadata_rejects_placeholders_at_task_level():
+    with pytest.raises(ValidationError, match="title must not contain a placeholder"):
+        Task.from_dict({"name": "n", "title": "Deploy to {{CLUSTER_NAME}}"})
+    with pytest.raises(ValidationError, match="check_groups\\['g'\\]"):
+        Task.from_dict({"name": "n", "check_groups": {"g": {"title": "{{NAMESPACE}} ok"}}})
+
+
+def test_display_metadata_rejects_placeholders_on_entries():
+    with pytest.raises(ValidationError, match="'e1': description must not contain"):
+        Task.from_dict({"name": "n", "verification_spec": [_entry(description="in {{NAMESPACE}}")]})
+
+
+def test_entry_group_must_be_declared():
+    with pytest.raises(ValidationError, match="names group 'nope'"):
+        Task.from_dict({"name": "n", "verification_spec": [_entry(group="nope")]})
+    ok = Task.from_dict(
+        {
+            "name": "n",
+            "check_groups": {"g": {"title": "G"}},
+            "verification_spec": [_entry(group="g")],
+        }
+    )
+    assert ok.verification_spec[0]["group"] == "g"
+
+
+def test_unvalidated_task_may_omit_display_metadata():
+    task = Task.from_dict({"name": "n", "verification_spec": [_entry()]})
+    assert task.validated is False
+
+
+def test_validated_task_with_full_metadata_loads():
+    assert Task.from_dict(_validated_raw()).validated is True
+
+
+def test_validated_task_requires_task_level_fields():
+    with pytest.raises(ValidationError, match="requires summary, category"):
+        Task.from_dict(_validated_raw(summary="", category=""))
+
+
+def test_validated_task_requires_entry_title_and_description():
+    with pytest.raises(ValidationError, match="requires description on verification entry 'e1'"):
+        Task.from_dict(_validated_raw(verification_spec=[_entry(title="Ready")]))
+    with pytest.raises(ValidationError, match="requires title on verification entry 'e1'"):
+        Task.from_dict(
+            _validated_raw(verification_spec=[_entry(title="  ", description="Two ready.")])
+        )
+
+
+def test_validated_task_rejects_whitespace_only_task_fields_on_direct_validate():
+    # from_dict strips text; the direct entry point does not, so the rule
+    # must not be satisfied by whitespace alone.
+    with pytest.raises(ValidationError, match="requires title"):
+        Task.model_validate(_validated_raw(title="   "))
+
+
+def test_category_must_be_a_documented_value():
+    with pytest.raises(ValidationError, match="category 'ops' is not one of"):
+        Task.from_dict({"name": "n", "category": "ops"})
+    assert Task.from_dict({"name": "n", "category": "incident"}).category == "incident"
+    # Unset is fine on an unvalidated task.
+    assert Task.from_dict({"name": "n"}).category == ""
+
+
+def test_tags_reject_placeholders():
+    with pytest.raises(ValidationError, match="tags must not contain a placeholder"):
+        Task.from_dict({"name": "n", "tags": ["{{CLUSTER_NAME}}"]})
+
+
+def test_entry_group_is_stripped_before_the_declaration_lookup():
+    # VerificationEntry strips group on parse; the task-level lookup must agree.
+    task = Task.from_dict(
+        {
+            "name": "n",
+            "check_groups": {"g": {"title": "G"}},
+            "verification_spec": [_entry(group="  g ")],
+        }
+    )
+    assert task.verification_spec[0]["group"] == "  g "
+
+
+def test_entry_group_must_be_a_string():
+    # A list or mapping is unhashable; the rule must name the problem rather
+    # than let the membership test raise a TypeError.
+    with pytest.raises(ValidationError, match="'e1': group must be a string"):
+        Task.from_dict({"name": "n", "verification_spec": [_entry(group=[])]})
+    with pytest.raises(ValidationError, match="'e1': group must be a string"):
+        Task.from_dict({"name": "n", "verification_spec": [_entry(group=1)]})

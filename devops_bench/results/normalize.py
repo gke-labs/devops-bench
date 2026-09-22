@@ -27,7 +27,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any, NamedTuple
 
 from devops_bench.core import score_keys
-from devops_bench.results.row import Manifest, ResultRow
+from devops_bench.results.row import CheckGroupRow, CheckRow, Manifest, ResultRow
 
 __all__ = [
     "CATASTROPHIC_SCORE_KEY",
@@ -64,6 +64,18 @@ _RECOVERABLE_KEYS = (
     score_keys.JUDGED_RECOVERABLE_KEY,
 )
 CATASTROPHIC_SCORE_KEY = score_keys.VERIFICATION_CATASTROPHIC_KEY
+_CATASTROPHIC_KEYS = score_keys.CATASTROPHIC_SCORE_KEYS
+
+#: Markers that stop a preference chain rather than being skipped over. A
+#: withheld deterministic signal means the task declared checks for that
+#: quantity and they did not resolve; the judged reading of the same quantity
+#: is not a substitute, and a row that fell through would publish a component
+#: the headline composite deliberately declined to build from. Mirrors
+#: ``metrics.pipeline._WITHHELD_KEYS``.
+_WITHHELD_KEYS = {
+    score_keys.VERIFICATION_CORRECTNESS_KEY: score_keys.VERIFICATION_CORRECTNESS_WITHHELD_KEY,
+    score_keys.VERIFICATION_RECOVERABLE_KEY: score_keys.VERIFICATION_RECOVERABLE_WITHHELD_KEY,
+}
 
 # Token usage aliases per provider, in lookup priority. ``AgentResult.tokens`` is
 # explicitly provider-defined and passed through unchanged, so there is no
@@ -255,14 +267,23 @@ def extract_score(scores: Mapping[str, Any] | None, key: str) -> float | None:
 def _first_score(scores: Mapping[str, Any] | None, keys: tuple[str, ...]) -> float | None:
     """Return the score under the first key in ``keys`` that carries one.
 
+    A key whose withheld marker is present ends the walk instead of being
+    skipped, so a signal the deterministic layer declined to publish is not
+    answered by a judged key further down the chain (see
+    :data:`_WITHHELD_KEYS`).
+
     Args:
         scores: The record's ``scores`` mapping, or ``None``.
         keys: Candidate score keys in preference order.
 
     Returns:
-        The first numeric score found, or ``None`` when no key carries one.
+        The first numeric score found, or ``None`` when no key carries one or
+        when a key earlier in the chain was withheld.
     """
     for key in keys:
+        marker = _WITHHELD_KEYS.get(key)
+        if marker is not None and marker in (scores or {}):
+            return None
         value = extract_score(scores, key)
         if value is not None:
             return value
@@ -285,6 +306,78 @@ def _scoring_version(scores: Mapping[str, Any] | None) -> str:
     return ""
 
 
+def _text(value: Any) -> str:
+    """Coerce an optional display value to a string, mapping ``None`` to ``""``."""
+    return "" if value is None else str(value)
+
+
+def _check_rows(report: Any) -> list[CheckRow]:
+    """Flatten a record's ``verification_report`` into :class:`CheckRow` items.
+
+    Records written before the tri-state ``status`` landed carry only
+    ``success``; derive ``pass`` / ``fail`` from it in that case. Per-child
+    diagnostics and timings are dropped: the row explains the outcome, the
+    record keeps the evidence.
+    """
+    rows: list[CheckRow] = []
+    for item in report or []:
+        if not isinstance(item, Mapping):
+            continue
+        status = item.get("status") or ("pass" if item.get("success") else "fail")
+        weight = item.get("weight")
+        rows.append(
+            CheckRow(
+                name=_text(item.get("name")),
+                title=_text(item.get("title")),
+                description=_text(item.get("description")),
+                group=_text(item.get("group")),
+                failure_hint=_text(item.get("failure_hint")),
+                role=_text(item.get("role")),
+                severity=_text(item.get("severity")),
+                weight=1.0 if weight is None else float(weight),
+                mode=_text(item.get("mode")),
+                status=_text(status),
+                reason=_text(item.get("reason")),
+            )
+        )
+    return rows
+
+
+def _parse_error_rows(errors: Any) -> list[CheckRow]:
+    """Surface each ``verification_parse_errors`` item as an ``error`` check."""
+    rows: list[CheckRow] = []
+    for item in errors or []:
+        if not isinstance(item, Mapping):
+            continue
+        rows.append(
+            CheckRow(
+                name=_text(item.get("name")),
+                title=_text(item.get("title")),
+                description=_text(item.get("description")),
+                group=_text(item.get("group")),
+                failure_hint=_text(item.get("failure_hint")),
+                role=_text(item.get("role")) or "objective",
+                severity=_text(item.get("severity")),
+                status="error",
+                reason=f"not evaluated: {_text(item.get('reason'))}",
+            )
+        )
+    return rows
+
+
+def _check_groups(groups: Any) -> dict[str, CheckGroupRow]:
+    """Map a record's ``task_metadata.check_groups`` onto :class:`CheckGroupRow`."""
+    if not isinstance(groups, Mapping):
+        return {}
+    return {
+        str(key): CheckGroupRow(
+            title=_text(group.get("title")), description=_text(group.get("description"))
+        )
+        for key, group in groups.items()
+        if isinstance(group, Mapping)
+    }
+
+
 def build_rows(records: Iterable[Mapping[str, Any]], manifest: Manifest) -> list[ResultRow]:
     """Flatten harness result records into :class:`ResultRow` rows for one run.
 
@@ -305,7 +398,10 @@ def build_rows(records: Iterable[Mapping[str, Any]], manifest: Manifest) -> list
         scores = record.get("scores")
         tokens = normalize_tokens(record.get("tokens"))
         correctness = _first_score(scores, _CORRECTNESS_KEYS)
-        catastrophic_score = extract_score(scores, CATASTROPHIC_SCORE_KEY)
+        catastrophic_kinds = [k for k in _CATASTROPHIC_KEYS if extract_score(scores, k) == 0.0]
+        task_meta = record.get("task_metadata")
+        if not isinstance(task_meta, Mapping):
+            task_meta = {}
         rows.append(
             ResultRow(
                 setup_id=manifest.setup_id,
@@ -316,11 +412,19 @@ def build_rows(records: Iterable[Mapping[str, Any]], manifest: Manifest) -> list
                 t=manifest.t,
                 task_folder=record.get("folder", "") or "",
                 task_name=record.get("name", "") or "",
+                task_title=_text(task_meta.get("title")),
+                task_summary=_text(task_meta.get("summary")),
+                task_category=_text(task_meta.get("category")),
+                task_tags=[str(tag) for tag in (task_meta.get("tags") or [])],
+                check_groups=_check_groups(task_meta.get("check_groups")),
+                checks=_check_rows(record.get("verification_report"))
+                + _parse_error_rows(record.get("verification_parse_errors")),
                 iteration=0,
                 outcome_score=extract_score(scores, OUTCOME_SCORE_KEY),
                 correctness_score=correctness,
                 recoverable_safety_score=_first_score(scores, _RECOVERABLE_KEYS),
-                catastrophic=catastrophic_score == 0.0,
+                catastrophic=bool(catastrophic_kinds),
+                catastrophic_kinds=catastrophic_kinds,
                 scoring_version=_scoring_version(scores),
                 tool_score=extract_score(scores, TOOL_SCORE_KEY),
                 latency_sec=float(record.get("latency") or 0.0),

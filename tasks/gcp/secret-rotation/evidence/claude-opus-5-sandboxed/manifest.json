@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 2,
+  "runId": "run_20260901_032707_20260901-032703-2089297",
+  "t": "2026-09-01T04:00:14Z",
+  "setupId": "claude-opus-5-openclaw-mcp",
+  "model": "claude-opus-5",
+  "harness": "openclaw",
+  "augmentation": [
+    "mcp"
+  ]
+}

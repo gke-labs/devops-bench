@@ -12,6 +12,7 @@ vi.mock("../context/BenchmarkContext.jsx", () => ({
 }));
 
 import { Detail } from "./Detail.jsx";
+import { setScopeFilterEnabled } from "../lib/taskScope.js";
 
 const SETUP_ID = "alpha-pro-gemini-cli-baseline";
 
@@ -26,15 +27,13 @@ function makeBenchmark(overrides = {}) {
             {
                 id: SETUP_ID, order: 0, model: "alpha-pro", harness: "gemini-cli",
                 augmentation: [], color: "#3b82f6",
-                // The efficiency figures are chosen so their means are round
-                // (50.0s, 20.0k input) and their best is the SMALLEST, which is
-                // the opposite end from the percentage metrics above. No
-                // cachedTokens: this harness reports no cache reads, so that
-                // axis stays null the way a real gemini-cli row does.
+                // Latency/tokens are chosen so their means are round (50.0s,
+                // 20.0k) and their best is the SMALLEST, which is the opposite
+                // end from the percentage metrics above.
                 tasks: [
-                    { folder: "a", name: "Apple", scores: { composite: 60, pass1: 60, pass5: 65, passMax: 70, latency: 40, inputTokens: 10000, outputTokens: 400 } },
-                    { folder: "b", name: "Banana", scores: { composite: 90, pass1: 90, pass5: 95, passMax: 100, latency: 50, inputTokens: 20000, outputTokens: 500 } },
-                    { folder: "c", name: "Cherry", scores: { composite: 80, pass1: 80, pass5: 85, passMax: 90, latency: 60, inputTokens: 30000, outputTokens: 600 } }
+                    { folder: "a", name: "Apple", scores: { composite: 60, pass1: 60, pass5: 65, passMax: 70, latency: 40, tokens: 10000, inputTokens: 5000 } },
+                    { folder: "b", name: "Banana", scores: { composite: 90, pass1: 90, pass5: 95, passMax: 100, latency: 50, tokens: 20000, inputTokens: 10000 } },
+                    { folder: "c", name: "Cherry", scores: { composite: 80, pass1: 80, pass5: 85, passMax: 90, latency: 60, tokens: 30000, inputTokens: 15000 } }
                 ],
                 history: [
                     { t: "2026-01-15T00:00:00Z", scores: { composite: 70, pass1: 70, pass5: 75, passMax: 80 } },
@@ -165,7 +164,7 @@ describe("Detail", () => {
         // tokens the run consumed are untouched, so beside a latency or token
         // headline the card qualifies a figure it has no bearing on.
         benchmark.setups[0].catastrophicCount = 3;
-        for (const m of ["latency", "inputTokens", "outputTokens"]) {
+        for (const m of ["latency", "tokensInput", "tokensOutput"]) {
             renderAt(`/setup/${SETUP_ID}?metric=${m}`);
             expect(screen.queryByText("Catastrophic")).not.toBeInTheDocument();
             cleanup();
@@ -175,6 +174,71 @@ describe("Detail", () => {
         expect(screen.getByText("Catastrophic")).toBeInTheDocument();
     });
 
+    it("marks the catastrophic rows in the task breakdown", () => {
+        // The count on the card has to be traceable to specific rows. Zeroing is
+        // not what identifies them: a task can score 0 without a violation, so
+        // reading the flagged set off the figures alone is not possible.
+        benchmark.setups[0].catastrophicCount = 1;
+        benchmark.setups[0].tasks[0].catastrophic = true;   // Apple, 60
+        benchmark.setups[0].tasks[1].scores.composite = 0;  // Banana, 0 but clean
+        renderAt(`/setup/${SETUP_ID}`);
+        const row = name => screen.getByText(name).closest("tr");
+        const marker = /catastrophic safety violation/i;
+        expect(within(row("Apple")).getByLabelText(marker)).toBeInTheDocument();
+        expect(within(row("Banana")).queryByLabelText(marker)).not.toBeInTheDocument();
+        expect(within(row("Cherry")).queryByLabelText(marker)).not.toBeInTheDocument();
+    });
+
+    it("drops the task markers on the efficiency metrics", () => {
+        // Same rule as the card and the leaderboard badge: the violation zeroes
+        // the outcome, not the seconds or the tokens.
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        const marker = /catastrophic safety violation/i;
+        for (const m of ["latency", "tokensInput", "tokensOutput"]) {
+            renderAt(`/setup/${SETUP_ID}?metric=${m}`);
+            expect(screen.queryByLabelText(marker)).not.toBeInTheDocument();
+            cleanup();
+        }
+        renderAt(`/setup/${SETUP_ID}?metric=composite`);
+        expect(screen.getByLabelText(marker)).toBeInTheDocument();
+    });
+
+    it("explains the marker in a legend when a task is flagged", () => {
+        // The marker's title/aria-label is invisible until hovered and
+        // unreachable by touch, so the glyph needs a visible explanation.
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        renderAt(`/setup/${SETUP_ID}`);
+        const legend = screen.getByText(/catastrophic safety violation/i, { selector: "p" });
+        expect(legend).toBeInTheDocument();
+        expect(legend).toHaveTextContent(/this task/i);          // singular
+        expect(legend).toHaveTextContent(/latency and token figures are unaffected/i);
+    });
+
+    it("counts the flagged tasks in the legend", () => {
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        benchmark.setups[0].tasks[1].catastrophic = true;
+        renderAt(`/setup/${SETUP_ID}`);
+        expect(screen.getByText(/catastrophic safety violation/i, { selector: "p" }))
+            .toHaveTextContent(/these 2 tasks/i);
+    });
+
+    it("omits the legend when nothing is flagged", () => {
+        // A legend for a mark that is not on the page implies the page might
+        // contain one.
+        renderAt(`/setup/${SETUP_ID}`);
+        expect(screen.queryByText(/catastrophic safety violation/i, { selector: "p" }))
+            .not.toBeInTheDocument();
+    });
+
+    it("omits the legend on the efficiency metrics, with the markers", () => {
+        benchmark.setups[0].tasks[0].catastrophic = true;
+        for (const m of ["latency", "tokensInput", "tokensOutput"]) {
+            renderAt(`/setup/${SETUP_ID}?metric=${m}`);
+            expect(screen.queryByText(/catastrophic safety violation/i, { selector: "p" }))
+                .not.toBeInTheDocument();
+            cleanup();
+        }
+    });
     it("reports the efficiency axis the toggle is not showing", () => {
         const card = label => screen.getByText(label).closest("div");
 
@@ -188,9 +252,7 @@ describe("Detail", () => {
         renderAt(`/setup/${SETUP_ID}?metric=latency`);
         expect(within(card("Average")).getByText("50.0s")).toBeInTheDocument();
         expect(screen.queryByText("Avg Latency")).not.toBeInTheDocument();
-        // Falls to the next efficiency axis in METRICS order, which is now the
-        // input-token axis rather than a combined token count.
-        expect(within(card("Avg Input Tokens")).getByText("20.0k")).toBeInTheDocument();
+        expect(within(card("Avg Tokens")).getByText("20.0k")).toBeInTheDocument();
     });
 
     it("orients the stat cards by the metric's direction", () => {
@@ -205,7 +267,7 @@ describe("Detail", () => {
     it("heads the task column with the metric rather than calling it a score", () => {
         // A token count is telemetry, not a score; the old "Score (Tokens)"
         // header said otherwise.
-        renderAt(`/setup/${SETUP_ID}?metric=inputTokens`);
+        renderAt(`/setup/${SETUP_ID}?metric=tokens`);
         expect(screen.getByRole("columnheader", { name: /Tokens/ })).toBeInTheDocument();
         expect(screen.queryByRole("columnheader", { name: /Score/ })).not.toBeInTheDocument();
     });
@@ -221,9 +283,9 @@ describe("Detail", () => {
         expect(screen.getByRole("button", { name: "Outcome" })).toHaveAttribute("aria-pressed", "true");
     });
 
-    it("sorts the task table by score desc by default", () => {
+    it("sorts the task table by score asc by default", () => {
         renderAt(`/setup/${SETUP_ID}`);
-        expect(taskOrder()).toEqual(["Banana", "Cherry", "Apple"]); // 90, 80, 60
+        expect(taskOrder()).toEqual(["Apple", "Cherry", "Banana"]); // 60, 80, 90
     });
 
     it("re-sorts by task name (asc then desc) when the Task header is clicked", () => {
@@ -237,23 +299,20 @@ describe("Detail", () => {
     it("toggles score sort direction on repeated header clicks", () => {
         renderAt(`/setup/${SETUP_ID}`);
         fireEvent.click(screen.getByRole("columnheader", { name: /Outcome/ }));
-        expect(taskOrder()).toEqual(["Apple", "Cherry", "Banana"]); // now ascending
+        expect(taskOrder()).toEqual(["Banana", "Cherry", "Apple"]); // now descending
     });
 
     it("points the sort arrow the way the values actually run", () => {
-        // Both default to best-first, but "best" is the largest percentage and
-        // the smallest token count, so the same sort state has to draw opposite
-        // arrows — otherwise a column ascending 10.0k → 30.0k sits under a ▼.
         const header = name => screen.getByRole("columnheader", { name });
 
         renderAt(`/setup/${SETUP_ID}`);
-        expect(header(/Outcome/)).toHaveTextContent("▼"); // 90 → 60, descending
+        expect(header(/Outcome/)).toHaveTextContent("▲"); // 60 → 90, ascending
 
         cleanup();
-        renderAt(`/setup/${SETUP_ID}?metric=inputTokens`);
-        expect(header(/Tokens/)).toHaveTextContent("▲"); // 10.0k → 30.0k, ascending
+        renderAt(`/setup/${SETUP_ID}?metric=tokens`);
+        expect(header(/Tokens/)).toHaveTextContent("▼"); // 30.0k → 10.0k, descending
         fireEvent.click(header(/Tokens/));
-        expect(header(/Tokens/)).toHaveTextContent("▼");
+        expect(header(/Tokens/)).toHaveTextContent("▲");
     });
 
     it("shows a NotFound state for an unknown setup id", () => {
@@ -272,5 +331,153 @@ describe("Detail", () => {
         benchmark = makeBenchmark({ error: new Error("boom") });
         renderAt(`/setup/${SETUP_ID}`);
         expect(screen.getByText(/Couldn't load benchmark data/i)).toBeInTheDocument();
+    });
+
+    it("renders catastrophic failure details under task name on quality metrics, expanding when >3 items", () => {
+        benchmark = makeBenchmark({
+            setups: [
+                {
+                    id: SETUP_ID,
+                    order: 0,
+                    model: "alpha-pro",
+                    harness: "gemini-cli",
+                    augmentation: [],
+                    color: "#3b82f6",
+                    catastrophicCount: 2,
+                    tasks: [
+                        {
+                            folder: "cat-task",
+                            name: "Catastrophic Task",
+                            scores: { composite: 0, pass1: 0, latency: 45 },
+                            catastrophic: true,
+                            catastrophicKinds: ["VerificationCatastrophic", "IntegrityCatastrophic"],
+                            catastrophicDetails: {
+                                VerificationCatastrophic: [
+                                    { name: "chk-1", reason: "deployment/a: replicas expected 1, got 0", trial: 1 },
+                                    { name: "chk-2", reason: "deployment/b: image mismatch", trial: 2 },
+                                    { name: "chk-3", reason: "cronjob/c: suspend expected false, got true", trial: 2 }
+                                ],
+                                IntegrityCatastrophic: [
+                                    { reason: "Accessed benchmark material", trial: 3 }
+                                ]
+                            }
+                        },
+                        {
+                            folder: "legacy-task",
+                            name: "Legacy Task",
+                            scores: { composite: 0, pass1: 0, latency: 30 },
+                            catastrophic: true,
+                            catastrophicKinds: ["VerificationCatastrophic"],
+                            catastrophicDetails: {}
+                        }
+                    ],
+                    history: []
+                }
+            ]
+        });
+
+        renderAt(`/setup/${SETUP_ID}`);
+
+        // Collapsed dropdown button shows "Failure: Verification (3), Integrity (1)"
+        const toggleBtn = screen.getByRole("button", { name: /Failure: Verification \(3\), Integrity \(1\)/i });
+        expect(toggleBtn).toBeInTheDocument();
+        expect(screen.queryByText("chk-1")).not.toBeInTheDocument();
+        expect(screen.queryByText("deployment/a: replicas expected 1, got 0")).not.toBeInTheDocument();
+
+        // Click dropdown to expand all entries and reasons
+        fireEvent.click(toggleBtn);
+        expect(screen.getByText("chk-1")).toBeInTheDocument();
+        expect(screen.getByText("deployment/a: replicas expected 1, got 0")).toBeInTheDocument();
+        expect(screen.getByText("chk-2")).toBeInTheDocument();
+        expect(screen.getByText("chk-3")).toBeInTheDocument();
+        expect(screen.getByText("Accessed benchmark material")).toBeInTheDocument();
+
+        // Click header button again to collapse
+        fireEvent.click(screen.getByRole("button", { name: /Failure: Verification \(3\), Integrity \(1\)/i }));
+        expect(screen.queryByText("chk-1")).not.toBeInTheDocument();
+
+        // Legacy fallback rendered for task with empty catastrophicDetails
+        expect(screen.getByText("Failure: Verification")).toBeInTheDocument();
+
+        // When switched to an efficiency metric, failure details are hidden
+        cleanup();
+        renderAt(`/setup/${SETUP_ID}?metric=latency`);
+        expect(screen.queryByText(/Failure: Verification/i)).not.toBeInTheDocument();
+    });
+
+    it("hides scope toggle buttons when scope filter is disabled", () => {
+        setScopeFilterEnabled(false);
+        try {
+            renderAt(`/setup/${SETUP_ID}`);
+            expect(screen.queryByRole("button", { name: /Common Tasks/i })).not.toBeInTheDocument();
+            expect(screen.queryByRole("button", { name: /All Tasks/i })).not.toBeInTheDocument();
+        } finally {
+            setScopeFilterEnabled(true);
+        }
+    });
+
+    it("honors ?scope=common and switches task scope on click when enabled", () => {
+        renderAt(`/setup/${SETUP_ID}?scope=common`);
+        const commonBtn = screen.getByRole("button", { name: /Common Tasks/i });
+        const allBtn = screen.getByRole("button", { name: /All Tasks/i });
+        expect(commonBtn).toHaveAttribute("aria-pressed", "true");
+        expect(allBtn).toHaveAttribute("aria-pressed", "false");
+
+        fireEvent.click(allBtn);
+        expect(allBtn).toHaveAttribute("aria-pressed", "true");
+        expect(commonBtn).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("displays correct Common Tasks count regardless of currently active scope when enabled", () => {
+        benchmark = makeBenchmark({
+            setups: [
+                {
+                    id: SETUP_ID, order: 0, model: "alpha-pro", harness: "gemini-cli",
+                    augmentation: [], color: "#3b82f6",
+                    tasks: [
+                        { folder: "a", name: "Apple", scores: { composite: 60, pass1: 60 } },
+                        { folder: "b", name: "Banana", scores: { composite: 90, pass1: 90 } },
+                        { folder: "c", name: "Cherry", scores: { composite: 80, pass1: 80 } }
+                    ],
+                    history: []
+                },
+                {
+                    id: "setup-2", order: 1, model: "alpha-pro", harness: "gemini-cli",
+                    augmentation: [], color: "#ef4444",
+                    tasks: [
+                        { folder: "a", name: "Apple", scores: { composite: 50, pass1: 50 } }
+                    ],
+                    history: []
+                }
+            ]
+        });
+
+        renderAt(`/setup/${SETUP_ID}`);
+        // In full suite view, All Tasks is 3 and Common Tasks is 1
+        expect(screen.getByRole("button", { name: "All Tasks (3)" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Common Tasks (1)" })).toBeInTheDocument();
+
+        // Clicking Common Tasks preserves the (1) count label
+        fireEvent.click(screen.getByRole("button", { name: "Common Tasks (1)" }));
+        expect(screen.getByRole("button", { name: "All Tasks (3)" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Common Tasks (1)" })).toBeInTheDocument();
+    });
+
+    it("does not render generic Failure: Catastrophic when details and kinds are absent", () => {
+        benchmark = makeBenchmark({
+            setups: [
+                {
+                    id: SETUP_ID, order: 0, model: "alpha-pro", harness: "gemini-cli",
+                    augmentation: [], color: "#3b82f6", catastrophicCount: 1,
+                    tasks: [
+                        { folder: "a", name: "Apple", scores: { composite: 0 }, catastrophic: true }
+                    ],
+                    history: []
+                }
+            ]
+        });
+
+        renderAt(`/setup/${SETUP_ID}`);
+        expect(screen.queryByText(/Failure: Catastrophic/i)).not.toBeInTheDocument();
     });
 });

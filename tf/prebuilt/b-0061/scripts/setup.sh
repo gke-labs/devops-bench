@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Setup for b-0061 "The fix that didn't stick, remotely, and the wrong
+# neighbor" (SUBSTRATE-ABLATION control twin of b-0059: identical faults,
+# grading, and prompt, unchanged from b-0059 except that manifests/ here
+# holds only the 8 namespaces this task actually involves, not b-0059's
+# full 21; variant_of b-0056; adds the NetworkPolicy integration lock,
+# sibling of b-0057's quota lock). Runs from OUTSIDE the cluster during
+# `tofu apply`, before the agent starts.
+#
+# The world (7 namespaces under manifests/, a subset of the 20
+# devops-bench-factory/spike-substrate/generate.py, seed 106 originally
+# generated for b-0059) is applied as-is: one `kubectl apply -f` over the
+# whole manifests/ directory. One extra, hand-authored namespace,
+# billing-sync, sits alongside the 7 generated ones in manifests/: it runs
+# the reverting actor for the first (unchanged, b-0056) fault (a Deployment
+# running a kubectl-capable image, watching a desired-state ConfigMap in
+# its OWN namespace and enforcing the recorded replica count onto
+# notifications-sync-web in notifications-sync, every ~20s), the same
+# reconciler-owned mechanism family b-0053 used, but the actor lives
+# OUTSIDE the fault namespace, so nothing in notifications-sync itself
+# explains the revert (see task/GRADING.md).
+#
+# After every intentionally-healthy workload in the world reaches Ready (the
+# wait list is read out of world.json for the generated 7, plus one explicit
+# wait for billing-sync-worker since that namespace is hand-authored and
+# not in world.json), phase 1's seeded fault is applied: billing-sync-config's
+# ConfigMap (the desired-state ConfigMap billing-sync-worker's Deployment
+# reads every ~20s and enforces onto notifications-sync-web via `kubectl
+# scale`) is patched from replicas=3 to replicas=0. This script then waits,
+# bounded, for the in-cluster actor itself to pick up the corrupted value on
+# its own poll cadence and actually scale notifications-sync-web down to 0 --
+# the fault is not applied directly to the Deployment, it is applied to the
+# ConfigMap the actor reads, exactly the way a real drift-inducing bad config
+# push would land. Only once the actor has visibly enforced the corrupted
+# value (spec.replicas == 0) and the symptom is observable (readyReplicas
+# absent) does phase 1 exit.
+#
+# Phase 2, new in b-0059 (not present in b-0056), unchanged in b-0061: the
+# cluster runs a real NetworkPolicy-enforcing CNI (Calico, installed by the
+# cluster module before this script ever runs; see
+# tf/prebuilt/b-0061/main.tf's disable_default_cni)
+# and notifications-sync boots with a default-deny ingress policy plus one
+# scoped allow rule per legitimate client of notifications-sync-web
+# (identity-sync, catalog-cache, checkout-gateway, search-api,
+# identity-gateway) and an in-namespace allow rule, all applied as part of
+# manifests/notifications-sync.yaml, present from boot. Phase 2 corrupts
+# allow-from-search-api's namespaceSelector value with a single-character
+# typo ("search-api" -> "search-apl"), cutting search-api's path to
+# notifications-sync-web independently of phase 1's ConfigMap fault -- fixing
+# the ConfigMap alone does not restore search-api's traffic, and fixing the
+# selector alone does not restore notifications-sync-web's replica count. See
+# task/GRADING.md for the full traffic-edge table and arithmetic.
+set -euo pipefail
+
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+INFRA_PROVIDER="${INFRA_PROVIDER:-kind}"
+
+if [[ "${INFRA_PROVIDER}" == "gcp" ]]; then
+  echo "==> Fetching GKE credentials for cluster ${CLUSTER_NAME:?} in project ${PROJECT_ID:?} (${LOCATION:?})"
+  gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone "${LOCATION}" --project "${PROJECT_ID}"
+fi
+
+MANIFESTS_DIR="${MANIFESTS_DIR:?MANIFESTS_DIR is required}"
+MANIFESTS_DIR="$(cd "${MANIFESTS_DIR}" && pwd)"
+WORLD_JSON="${WORLD_JSON:?WORLD_JSON is required}"
+WAIT_TIMEOUT="${WAIT_TIMEOUT:-180}"
+
+# Fault target: notifications-sync-web (the web-chain frontend Deployment in
+# notifications-sync), and the actor that reverts it: billing-sync-worker
+# (a Deployment in the billing-sync namespace) and the desired-state
+# ConfigMap it watches, billing-sync-config.
+readonly TARGET_NS="notifications-sync"
+readonly TARGET_DEPLOY="notifications-sync-web"
+readonly ACTOR_NS="billing-sync"
+readonly ACTOR_DEPLOY="billing-sync-worker"
+readonly ACTOR_CM="billing-sync-config"
+readonly CORRECT_REPLICAS="3"
+readonly BROKEN_REPLICAS="0"
+
+_ERRFILE="$(mktemp)"; trap 'rm -f "$_ERRFILE"' EXIT
+guarded_read(){ local __v="$1"; shift; local __out __rc=0; __out="$("$@" 2>"$_ERRFILE")" || __rc=$?; if [ "$__rc" -ne 0 ] && grep -qE 'error parsing jsonpath|invalid array index|unable to parse|unrecognized|unknown flag|unknown command' "$_ERRFILE"; then echo "CHECK BUG: malformed kubectl query ($*): $(cat "$_ERRFILE")" >&2; exit 1; fi; printf -v "$__v" '%s' "$__out"; }
+
+echo "==> Applying the generated world (20 namespaces) plus the hand-authored billing-sync namespace from ${MANIFESTS_DIR}..."
+kubectl apply -f "${MANIFESTS_DIR}/"
+
+echo "==> Waiting for every intentionally-healthy workload in the generated world to reach Ready (list read from ${WORLD_JSON})..."
+while IFS='|' read -r _kind _name _ns; do
+  [ -z "${_kind}" ] && continue
+  _kind_lc="$(printf '%s' "${_kind}" | tr '[:upper:]' '[:lower:]')"
+  echo "    waiting for ${_kind}/${_name} -n ${_ns}..."
+  kubectl rollout status "${_kind_lc}/${_name}" -n "${_ns}" --timeout="${WAIT_TIMEOUT}s" >/dev/null
+done < <(jq -r '.namespaces[].healthy_workloads[] | "\(.kind)|\(.name)|\(.namespace)"' "${WORLD_JSON}")
+
+echo "==> Waiting for the hand-authored actor ${ACTOR_DEPLOY} -n ${ACTOR_NS} to reach Ready (not in world.json, waited explicitly)..."
+kubectl rollout status "deployment/${ACTOR_DEPLOY}" -n "${ACTOR_NS}" --timeout="${WAIT_TIMEOUT}s" >/dev/null
+
+echo "==> Applying the seeded fault: corrupting ${ACTOR_CM} -n ${ACTOR_NS} replicas ${CORRECT_REPLICAS} -> ${BROKEN_REPLICAS}..."
+kubectl patch configmap "${ACTOR_CM}" -n "${ACTOR_NS}" --type=merge \
+  -p "{\"data\":{\"replicas\":\"${BROKEN_REPLICAS}\"}}"
+
+# assert seeded conditions actually hold at t0 (a seed that can't prove its
+# conditions hold has failed before the experiment starts)
+
+echo "==> Confirming ${ACTOR_CM} -n ${ACTOR_NS} now holds replicas=${BROKEN_REPLICAS}..."
+guarded_read _cm_replicas kubectl get configmap "${ACTOR_CM}" -n "${ACTOR_NS}" -o jsonpath='{.data.replicas}'
+if [ "${_cm_replicas}" != "${BROKEN_REPLICAS}" ]; then
+  echo "SEED FAIL: workload-restored seed check found data.replicas='${_cm_replicas}' on ${ACTOR_CM} -n ${ACTOR_NS}, expected ${BROKEN_REPLICAS}"
+  exit 1
+fi
+
+echo "==> Waiting for ${ACTOR_DEPLOY}'s own watch loop (poll cadence ~20s) to enforce the corrupted value onto ${TARGET_DEPLOY} -n ${TARGET_NS} (up to ${WAIT_TIMEOUT}s)..."
+echo "    setup.sh never issues a scale command itself; only the in-cluster actor does."
+_deadline=$((SECONDS+WAIT_TIMEOUT))
+_enforced=0
+while :; do
+  guarded_read _spec_replicas kubectl get deployment "${TARGET_DEPLOY}" -n "${TARGET_NS}" -o jsonpath='{.spec.replicas}'
+  if [ "${_spec_replicas}" = "${BROKEN_REPLICAS}" ]; then
+    _enforced=1
+    break
+  fi
+  if (( SECONDS >= _deadline )); then
+    break
+  fi
+  sleep 5
+done
+if [ "${_enforced}" -ne 1 ]; then
+  echo "SEED FAIL: workload-restored seed check: ${ACTOR_DEPLOY} did not scale ${TARGET_DEPLOY} -n ${TARGET_NS} down to ${BROKEN_REPLICAS} replicas within ${WAIT_TIMEOUT}s (the actor's own watch loop may not have polled yet, or is not running)"
+  exit 1
+fi
+
+echo "==> Waiting for ${TARGET_DEPLOY} -n ${TARGET_NS} to have 0 ready replicas (the symptom is now observable)..."
+_deadline=$((SECONDS+WAIT_TIMEOUT))
+_symptom_ok=0
+while :; do
+  guarded_read _ready kubectl get deployment "${TARGET_DEPLOY}" -n "${TARGET_NS}" -o jsonpath='{.status.readyReplicas}'
+  if [ -z "${_ready}" ] || [ "${_ready}" = "0" ]; then
+    _symptom_ok=1
+    break
+  fi
+  if (( SECONDS >= _deadline )); then
+    break
+  fi
+  sleep 5
+done
+if [ "${_symptom_ok}" -ne 1 ]; then
+  echo "SEED FAIL: workload-restored seed check: ${TARGET_DEPLOY} -n ${TARGET_NS} still reports readyReplicas='${_ready}' after ${WAIT_TIMEOUT}s, expected 0"
+  exit 1
+fi
+
+# Phase 2, new in b-0059: corrupt one NetworkPolicy allow rule's
+# namespaceSelector value, cutting search-api's path to notifications-sync-web
+# independently of phase 1's ConfigMap fault. The NetworkPolicy objects
+# themselves are boot-time furniture applied by the kubectl apply above (they
+# live in manifests/notifications-sync.yaml, all five allow rules correct);
+# this is the only place setup.sh mutates one of them.
+readonly NETPOL_NS="notifications-sync"
+readonly NETPOL_ALLOW="allow-from-search-api"
+readonly NETPOL_CORRECT_SELECTOR="search-api"
+readonly NETPOL_BROKEN_SELECTOR="search-apl"
+
+echo "==> Applying the second seeded fault: corrupting ${NETPOL_ALLOW} -n ${NETPOL_NS}'s namespaceSelector value ${NETPOL_CORRECT_SELECTOR} -> ${NETPOL_BROKEN_SELECTOR}..."
+kubectl patch networkpolicy "${NETPOL_ALLOW}" -n "${NETPOL_NS}" --type=json \
+  -p "[{\"op\":\"replace\",\"path\":\"/spec/ingress/0/from/0/namespaceSelector/matchLabels/kubernetes.io~1metadata.name\",\"value\":\"${NETPOL_BROKEN_SELECTOR}\"}]"
+
+echo "==> Confirming ${NETPOL_ALLOW} -n ${NETPOL_NS} now holds namespaceSelector value ${NETPOL_BROKEN_SELECTOR}..."
+guarded_read _netpol_selector kubectl get networkpolicy "${NETPOL_ALLOW}" -n "${NETPOL_NS}" \
+  -o jsonpath='{.spec.ingress[0].from[0].namespaceSelector.matchLabels.kubernetes\.io/metadata\.name}'
+if [ "${_netpol_selector}" != "${NETPOL_BROKEN_SELECTOR}" ]; then
+  echo "SEED FAIL: consumer-path-restored seed check found namespaceSelector value '${_netpol_selector}' on ${NETPOL_ALLOW} -n ${NETPOL_NS}, expected ${NETPOL_BROKEN_SELECTOR}"
+  exit 1
+fi
+
+echo "==> Setup complete."
+echo "    Seeded fault 1: ${ACTOR_CM} -n ${ACTOR_NS} data.replicas=${BROKEN_REPLICAS} (was ${CORRECT_REPLICAS}); ${ACTOR_DEPLOY} -n ${ACTOR_NS} already enforced it onto ${TARGET_DEPLOY} -n ${TARGET_NS}, which is now scaled to 0 and has 0 ready replicas."
+echo "    Nothing in ${TARGET_NS} (no Deployment, CronJob, Job, ConfigMap, or RBAC object there) names or explains the actor; the Role/RoleBinding that used to live there is gone. The trail is cluster-scoped instead: ClusterRoleBinding ${ACTOR_DEPLOY} names billing-sync's ServiceAccount as its subject."
+echo "    Seeded fault 2: ${NETPOL_ALLOW} -n ${NETPOL_NS}'s namespaceSelector now reads '${NETPOL_BROKEN_SELECTOR}' instead of '${NETPOL_CORRECT_SELECTOR}', so search-api's traffic to ${TARGET_DEPLOY} is dropped by the default-deny policy even though the allow rule object still exists and looks present."
+echo "    World: 20 generated namespaces (spike-substrate/generate.py --seed 106 --namespaces 20, see ${WORLD_JSON}) plus the hand-authored billing-sync namespace, plus boot-time NetworkPolicy furniture in ${NETPOL_NS} (default-deny, five scoped allow rules, one same-namespace allow rule)."
+echo "    Inspect: kubectl -n ${TARGET_NS} get all,configmap,role,rolebinding (returns nothing persona-related now); kubectl get clusterrolebinding ${ACTOR_DEPLOY} -o yaml; kubectl -n ${ACTOR_NS} get all,configmap; kubectl -n ${ACTOR_NS} logs deployment/${ACTOR_DEPLOY}; kubectl -n ${NETPOL_NS} get networkpolicy; kubectl -n ${NETPOL_NS} get networkpolicy ${NETPOL_ALLOW} -o yaml"

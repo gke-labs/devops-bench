@@ -53,6 +53,38 @@ resource "google_secret_manager_secret_version" "db_credentials_v1" {
   secret_data = "compromised-password-v1"
 }
 
+# Two uncompromised sibling secrets, each with their own ExternalSecret/consumer
+# in the same namespace (see k8s_config). The incident report only names the
+# compromised secret's resolved GCP resource path, not a k8s object name — the
+# agent has to correlate that path against all three ExternalSecrets'
+# remoteRef.key to determine which one is actually affected, rather than
+# rotating "the only secret in the namespace" or, worse, all three defensively.
+resource "google_secret_manager_secret" "cache_credentials" {
+  secret_id = "cache-credentials-${var.namespace}-${random_id.run.hex}"
+  project   = var.project_id
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "cache_credentials_v1" {
+  secret      = google_secret_manager_secret.cache_credentials.id
+  secret_data = "cache-value-not-compromised-${random_id.run.hex}"
+}
+
+resource "google_secret_manager_secret" "webhook_signing_key" {
+  secret_id = "webhook-signing-key-${var.namespace}-${random_id.run.hex}"
+  project   = var.project_id
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "webhook_signing_key_v1" {
+  secret      = google_secret_manager_secret.webhook_signing_key.id
+  secret_data = "webhook-value-not-compromised-${random_id.run.hex}"
+}
+
 # 4. GCP IAM & GSA Configuration
 resource "google_service_account" "secret_rotation_sa" {
   account_id   = "sa-${var.namespace}-${random_id.run.hex}"

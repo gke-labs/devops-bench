@@ -26,3 +26,16 @@ if (!globalThis.localStorage) {
         writable: true
     });
 }
+
+// jsdom does not implement window.scrollTo or scrollIntoView; stub them so tests can spy/call them
+if (typeof window !== "undefined") {
+    if (!window.scrollTo || typeof window.scrollTo !== "function") {
+        window.scrollTo = () => {};
+    } else {
+        // Replace jsdom's default "Error: Not implemented" stub with a no-op
+        window.scrollTo = () => {};
+    }
+}
+if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+}

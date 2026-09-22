@@ -24,10 +24,44 @@ describe("catalog logo keys", () => {
 });
 
 describe("BrandLogo", () => {
-    it("draws a lettered tile for a known brand", () => {
-        const { container } = render(<BrandLogo logo="claude" />);
-        expect(container.querySelector("rect")).toHaveAttribute("fill", "#d97757");
-        expect(container.querySelector("text")).toHaveTextContent("C");
+    it("draws a lettered tile for a mock brand", () => {
+        const { container } = render(<BrandLogo logo="alpha" />);
+        expect(container.querySelector("rect")).toHaveAttribute("fill", "#64748b");
+        const text = container.querySelector("text");
+        expect(text).toHaveTextContent("A");
+        expect(text).toHaveAttribute("text-anchor", "middle");
+        expect(text).toHaveAttribute("dominant-baseline", "central");
+    });
+
+    it("draws SVG logo for google, anthropic, and openai", () => {
+        const google = render(<BrandLogo logo="google" />);
+        expect(google.container.querySelectorAll("path").length).toBe(4);
+
+        const anthropic = render(<BrandLogo logo="anthropic" />);
+        expect(anthropic.container.querySelector("path")).toBeTruthy();
+        expect(anthropic.container.querySelector("svg")).toHaveAttribute("fill", "currentColor");
+
+        const openai = render(<BrandLogo logo="openai" />);
+        expect(openai.container.querySelector("path")).toBeTruthy();
+        expect(openai.container.querySelector("svg")).toHaveAttribute("fill", "currentColor");
+    });
+
+    it("supports legacy gemini and claude aliases", () => {
+        const gemini = render(<BrandLogo logo="gemini" />);
+        expect(gemini.container.querySelectorAll("path").length).toBe(4);
+
+        const claude = render(<BrandLogo logo="claude" />);
+        expect(claude.container.querySelector("path")).toBeTruthy();
+        expect(claude.container.querySelector("svg")).toHaveAttribute("fill", "currentColor");
+    });
+
+    it("draws SVG logo for qwen and alibaba", () => {
+        const qwen = render(<BrandLogo logo="qwen" />);
+        expect(qwen.container.querySelectorAll("path").length).toBe(3);
+        expect(qwen.container.querySelector("radialGradient")).toBeTruthy();
+
+        const alibaba = render(<BrandLogo logo="alibaba" />);
+        expect(alibaba.container.querySelectorAll("path").length).toBe(3);
     });
 
     it("renders nothing for an unknown brand", () => {
@@ -42,5 +76,14 @@ describe("HarnessIcon", () => {
         const svg = container.querySelector("svg");
         expect(svg).toHaveAttribute("stroke", "#14b8a6");
         expect(svg.querySelectorAll("path").length).toBeGreaterThan(0);
+    });
+
+    it("renders brand logos for antigravity and claude-code", () => {
+        const agy = render(<HarnessIcon harness={HARNESSES["antigravity"]} />);
+        expect(agy.container.querySelectorAll("path").length).toBe(4);
+
+        const claude = render(<HarnessIcon harness={HARNESSES["claude-code"]} />);
+        expect(claude.container.querySelector("path")).toBeTruthy();
+        expect(claude.container.querySelector("svg")).toHaveAttribute("fill", "currentColor");
     });
 });

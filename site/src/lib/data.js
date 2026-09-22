@@ -9,6 +9,7 @@
 
 // @ts-check
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { costUsd } from "../../ingest/pricing.mjs";
 
 /**
  * @typedef {import('./schema').BenchmarkData} BenchmarkData
@@ -47,13 +48,105 @@ export async function loadBenchmarkData(db) {
     const harnesses = {};
     harnessesSnap.forEach(doc => { harnesses[doc.id] = /** @type {Harness} */ (doc.data()); });
 
+    // Defensive metadata normalization: ensure curated logos and labels are respected
+    if (harnesses["antigravity"]) {
+        harnesses["antigravity"].logo = "google";
+        harnesses["antigravity"].accent = harnesses["antigravity"].accent || "#f59e0b";
+        if (harnesses["antigravity"].name === "antigravity" || !harnesses["antigravity"].name) {
+            harnesses["antigravity"].name = "Antigravity";
+        }
+    }
+    if (harnesses["claude_code"]) {
+        harnesses["claude_code"].logo = "anthropic";
+        harnesses["claude_code"].accent = harnesses["claude_code"].accent || "#d97757";
+        if (harnesses["claude_code"].name === "claude_code" || !harnesses["claude_code"].name) {
+            harnesses["claude_code"].name = "Claude Code";
+        }
+    }
+    if (harnesses["claude-code"]) {
+        harnesses["claude-code"].logo = "anthropic";
+        harnesses["claude-code"].accent = harnesses["claude-code"].accent || "#d97757";
+        if (harnesses["claude-code"].name === "claude-code" || !harnesses["claude-code"].name) {
+            harnesses["claude-code"].name = "Claude Code";
+        }
+    }
+
+    // Merge gemini-3.7-flash-high into gemini-3.7-flash so they do not show up separately
+    if (models["gemini-3.7-flash-high"]) {
+        if (!models["gemini-3.7-flash"]) {
+            models["gemini-3.7-flash"] = {
+                ...models["gemini-3.7-flash-high"],
+                name: "Gemini 3.7 Flash",
+                logo: "gemini",
+                provider: "Google"
+            };
+        }
+        delete models["gemini-3.7-flash-high"];
+    }
+
     // Drop setups whose model/harness id doesn't resolve in the metadata
     // collections. The three collections are written independently (and in
     // production by separate ingest steps), so a dangling reference is possible;
     // rendering one would crash every accessor that does `models[setup.model].name`.
     // Filtering here upholds the invariant "every setup's refs resolve" for the
     // whole UI. Dropped ids are logged, not silently swallowed.
-    const allSetups = setupsSnap.docs.map(doc => /** @type {Setup} */ (doc.data()));
+    const allSetups = setupsSnap.docs.map(doc => {
+        const s = /** @type {Setup} */ (doc.data());
+        if (s.model === "gemini-3.7-flash-high") {
+            s.model = "gemini-3.7-flash";
+        }
+
+        // Defensive backfill: calculate cost and tokens from token telemetry if missing from the read model
+        const fillCost = scores => {
+            if (!scores) return;
+            if (Number.isFinite(scores.cost)) return;
+            if (Number.isFinite(scores.costUsd)) {
+                scores.cost = scores.costUsd;
+                return;
+            }
+            const usd = costUsd({
+                model: s.model,
+                inputTokens: scores.inputTokens ?? scores.tokensInput,
+                outputTokens: scores.outputTokens ?? scores.tokensOutput,
+                cachedTokens: scores.cachedTokens ?? scores.tokensCached,
+                cacheWriteTokens: scores.cacheWriteTokens ?? scores.tokensCacheWrite,
+                reasoningTokens: scores.reasoningTokens ?? scores.tokensReasoning
+            });
+            if (Number.isFinite(usd)) {
+                scores.cost = Math.round(usd * 10000) / 10000;
+            }
+        };
+
+        const fillTokens = scores => {
+            if (!scores) return;
+            if (Number.isFinite(scores.tokens)) return;
+            const input = scores.inputTokens ?? scores.tokensInput;
+            const output = scores.outputTokens ?? scores.tokensOutput;
+            const cached = scores.cachedTokens ?? scores.tokensCached;
+            const write = scores.cacheWriteTokens ?? scores.tokensCacheWrite;
+            const reasoning = scores.reasoningTokens ?? scores.tokensReasoning;
+            const parts = [input, output, cached, write, reasoning].filter(v => Number.isFinite(v));
+            if (parts.length) {
+                scores.tokens = Math.round(parts.reduce((sum, v) => sum + v, 0) * 10) / 10;
+            }
+        };
+
+        const fillScores = scores => {
+            if (!scores) return;
+            fillCost(scores);
+            fillTokens(scores);
+        };
+
+        if (s.scores) fillScores(s.scores);
+        if (Array.isArray(s.tasks)) {
+            for (const t of s.tasks) fillScores(t.scores);
+        }
+        if (Array.isArray(s.history)) {
+            for (const h of s.history) fillScores(h.scores);
+        }
+
+        return s;
+    });
     const setups = allSetups.filter(s => models[s.model] && harnesses[s.harness]);
     const dropped = allSetups.filter(s => !(models[s.model] && harnesses[s.harness]));
     if (dropped.length) {
