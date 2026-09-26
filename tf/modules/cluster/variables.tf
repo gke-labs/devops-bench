@@ -14,11 +14,11 @@
 
 variable "infra_provider" {
   type        = string
-  description = "The target cloud provider (gcp, kind)"
+  description = "The target cloud provider (gcp, kind, vcluster)"
 
   validation {
-    condition     = contains(["gcp", "kind"], var.infra_provider)
-    error_message = "infra_provider must be one of: 'gcp', 'kind'."
+    condition     = contains(["gcp", "kind", "vcluster"], var.infra_provider)
+    error_message = "infra_provider must be one of: 'gcp', 'kind', 'vcluster'."
   }
 }
 
@@ -100,7 +100,43 @@ variable "enable_iap_ssh" {
 
 variable "node_image" {
   type        = string
-  description = "The kind node image to use (KinD-only)"
-  default     = "kindest/node:v1.29.2"
+  description = "The kind node image (kind only; v1.30 or newer)"
+  default     = "kindest/node:v1.30.0@sha256:047357ac0cfea04663786a612ba1eaba9702bef25227a794b52890dd8bcd692e"
 }
 
+
+variable "host_kubecontext" {
+  type        = string
+  description = "Host Kubernetes context to use (vcluster-only)"
+  default     = null
+}
+
+variable "host_kubeconfig_path" {
+  type        = string
+  description = "Path to host cluster kubeconfig file (vcluster-only)"
+  default     = "~/.kube/config"
+}
+
+variable "service_type" {
+  type        = string
+  description = "Exposure mechanism for the vcluster (LoadBalancer, NodePort, etc.)"
+  default     = "LoadBalancer"
+}
+
+variable "vcluster_service_cidr" {
+  type        = string
+  description = "Host cluster's Service CIDR, forwarded to the vcluster chart. Empty keeps the chart default (10.96.0.0/12), which only matches hosts using the Kubernetes default range (e.g. kind); GKE hosts allocate from a different range and require this, or synced Services fail IP allocation and the syncer never syncs pods (blocked 'waiting for DNS service IP')."
+  default     = ""
+}
+
+variable "node_port" {
+  type        = number
+  description = "Static port override for local KinD testing (vcluster-only)"
+  default     = null
+}
+
+variable "disable_default_cni" {
+  description = "Replace kindnet with Calico so NetworkPolicy is enforced."
+  type        = bool
+  default     = false
+}

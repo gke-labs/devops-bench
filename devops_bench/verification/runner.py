@@ -78,6 +78,15 @@ _SINGLE_SHOT_WAIT_CEILING_SEC = 120.0
 # path and the single-shot wait-ceiling path in :meth:`VerifierAgent._run_parallel`.
 _PARALLEL_INCOMPLETE_REASON = "evaluation did not complete before the deadline"
 
+# Children are handed the same deadline the parent's wait uses, and a child
+# that polls to the very end overshoots it slightly: ``poll_until`` clamps its
+# final sleep but then re-checks the predicate once more before giving up.
+# Waiting only to the deadline therefore races every child that spent its whole
+# budget, and a child that loses is recorded as never observed even though it
+# did reach a verdict. This is the handoff window: wide enough to collect a
+# result that landed on time, far too narrow to rescue a genuinely hung child.
+_CHILD_HANDOFF_GRACE_SEC: float = 1.0
+
 
 def _node_name(node: Any) -> str | None:
     """Echo the optional ``name`` label from a spec node, if any."""
@@ -195,17 +204,22 @@ class VerifierAgent:
         what an objective wants: the agent is working toward the state and the
         check should wait for it. ``assert`` evaluates once with a zero budget,
         which is what a safeguard wants: a violation that has already happened
-        will not heal, and polling one would only waste the run's time.
+        will not heal, and polling one would only waste the run's time. ``hold``
+        also evaluates once with a zero budget per call: continuous holding is
+        not achieved by polling inside this one call, it is achieved by the
+        caller (the background safeguard monitor or the post-run hold window;
+        see ``devops_bench.evalharness.hold``) invoking ``run_entry``
+        repeatedly over the entry's hold window and aggregating the samples.
 
         Args:
             entry: The parsed entry to evaluate.
             timeout_sec: Total budget for a converging entry. Ignored under
-                ``assert``.
+                ``assert`` and ``hold``.
 
         Returns:
             The subtree's result, including per-child results.
         """
-        single_shot = entry.resolved_mode == "assert"
+        single_shot = entry.resolved_mode in ("assert", "hold")
         deadline = time.monotonic() + (0.0 if single_shot else timeout_sec)
         return self._run(entry.check, deadline, single_shot=single_shot)
 
@@ -493,7 +507,11 @@ class VerifierAgent:
         observed to pass or fail, so it is recorded with status "error"
         (reason :data:`_PARALLEL_INCOMPLETE_REASON`), not "fail": a hung
         ``kubectl`` call under assert mode must not read as an observed
-        safeguard VIOLATION. A leaf that unexpectedly raises is converted to a
+        safeguard VIOLATION. The converge wait adds
+        :data:`_CHILD_HANDOFF_GRACE_SEC` on top of the deadline so that a child
+        which polled to the very end still gets to hand its verdict back;
+        without it a converging objective whose children legitimately observed
+        "not there" was recorded as unobserved and dropped out of the score. A leaf that unexpectedly raises is converted to a
         failed child result so one bad leaf does not abort the rest of the
         group. Under ``single_shot``
         the wait is capped at :data:`_SINGLE_SHOT_WAIT_CEILING_SEC`; without
@@ -530,7 +548,10 @@ class VerifierAgent:
                     else _SINGLE_SHOT_WAIT_CEILING_SEC
                 )
             else:
-                wait_timeout = max(0.0, deadline - time.monotonic())
+                # Measured from the absolute handoff deadline, not from now:
+                # a nested group entered after ``deadline`` would otherwise wait a
+                # full grace period from its late start and outlive the parent.
+                wait_timeout = max(0.0, (deadline + _CHILD_HANDOFF_GRACE_SEC) - time.monotonic())
             done, _ = futures_wait(futs, timeout=wait_timeout)
             for f, i in futs.items():
                 if f not in done:

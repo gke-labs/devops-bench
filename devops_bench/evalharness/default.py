@@ -35,6 +35,15 @@ from devops_bench.agents.capabilities import (
     SkillBinding,
 )
 from devops_bench.chaos import ChaosSpec
+from devops_bench.cheat_detection import (
+    DEFAULT_BASELINE,
+    SensitiveAccessRule,
+    annotate_records,
+    baseline_from_granted_paths,
+    build_inventory_rules,
+    filter_rules_for_prompt,
+    load_ruleset,
+)
 from devops_bench.core import (
     ConfigError,
     MissingDependencyError,
@@ -47,6 +56,12 @@ from devops_bench.core import (
 from devops_bench.deployers.factory import get_deployer
 from devops_bench.evalharness.artifacts import collect_generated_files, snapshot_dir
 from devops_bench.evalharness.base import Harness
+from devops_bench.evalharness.hold import (
+    HoldObservation,
+    SafeguardMonitor,
+    hold_verdict,
+    run_hold_window,
+)
 from devops_bench.evalharness.reporter import ResultReporter
 from devops_bench.evalharness.scenario import (
     VERIFICATION_TIMEOUT_SEC,
@@ -61,6 +76,7 @@ from devops_bench.verification import (
     VerifierAgent,
     parse_entries,
 )
+from devops_bench.verification.hold_defaults import effective_poll_interval
 
 __all__ = ["DefaultEvalHarness"]
 
@@ -71,14 +87,17 @@ _log = get_logger("evalharness.default")
 # registry, with no edit here.
 _BUILTIN_AGENT_MODULES: tuple[str, ...] = (
     "devops_bench.agents.cli.gemini_cli",
+    "devops_bench.agents.cli.claude_code",
     "devops_bench.agents.cli.openclaw",
     "devops_bench.agents.cli.antigravity",
     "devops_bench.agents.api.agent",
+    "devops_bench.agents.adk.agent",
 )
 
 # Aliases normalized to canonical agent keys before registry lookup.
 _AGENT_TYPE_ALIASES: dict[str, str] = {
     "gemini-cli": "gemini",
+    "claude-code": "claude",
 }
 
 # Default agent type when neither --agent-type nor BENCH_AGENT_TYPE is set.
@@ -121,6 +140,45 @@ def _ensure_builtin_agents_registered() -> None:
             # raise a clear ``NotRegisteredError`` later if the user selects
             # an agent whose module did not load.
             _log.debug("optional agent module %s not importable: %s", module, exc)
+
+
+def _canonical_agent_type(agent_type: str) -> str:
+    """Normalize an agent-type alias to its canonical registry key.
+
+    The single source of truth for both registry lookup and result recording,
+    so an arm selected via a friendly alias (``claude-code`` / ``gemini-cli``)
+    aggregates under the same ``harness`` / ``setup_id`` as the canonical key
+    instead of splitting into a second dashboard setup.
+    """
+    return _AGENT_TYPE_ALIASES.get(agent_type, agent_type)
+
+
+def _entry_display_fields(entry: VerificationEntry) -> dict[str, Any]:
+    """The display fields copied verbatim from an entry onto its report item.
+
+    Snapshotted onto the record so a result renders with the titles that were
+    true when it ran, without joining back to the task file at that revision.
+    An undeclared field lands as ``None``, meaning the author wrote nothing,
+    unlike the task-level fields, which default to ``""`` on the schema. The
+    row normalizer maps both to ``""``.
+    """
+    return {
+        "title": entry.title,
+        "description": entry.description,
+        "group": entry.group,
+        "failure_hint": entry.failure_hint,
+    }
+
+
+def _task_metadata(task: Task) -> dict[str, Any]:
+    """The task-level display metadata snapshotted onto every record."""
+    return {
+        "title": task.title,
+        "summary": task.summary,
+        "category": task.category,
+        "tags": list(task.tags),
+        "check_groups": {key: group.model_dump() for key, group in task.check_groups.items()},
+    }
 
 
 class DefaultEvalHarness(Harness):
@@ -178,6 +236,22 @@ class DefaultEvalHarness(Harness):
         self.no_teardown = no_teardown if no_teardown is not None else get_bool("BENCH_NO_TEARDOWN")
         # Resolved once so capabilities and scoring observe the same value.
         self.use_mcp: bool = get_bool("BENCH_USE_MCP", True)
+        # Trajectory-based cheating detection annotates each record with a
+        # ``cheating_report`` and never touches ``validated``. The report is
+        # not inert, though: ``IntegrityMetric`` reads it during the later
+        # scoring pass and gates a flagged run's ``OutcomeScore`` to zero.
+        # Extra rules load from an optional YAML file — loaded
+        # here so a bad BENCH_CHEAT_RULES path fails loud at construction
+        # (an operator config error) instead of being swallowed by the
+        # best-effort scan at the end of the run.
+        self.cheat_detect: bool = get_bool("BENCH_CHEAT_DETECT", True)
+        self.cheat_rules_path: str | None = get_env("BENCH_CHEAT_RULES")
+        self._cheat_rules: tuple[SensitiveAccessRule, ...] = (
+            load_ruleset(self.cheat_rules_path) if self.cheat_detect else ()
+        )
+        # Also snapshot the agent home before the first agent runs and flag
+        # access to anything already lying there (prior-run leftovers).
+        self.cheat_inventory: bool = get_bool("BENCH_CHEAT_INVENTORY", True)
         # When running concurrently with other benchmark processes, allocate a
         # free local port for the chaos port-forward instead of the fixed
         # default so two scenarios on one host do not contend for the same port.
@@ -235,7 +309,7 @@ class DefaultEvalHarness(Harness):
                 canonical key.
         """
         _ensure_builtin_agents_registered()
-        key = _AGENT_TYPE_ALIASES.get(agent_type, agent_type)
+        key = _canonical_agent_type(agent_type)
         agent_cls = AGENTS.get(key)
         if agent_cls is None:
             raise NotRegisteredError(AGENTS.name, key, AGENTS.keys())
@@ -439,6 +513,8 @@ class DefaultEvalHarness(Harness):
         self,
         entries: list[VerificationEntry],
         timeout_sec: float = VERIFICATION_TIMEOUT_SEC,
+        *,
+        hold_observations: dict[str, HoldObservation] | None = None,
     ) -> list[dict[str, Any]]:
         """Evaluate every entry against the live cluster after the agent finishes.
 
@@ -462,9 +538,29 @@ class DefaultEvalHarness(Harness):
         to short-circuit an under-budget leaf as a definite "deadline
         exhausted" outcome, and this entry was never observed either way.
 
+        A ``hold`` entry is never evaluated with a single ``run_entry`` call
+        here, but the two roles reach their observation differently.  A
+        ``safeguard`` hold entry was already sampled on a background thread
+        across the agent's turn (see
+        ``devops_bench.evalharness.hold.SafeguardMonitor``), and its outcome
+        comes entirely from ``hold_observations``. An ``objective`` hold
+        entry is soaked right here instead, via
+        :func:`~devops_bench.evalharness.hold.run_hold_window`, against this
+        same total-budget deadline: an objective starts false and must
+        become true and stay true, which can only be observed after the
+        agent's turn ends. A hold entry with zero samples either way is
+        recorded as an error, not a silent pass: a hold nobody watched must
+        not read as one that held.
+
         Args:
             entries: The task's parsed verification entries.
             timeout_sec: Per-entry budget for converging entries.
+            hold_observations: Name-keyed monitor observations for every
+                ``safeguard``-role ``hold`` entry, as returned by
+                :meth:`~devops_bench.evalharness.hold.SafeguardMonitor.get_observations`.
+                ``None`` (or a missing name) is treated the same as zero
+                samples. Never consulted for ``objective``-role hold entries,
+                which are soaked in this same pass instead.
 
         Returns:
             One raw mapping per entry, in declaration order, carrying the
@@ -474,60 +570,144 @@ class DefaultEvalHarness(Harness):
         agent = VerifierAgent()
         report: list[dict[str, Any]] = []
         total_deadline = time.monotonic() + VERIFICATION_TOTAL_BUDGET_SEC
+        hold_observations = hold_observations or {}
 
-        for entry in entries:
-            remaining = total_deadline - time.monotonic()
-            if entry.resolved_mode != "assert" and remaining < MIN_LEAF_BUDGET_SECONDS:
-                # Never evaluated, not a condition observed false.
-                report.append(
-                    {
-                        "name": entry.name,
-                        "role": entry.role,
-                        "severity": entry.severity,
-                        "weight": entry.weight,
-                        "mode": entry.resolved_mode,
-                        "success": False,
-                        "status": "error",
-                        "reason": "verification total budget exhausted before evaluation",
-                        "elapsed_time": 0.0,
-                        "children": [],
-                    }
-                )
+        # Objective holds soak last, so converging objectives claim the shared
+        # budget before any soak can consume it. Rows keep declaration order.
+        rows: list[dict[str, Any] | None] = [None] * len(entries)
+        objective_holds: list[int] = []
+
+        for index, entry in enumerate(entries):
+            if entry.resolved_mode == "hold" and entry.role == "safeguard":
+                rows[index] = self._hold_report_entry(entry, hold_observations.get(entry.name))
                 continue
+            if entry.resolved_mode == "hold" and entry.role == "objective":
+                objective_holds.append(index)
+                continue
+            rows[index] = self._evaluate_entry(agent, entry, timeout_sec, total_deadline)
 
-            try:
-                result = agent.run_entry(entry, timeout_sec=min(timeout_sec, remaining))
-                success = result.success
-                status = result.status
-                reason = result.reason
-                elapsed = result.elapsed_time
-                children = [child.model_dump() for child in result.children]
-            except Exception as exc:  # noqa: BLE001 - one entry must not abort the rest
-                _log.exception("verification entry %r failed to evaluate", entry.name)
-                success, status, reason, elapsed, children = (
-                    False,
-                    "error",
-                    f"evaluation error: {exc}",
-                    0.0,
-                    [],
+        for index in objective_holds:
+            entry = entries[index]
+            # hold_window_sec is required for an objective hold entry;
+            # normally enforced by VerificationEntry's own validation, so
+            # reaching here without it means a spec-validation bug let an
+            # invalid entry through to verification.
+            if entry.hold_window_sec is None:
+                raise ValueError(
+                    f"objective hold entry {entry.name!r} reached verification without "
+                    "hold_window_sec set; this should have been rejected at "
+                    "spec-validation time"
                 )
+            obs = run_hold_window(
+                entry,
+                entry.hold_window_sec,
+                interval_sec=effective_poll_interval(entry.hold_poll_interval_sec),
+                deadline=total_deadline,
+            )
+            rows[index] = self._hold_report_entry(entry, obs)
 
-            report.append(
-                {
-                    "name": entry.name,
-                    "role": entry.role,
-                    "severity": entry.severity,
-                    "weight": entry.weight,
-                    "mode": entry.resolved_mode,
-                    "success": success,
-                    "status": status,
-                    "reason": reason,
-                    "elapsed_time": elapsed,
-                    "children": children,
-                }
+        report.extend(row for row in rows if row is not None)
+        return report
+
+    def _evaluate_entry(
+        self,
+        agent: VerifierAgent,
+        entry: VerificationEntry,
+        timeout_sec: float,
+        total_deadline: float,
+    ) -> dict[str, Any]:
+        """Evaluate one converge or assert entry against the shared deadline."""
+        remaining = total_deadline - time.monotonic()
+        if entry.resolved_mode != "assert" and remaining < MIN_LEAF_BUDGET_SECONDS:
+            # Never evaluated, not a condition observed false.
+            return {
+                "name": entry.name,
+                **_entry_display_fields(entry),
+                "role": entry.role,
+                "severity": entry.severity,
+                "weight": entry.weight,
+                "mode": entry.resolved_mode,
+                "success": False,
+                "status": "error",
+                "reason": "verification total budget exhausted before evaluation",
+                "elapsed_time": 0.0,
+                "children": [],
+            }
+
+        try:
+            result = agent.run_entry(entry, timeout_sec=min(timeout_sec, remaining))
+            success = result.success
+            status = result.status
+            reason = result.reason
+            elapsed = result.elapsed_time
+            children = [child.model_dump() for child in result.children]
+        except Exception as exc:  # noqa: BLE001 - one entry must not abort the rest
+            _log.exception("verification entry %r failed to evaluate", entry.name)
+            success, status, reason, elapsed, children = (
+                False,
+                "error",
+                f"evaluation error: {exc}",
+                0.0,
+                [],
             )
 
-        return report
+        return {
+            "name": entry.name,
+            **_entry_display_fields(entry),
+            "role": entry.role,
+            "severity": entry.severity,
+            "weight": entry.weight,
+            "mode": entry.resolved_mode,
+            "success": success,
+            "status": status,
+            "reason": reason,
+            "elapsed_time": elapsed,
+            "children": children,
+        }
+
+    @staticmethod
+    def _hold_report_entry(entry: VerificationEntry, obs: HoldObservation | None) -> dict[str, Any]:
+        """Build one hold entry's report row from its driver's observation.
+
+        The verdict itself (pass / fail / error, and why) is delegated to
+        :func:`~devops_bench.evalharness.hold.hold_verdict` so both hold
+        drivers (the live safeguard monitor and the post-run objective
+        window) are scored by exactly one rule. ``obs is None`` (the entry's
+        name was missing from ``hold_observations`` entirely) is treated the
+        same as a fresh, zero-sample observation.
+
+        Args:
+            entry: The hold-mode entry being reported.
+            obs: The driver's observation for this entry, or ``None`` if the
+                entry's name was missing from ``hold_observations`` entirely.
+
+        Returns:
+            The report row for this entry, in the same shape
+            :func:`devops_bench.verification.rollup.rollup` consumes, plus
+            ``hold_sample_count`` / ``hold_error_count`` /
+            ``hold_first_violation_reason`` / ``hold_first_violation_at_sec``
+            so the outcome is auditable from the report alone.
+        """
+        success, status, reason = hold_verdict(obs if obs is not None else HoldObservation())
+
+        return {
+            "name": entry.name,
+            **_entry_display_fields(entry),
+            "role": entry.role,
+            "severity": entry.severity,
+            "weight": entry.weight,
+            "mode": entry.resolved_mode,
+            "success": success,
+            "status": status,
+            "reason": reason,
+            "elapsed_time": obs.observed_window_sec if obs is not None else 0.0,
+            "children": [],
+            "hold_observed_window_sec": obs.observed_window_sec if obs is not None else 0.0,
+            "hold_sample_count": obs.sample_count if obs is not None else 0,
+            "hold_error_count": obs.error_count if obs is not None else 0,
+            "hold_first_violation_reason": obs.first_violation_reason if obs is not None else None,
+            "hold_first_violation_at_sec": obs.first_violation_at_sec if obs is not None else None,
+        }
 
     # -- scenario (background chaos) --------------------------------------
 
@@ -611,6 +791,40 @@ class DefaultEvalHarness(Harness):
 
     # -- pipeline ---------------------------------------------------------
 
+    def _inventory_home(
+        self, *, fingerprint_only: frozenset[str] | None = None
+    ) -> tuple[SensitiveAccessRule, ...]:
+        """Snapshot the agent home into prior-run-artifact rules.
+
+        Best-effort by contract: detection must never block execution, so a
+        snapshot failure logs and yields nothing, leaving the caller with the
+        static ruleset alone. Returns nothing too when either cheat-detection
+        toggle is off, which keeps the toggle check in one place.
+
+        Args:
+            fingerprint_only: Passed through to
+                :func:`~devops_bench.cheat_detection.build_inventory_rules` — the
+                entry names still allowed to produce content rules.
+
+        Returns:
+            The generated ruleset, empty on failure or when disabled.
+        """
+        if not (self.cheat_detect and self.cheat_inventory):
+            return ()
+        try:
+            home = Path.home()
+            # Skills granted to the agent are material it is told to read,
+            # so the home entry holding them is environment, not leftover.
+            return build_inventory_rules(
+                home,
+                baseline=DEFAULT_BASELINE
+                | baseline_from_granted_paths(home, self._granted_skill_paths),
+                fingerprint_only=fingerprint_only,
+            )
+        except Exception:  # noqa: BLE001 - detection must never block execution
+            _log.exception("home inventory failed; static cheat rules only")
+            return ()
+
     def run(self, tasks: list[Task]) -> list[dict[str, Any]]:
         """Run the full pipeline over ``tasks`` and return scored results.
 
@@ -623,7 +837,84 @@ class DefaultEvalHarness(Harness):
             ``results.json`` schema.
         """
         run_dir = self.reporter.new_run_dir()
-        detailed_results: list[dict[str, Any]] = [self._run_one(task, run_dir) for task in tasks]
+
+        # Snapshot the home once before anything runs, purely to record which
+        # leftovers predate the batch. Those are genuine prior-run artifacts
+        # and may always fingerprint.
+        pre_existing: frozenset[str] = frozenset(
+            rule.source for rule in self._inventory_home() if rule.source
+        )
+
+        # Re-inventory before *each* task's agent executes, so a deliverable
+        # an earlier task left in the home is covered for every task after
+        # it. Paired positionally with ``detailed_results`` rather than keyed
+        # by task name: a batch may run the same task more than once, and
+        # each of those iterations needs the snapshot taken before it, not
+        # the last one taken.
+        #
+        # Mid-batch entries are attributed to the task that was running when
+        # they appeared and fingerprint only for tasks with a *different*
+        # name. Both halves matter: iterations of one task legitimately share
+        # long lines, so a same-name fingerprint would flag an honest repeat
+        # for rewording its own deliverable — while a different task's prompt
+        # can name the entry (a colliding deliverable filename), which drops
+        # its path rule, leaving the fingerprint as the only thing that still
+        # catches a read of the earlier task's file.
+        created_by: dict[str, str] = {}
+        prev_task_name: str | None = None
+        task_inventories: list[tuple[SensitiveAccessRule, ...]] = []
+        detailed_results: list[dict[str, Any]] = []
+        for task in tasks:
+            if prev_task_name is not None:
+                # An empty ``fingerprint_only`` skips every file read, so this
+                # extra enumeration is a bare directory listing.
+                current = {
+                    rule.source
+                    for rule in self._inventory_home(fingerprint_only=frozenset())
+                    if rule.source
+                }
+                for name in current - pre_existing - created_by.keys():
+                    created_by[name] = prev_task_name
+            fingerprintable = pre_existing | frozenset(
+                name for name, creator in created_by.items() if creator != task.name
+            )
+            rules = self._inventory_home(fingerprint_only=fingerprintable)
+            appeared = {rule.source for rule in rules if rule.source} - pre_existing
+            if appeared:
+                _log.info(
+                    "cheat detection: %d home entr(ies) appeared during this batch and "
+                    "are covered for %s: %s",
+                    len(appeared),
+                    task.name,
+                    ", ".join(sorted(appeared)),
+                )
+            task_inventories.append(rules)
+            detailed_results.append(self._run_one(task, run_dir))
+            prev_task_name = task.name
+
+        # Annotate sensitive-access flags before the first write so both the
+        # raw and the scored results.json carry the report, and because
+        # ``_score`` below reads it. Best-effort per record: a detector failure
+        # leaves that record's seeded empty report and moves on to the next —
+        # which also leaves that record ungated, since an absent verdict is an
+        # abstention rather than a zero.
+        if self.cheat_detect:
+            # Per record: a home entry the task prompt itself names (the
+            # GitOps repo to push to, the deliverable to write) is
+            # authorized for that record, so its inventory path rule is
+            # dropped. Content fingerprints always apply.
+            for record, inventory_rules in zip(detailed_results, task_inventories, strict=True):
+                try:
+                    annotate_records(
+                        [record],
+                        self._cheat_rules
+                        + filter_rules_for_prompt(inventory_rules, record.get("input") or ""),
+                    )
+                except Exception:  # noqa: BLE001 - detection must never sink a completed run
+                    _log.exception(
+                        "cheating detection failed for %r; record keeps empty cheating_report",
+                        record.get("name"),
+                    )
 
         # Persist raw execution outputs before the (slower) scoring pass.
         self.reporter.write(run_dir, detailed_results)
@@ -674,14 +965,18 @@ class DefaultEvalHarness(Harness):
         augmentation = derive_augmentation(
             {"use_mcp": self.use_mcp, "skills": list(self._granted_skill_paths)}
         )
-        model = self._agent_config.model or self._agent_config.provider or self.agent_type
+        # Record the canonical harness key so an arm selected via a friendly
+        # alias (e.g. ``claude-code`` / ``gemini-cli``) aggregates with the
+        # canonical key rather than splitting into a second dashboard setup.
+        harness = _canonical_agent_type(self.agent_type)
+        model = self._agent_config.model or self._agent_config.provider or harness
         manifest = Manifest(
             schema_version=SCHEMA_VERSION,
             run_id=run_dir.name,
             t=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            setup_id=results_setup_id(model, self.agent_type, augmentation),
+            setup_id=results_setup_id(model, harness, augmentation),
             model=model,
-            harness=self.agent_type,
+            harness=harness,
             augmentation=augmentation,
         )
         rows = build_rows(detailed_results, manifest)
@@ -709,6 +1004,8 @@ class DefaultEvalHarness(Harness):
         deployer: Any | None = None
         scenario_manager: ScenarioManager | None = None
         scenario_thread: threading.Thread | None = None
+        safeguard_monitor: SafeguardMonitor | None = None
+        hold_observations: dict[str, HoldObservation] = {}
         result: dict[str, Any] | None = None
         workspace_path: Path | None = None
         verification_parse_errors: list[dict[str, str]] = []
@@ -798,9 +1095,36 @@ class DefaultEvalHarness(Harness):
                         _CHAOS_ACTIVE_WAIT_SEC,
                     )
 
+            # Safeguard hold entries must be observed continuously from here
+            # through the end of the agent's turn, not just at the moment
+            # verification runs after the agent exits (see hold's module
+            # docstring for the failure this closes). Started as close to
+            # the agent's turn as possible so a chaos-induced state change is
+            # not mistaken for an agent-caused violation. Objective hold
+            # entries are deliberately excluded here: an objective starts
+            # false and must become true, so sampling it live would latch a
+            # spurious violation before the agent has done anything. Those
+            # are soaked instead in the post-run verification pass (see
+            # ``_run_verification``).
+            safeguard_hold_entries = [
+                entry
+                for entry in entries
+                if entry.resolved_mode == "hold" and entry.role == "safeguard"
+            ]
+            safeguard_monitor = SafeguardMonitor(safeguard_hold_entries)
+            # No cluster under no_infra, so there is nothing to sample.
+            if not self.no_infra:
+                safeguard_monitor.start()
+
             _log.info("executing agent for prompt: %s", prompt)
             before_files = snapshot_dir(workspace_path)
             agent_res = self.execute_agent(prompt, context)
+            # The agent's turn just ended; stop sampling immediately so the
+            # hold window is exactly "seed through the end of the agent's
+            # turn" rather than continuing to sample through the (potentially
+            # slow) post-processing below.
+            safeguard_monitor.stop()
+            hold_observations = safeguard_monitor.get_observations()
             # NOTE/TODO: This collects ALL frontmatter from bootstrapping, not just generated files.
             # Consider a more targeted filter in a future iteration.
             # Best-effort: a collection failure (I/O, permissions, a bad link in the
@@ -824,7 +1148,9 @@ class DefaultEvalHarness(Harness):
                 verification_report: list[dict[str, Any]] = []
                 verification_status = "skipped_no_infra"
             else:
-                verification_report = self._run_verification(entries)
+                verification_report = self._run_verification(
+                    entries, hold_observations=hold_observations
+                )
                 verification_status = "evaluated"
 
             result = self._build_success_record(
@@ -842,12 +1168,23 @@ class DefaultEvalHarness(Harness):
             _log.info("agent response for %s:\n%s", task.name, result["output"])
         except Exception as exc:  # noqa: BLE001 - surface every task failure
             _log.error("critical error during task %s: %s", task.name, exc)
+            # The exception may have landed before the success path's own
+            # stop()+get_observations() ran (e.g. the agent call itself
+            # raised), so stop here too. Idempotent: a second stop() on an
+            # already-stopped monitor is a no-op, mirroring how
+            # scenario_manager.stop() is already called from both the success
+            # path (via _drain_scenario) and this finally-adjacent path below.
+            if safeguard_monitor is not None:
+                safeguard_monitor.stop()
+                hold_observations = safeguard_monitor.get_observations()
             exception_verification_report: list[dict[str, Any]] = []
             if self.no_infra:
                 exception_verification_status = "skipped_no_infra"
             elif infra_up and entries:
                 try:
-                    exception_verification_report = self._run_verification(entries)
+                    exception_verification_report = self._run_verification(
+                        entries, hold_observations=hold_observations
+                    )
                     exception_verification_status = "evaluated"
                 except Exception:  # noqa: BLE001 - a crash here must not mask the original failure
                     _log.exception(
@@ -881,6 +1218,10 @@ class DefaultEvalHarness(Harness):
                 # but the exception path reaches here without draining).
                 if scenario_thread is not None:
                     scenario_thread.join(timeout=_SCENARIO_JOIN_SEC)
+            if safeguard_monitor is not None:
+                # stop() is idempotent and never raises; this covers any path
+                # that skipped the two calls above.
+                safeguard_monitor.stop()
             if deployer is not None:
                 self._teardown(deployer, infra_config, task.name)
             if workspace_path is not None:
@@ -1061,6 +1402,10 @@ class DefaultEvalHarness(Harness):
             "recoverable_safety": list(task.recoverable_safety),
             "chaos_report": {},
             "perf_report": {},
+            # Populated by the cheat detector in ``run`` (empty when detection
+            # is disabled or fails). Read by ``IntegrityMetric``, which gates a
+            # flagged run to zero and abstains on this empty seed.
+            "cheating_report": {},
             "documentation": [doc.model_dump() for doc in task.documentation],
             "capabilities_granted": {
                 "use_mcp": self.use_mcp,
@@ -1078,6 +1423,9 @@ class DefaultEvalHarness(Harness):
             # Only tasks vetted as correct promote to the leaderboard; downstream
             # ingest gates inclusion on this flag (default False until vetted).
             "validated": task.validated,
+            # Display metadata, snapshotted so a row renders with the titles
+            # that were true when it ran.
+            "task_metadata": _task_metadata(task),
         }
 
     def _drain_scenario(
@@ -1156,5 +1504,19 @@ class DefaultEvalHarness(Harness):
         # Lazy import keeps ``deepeval`` / provider SDKs out of harness import.
         from devops_bench.metrics import evaluate_metrics_batch, get_judge_model
 
-        judge_model = self._judge_model or get_judge_model()
+        try:
+            judge_model = self._judge_model or get_judge_model()
+        except Exception:  # noqa: BLE001 - a judge outage must not unscore the batch
+            # Building the judge reads provider config and constructs a client,
+            # so a bad JUDGE_PROVIDER or a missing key raises here. Letting that
+            # propagate would abort scoring for the whole batch — including the
+            # deterministic metrics, which need no judge at all. That matters
+            # beyond convenience: the catastrophic gates (task safeguards and
+            # the benchmark-integrity check) are deterministic, so an unrelated
+            # judge outage would otherwise leave a cheating run ungated and its
+            # ``outcomeScore`` null, dropping it out of leaderboard aggregates.
+            # Judge-backed metrics fail individually on the ``None`` and are
+            # isolated by the pipeline's per-metric guard.
+            _log.exception("judge unavailable; scoring deterministic metrics only")
+            judge_model = None
         evaluate_metrics_batch(scorable, judge_model, use_mcp=self.use_mcp)
