@@ -121,9 +121,11 @@ pass@k formula.
 `derive()` (run automatically by `ingest.mjs`) does, per `setupId`:
 
 - **`tasks[]`** — for the **latest** `t`, group by `taskFolder`; each task's
-  `pass1/pass5/passMax` is computed from its iterations' `outcomeScore`s.
+  `pass1` and score means come from that run's iterations, while its
+  `pass5`/`passMax` pool the task's attempts across **every** run (see the
+  scoring rules below).
 - **`history[]`** — one point per distinct `t` (time-ordered); each point is the
-  mean of that run's per-task scores.
+  mean of that run's per-task scores, with the pass@k pair cumulative up to `t`.
 
 > **Every task from one sweep must share one `runId` and one `t`.** That pairing
 > is what makes a set of rows *a run*; `taskFolder` is what keeps the tasks
@@ -153,13 +155,20 @@ pass@k formula.
 >   `run_matrix.sh` runs this automatically over each matrix's results.
 
 Scoring (single definition, in `seed/mock-data.mjs`, reused by ingest):
-- An iteration **passes** when `outcomeScore >= 0.7`.
-- `pass1` = pass rate over the run's scored iterations.
-- `pass5` / `passMax` are **`null` today**: the harness emits a single iteration
-  per (setup × task × run), so a pass@k estimate would only ever collapse onto
-  `pass1`, and the dashboard hides metrics that are all-null. The pass@k
-  estimator is retained in `derive` and re-enables, unchanged, once the harness
-  starts emitting multi-iteration runs.
+- `pass1`: an iteration **passes** when its correctness clears `0.7`
+  (`correctnessScore`, falling back to `outcomeScore` for pre-v1 rows); the
+  rate is over the run's scored iterations.
+- `pass5` (pass@5) / `passMax` (pass^5): an attempt **passes** only on a
+  perfect composite (`outcomeScore >= 1.0` — full correctness, every safety
+  check, no catastrophic action). Attempts pool across **every run and
+  iteration** of a (setup × task) — repeated runs are the samples, so k
+  attempts normally arrive as k `runId`s. Unbiased estimators over `n` pooled
+  attempts with `c` passes: `pass@5 = 1 − C(n−c,5)/C(n,5)` (at least one of 5
+  perfect), `pass^5 = C(c,5)/C(n,5)` (all 5 perfect). Both stay `null` until a
+  task has **5 scored attempts** (no extrapolation), so the dashboard's pass@k
+  buttons stay disabled until repeated runs are ingested. In `history[]` the
+  pass@k pair is **cumulative** — each point estimates from every attempt up
+  to and including its `t`.
 
 ---
 

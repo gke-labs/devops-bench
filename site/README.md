@@ -122,15 +122,26 @@ is also stored in the `id` field (the client reads `doc.data()`, not `doc.id`).
 
 ### The derivation formula (one place, swappable)
 
-Lives in `seed/mock-data.mjs` (`derive()` + `passAtK()`), and is the *only* place
-scores are computed:
+Lives in `seed/mock-data.mjs` (`derive()` + `passAtK()`/`passPowK()`/
+`passKScores()`), and is the *only* place scores are computed:
 
-- A "pass" = `outcomeScore >= PASS_THRESHOLD` (currently **0.7**).
-- `pass1` = pass rate = `c / n` over a task's `n` iterations in a run (`c` passes).
-- `pass5` = unbiased `pass@5` = `1 − C(n−c, 5) / C(n, 5)`.
-- `passMax` = `pass@n` ("ever passed").
-- `tasks[]` scores come from the **latest run's** iterations.
-- Each `history[]` point is the **mean across tasks** of that run's per-task scores.
+- `pass1`: a pass = correctness `>= PASS_THRESHOLD` (currently **0.7**;
+  `correctnessScore`, falling back to `outcomeScore` for pre-v1 rows); the rate
+  is `c / n` over a task's `n` scored iterations in a run.
+- pass@k: a pass = a **perfect composite**, `outcomeScore >= PASSK_THRESHOLD`
+  (currently **1.0**) — deliberately a separate, stricter bar than `pass1`'s.
+  Attempts pool across **every run and iteration** of a (setup, task): the
+  harness emits one iteration per run today, so the k repeats arrive as k
+  `runId`s. Fewer than `K` (**5**) scored attempts → both metrics `null`
+  (no estimate, never an extrapolation).
+- `pass5` = unbiased `pass@5` = `1 − C(n−c, 5) / C(n, 5)` (≥1 of 5 attempts perfect).
+- `passMax` = unbiased `pass^5` = `C(c, 5) / C(n, 5)` (**all** 5 attempts
+  perfect — consistency, not just capability).
+- `tasks[]` scores come from the **latest run's** iterations, except the pass@k
+  pair, which pools all attempts as above.
+- Each `history[]` point is the **mean across tasks** of that run's per-task
+  scores; its pass@k pair is **cumulative** (estimated from every attempt up to
+  and including that run's `t`).
 
 ### Access (security rules, `firestore.rules`)
 
