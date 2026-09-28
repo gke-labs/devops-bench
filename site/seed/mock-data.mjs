@@ -435,14 +435,16 @@ export function efficiencyFor(rows) {
 // Mean over a list of score objects, per metric. Skips non-numeric entries so a
 // metric with no scored entries comes back as null instead of NaN.
 function meanScores(scoreList) {
-    const avg = m => {
-        const vals = scoreList.map(x => x[m]).filter(v => Number.isFinite(v));
+    const avg = (m, needsEveryTask = false) => {
+        const all = scoreList.map(x => x[m]);
+        if (needsEveryTask && !all.every(Number.isFinite)) return null;
+        const vals = all.filter(v => Number.isFinite(v));
         return vals.length ? round(vals.reduce((s, v) => s + v, 0) / vals.length, 1) : null;
     };
     return {
         pass1: avg("pass1"),
-        pass5: avg("pass5"),
-        passMax: avg("passMax"),
+        pass5: avg("pass5", true),
+        passMax: avg("passMax", true),
         composite: avg("composite"),
         correctness: avg("correctness"),
         recoverableSafety: avg("recoverableSafety"),

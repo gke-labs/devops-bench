@@ -7,7 +7,7 @@
 // so it stays a pure, easily-tested function.
 // =============================================================================
 
-import { AUGMENTATIONS, augmentationLabel, metricMeta } from "./vocab.js";
+import { AUGMENTATIONS, NEEDS_EVERY_TASK, augmentationLabel, metricMeta } from "./vocab.js";
 
 /**
  * @typedef {import('./schema').Setup} Setup
@@ -82,7 +82,9 @@ export function setupTags(setup) {
  * @returns {number | null}
  */
 export function setupScore(setup, metric) {
-    const vals = setup.tasks.map(t => t.scores[metric]).filter(v => v != null);
+    const scores = setup.tasks.map(t => t.scores[metric]);
+    if (NEEDS_EVERY_TASK.has(metric) && scores.some(v => v == null)) return null;
+    const vals = scores.filter(v => v != null);
     return vals.length ? vals.reduce((sum, v) => sum + v, 0) / vals.length : null;
 }
 

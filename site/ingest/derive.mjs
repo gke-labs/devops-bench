@@ -94,14 +94,16 @@ function scoresFor(rows) {
 // no non-null values across the run stays null rather than collapsing to 0.
 /** @returns {Scores} */
 function meanScores(scoreList) {
-    const avg = m => {
-        const vals = scoreList.map(s => s[m]).filter(v => Number.isFinite(v));
+    const avg = (m, needsEveryTask = false) => {
+        const all = scoreList.map(s => s[m]);
+        if (needsEveryTask && !all.every(Number.isFinite)) return null;
+        const vals = all.filter(v => Number.isFinite(v));
         return vals.length ? round(vals.reduce((a, b) => a + b, 0) / vals.length, 1) : null;
     };
     return {
         pass1: avg("pass1"),
-        pass5: avg("pass5"),
-        passMax: avg("passMax"),
+        pass5: avg("pass5", true),
+        passMax: avg("passMax", true),
         composite: avg("composite"),
         correctness: avg("correctness"),
         recoverableSafety: avg("recoverableSafety"),
