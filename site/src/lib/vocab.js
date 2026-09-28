@@ -200,6 +200,10 @@ export function metricDescription(metric) {
 // while an efficiency axis just needs the harness to report telemetry — so one
 // hardcoded sentence can't cover both. It used to, which put "Available once
 // multi-iteration runs land" under a greyed-out Latency button.
+// Setup-level values for these are null unless every task has one, so they
+// average the same task set as pass1.
+export const NEEDS_EVERY_TASK = new Set(["pass5", "passMax"]);
+
 const METRIC_UNAVAILABLE_REASONS = {
     pass5: "Needs 5 scored attempts of a task (repeated runs)",
     passMax: "Needs 5 scored attempts of a task (repeated runs)",

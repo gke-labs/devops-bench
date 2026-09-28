@@ -170,7 +170,7 @@ export function Detail() {
     const vals = setup.tasks.map(t => t.scores[metric]).filter(v => v != null);
     // "Best" follows the metric's direction: the fastest task, not the slowest.
     const best = vals.length ? (isLowerBetter(metric) ? Math.min(...vals) : Math.max(...vals)) : null;
-    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    const avg = score;
     const med = vals.length ? median(vals) : null;
     const pct = v => formatMetric(metric, v);
 

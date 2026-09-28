@@ -46,6 +46,18 @@ describe("setupScore", () => {
         expect(setupScore(s, "pass1")).toBe(90);
     });
 
+    it("is null for pass5/passMax unless every task has a value", () => {
+        const s = makeSetup({
+            tasks: [
+                { folder: "a", name: "A", scores: { pass1: 90, pass5: 100, passMax: 100 } },
+                { folder: "b", name: "B", scores: { pass1: 0, pass5: null, passMax: null } }
+            ]
+        });
+        expect(setupScore(s, "pass1")).toBe(45);
+        expect(setupScore(s, "pass5")).toBeNull();
+        expect(setupScore(s, "passMax")).toBeNull();
+    });
+
     it("returns null when no task has a score", () => {
         const s = makeSetup({ tasks: [{ folder: "a", name: "A", scores: {} }] });
         expect(setupScore(s, "pass1")).toBeNull();

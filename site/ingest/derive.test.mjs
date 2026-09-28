@@ -149,6 +149,12 @@ describe("derive — data-driven", () => {
         expect(setups[0].history.map(h => h.scores.pass5)).toEqual([null, null, null, null, 100]);
         expect(setups[0].history.map(h => h.scores.passMax)).toEqual([null, null, null, null, 0]);
         expect(setups[0].history.map(h => h.scores.pass1)).toEqual([100, 100, 100, 100, 80]);
+
+        // A second task with one attempt blanks the setup-level point, so pass@5
+        // never averages a smaller task set than pass1.
+        const mixed = derive([...rows, { ...rows[4], taskFolder: "task-b", taskName: "Task B" }]);
+        expect(mixed[0].history.at(-1).scores.pass5).toBeNull();
+        expect(mixed[0].history.at(-1).scores.pass1).not.toBeNull();
     });
 
     it("treats latencySec 0 as unmeasured, so it can't rank as the fastest", () => {
