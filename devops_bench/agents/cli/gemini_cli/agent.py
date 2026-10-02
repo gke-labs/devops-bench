@@ -52,7 +52,7 @@ from devops_bench.agents.shared.vertex_env import (
     vertex_location,
     vertex_project,
 )
-from devops_bench.core import ConfigError, SubprocessError, get_logger
+from devops_bench.core import ConfigError, SandboxError, SubprocessError, get_logger
 from devops_bench.core.model_providers import resolve_provider
 from devops_bench.core.subprocess import run
 
@@ -240,6 +240,8 @@ class GeminiCliAgent(AgentHarness):
     from disk.
     """
 
+    supports_sandbox = True
+
     def __init__(self, config: AgentConfig | None = None) -> None:
         AgentHarness.__init__(self, config)
         caps = self.config.capabilities
@@ -266,7 +268,16 @@ class GeminiCliAgent(AgentHarness):
         ``workspace_path`` is left for the harness to collect and clean up.
         """
         caps = self.config.capabilities
-        target = os.path.expanduser(self.config.target or "gemini")
+        raw_target = self.config.target or "gemini"
+        if self.config.sandbox is not None and raw_target.startswith("~"):
+            # expanduser resolves against the HOST home; the resulting path
+            # cannot exist in the container image.
+            raise SandboxError(
+                f"AGENT_TARGET={raw_target!r} resolves against the host home; a "
+                "sandboxed run needs the binary's in-image path (or the bare "
+                "name on the image's PATH)"
+            )
+        target = os.path.expanduser(raw_target)
         argv = _build_argv(target, prompt, caps.allowed_tools, self.config.extra_flags)
         env_overlay = _build_env(self.config)
         rules_text = caps.rules.text
@@ -283,13 +294,27 @@ class GeminiCliAgent(AgentHarness):
                 (gemini_dir / _GEMINI_SETTINGS_FILE).write_text(
                     json.dumps(settings, indent=2), encoding="utf-8"
                 )
+            if self.config.sandbox is not None:
+                # The container HOME (<workspace>/home) is fresh, so the
+                # user-level folder-trust disable the bastion relies on (see
+                # _build_argv) does not exist there. Untrusted, the CLI drops
+                # the workspace settings (MCP), GEMINI.md (rules), and
+                # downgrades --approval-mode — so every sandboxed arm needs
+                # the seed, not just the ones that wrote settings.
+                user_gemini_dir = workdir / "home" / _GEMINI_CONFIG_DIR
+                user_gemini_dir.mkdir(parents=True, exist_ok=True)
+                (user_gemini_dir / _GEMINI_SETTINGS_FILE).write_text(
+                    json.dumps({"security": {"folderTrust": {"enabled": False}}}, indent=2),
+                    encoding="utf-8",
+                )
             try:
-                completed = run(
+                completed = self.run_agent_cmd(
                     argv,
                     extra_env=env_overlay,
                     cwd=workdir,
                     check=False,
                     timeout=self.config.timeout_sec,
+                    host_run=run,
                 )
             except SubprocessError as exc:
                 return AgentResult.errored(f"gemini subprocess error: {exc}")
