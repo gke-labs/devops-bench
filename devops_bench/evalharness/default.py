@@ -26,7 +26,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from devops_bench.agents import AGENTS, AgentConfig, AgentResult
 from devops_bench.agents import sandbox as agent_sandbox
@@ -48,6 +48,7 @@ from devops_bench.cheat_detection import (
     load_ruleset,
 )
 from devops_bench.core import (
+    ClusterInfo,
     ConfigError,
     MissingDependencyError,
     NotRegisteredError,
@@ -73,6 +74,7 @@ from devops_bench.evalharness.scenario import (
     ScenarioManager,
     pick_free_port,
 )
+from devops_bench.k8s import agent_credentials
 from devops_bench.tasks import Task
 from devops_bench.verification import (
     MIN_LEAF_BUDGET_SECONDS,
@@ -81,6 +83,9 @@ from devops_bench.verification import (
     parse_entries,
 )
 from devops_bench.verification.hold_defaults import effective_poll_interval
+
+if TYPE_CHECKING:
+    from devops_bench.providers.base import Provider
 
 __all__ = ["DefaultEvalHarness"]
 
@@ -1099,13 +1104,15 @@ class DefaultEvalHarness(Harness):
                 # credential only enters through its read-only bind; a
                 # failure here becomes a failed record, never a silent
                 # unsandboxed run. A no-cluster run (noop deployer) skips
-                # the plan and cluster credential — a stale kind context
+                # the plan and cluster credential — a stale context
                 # matching the configured name must not leak in.
                 creds_dir = Path(tempfile.mkdtemp(prefix="devops-bench-creds-"))
                 completed_spec = self._prepare_sandbox_spec(
                     workspace_path,
                     creds_dir,
-                    active_cluster_name,
+                    replace(cluster_info, name=active_cluster_name),
+                    deployer.provider,
+                    task.agent_pod_security,
                     with_cluster=infra_config.get("deployer") != "noop",
                 )
                 sandbox_rules = self._inventory_sandbox_home(
@@ -1323,20 +1330,21 @@ class DefaultEvalHarness(Harness):
         self,
         workspace_path: Path,
         creds_dir: Path,
-        cluster_name: str,
+        cluster_info: ClusterInfo,
+        provider: Provider | None,
+        pod_security: str,
         *,
         with_cluster: bool = True,
     ) -> agent_sandbox.SandboxSpec:
         """Complete the skeletal sandbox spec for one provisioned task.
 
-        Creates the sandbox home, builds the network plan and single-cluster
-        kubeconfig pinned to this run's ``kind-<cluster>`` context, and
-        discovers the task's fixture mounts. ``with_cluster=False`` (noop
-        deployer / no_infra) skips the plan and writes a credential-free stub
-        kubeconfig instead: there is no cluster to reach, and a stale kind
-        context matching the configured name must not leak its admin cert in.
-        Raises :class:`SandboxError` when a plan or kubeconfig cannot be
-        built; the caller records a failed task rather than degrading.
+        Builds the provider's network plan (context-pinned, so a later
+        current-context switch cannot swap clusters), provisions the scoped
+        ServiceAccount credential, and discovers fixture mounts.
+        ``with_cluster=False`` (noop deployer / no_infra) skips both and
+        mounts a credential-free stub kubeconfig so a stale context cannot
+        leak in. Raises :class:`SandboxError` when a plan or credential
+        cannot be built; the caller records a failed task, never degrades.
         """
         if self._agent_config.sandbox is None:
             raise SandboxError(
@@ -1345,8 +1353,13 @@ class DefaultEvalHarness(Harness):
             )
         (workspace_path / "home").mkdir(parents=True, exist_ok=True)
         if with_cluster:
-            plan = agent_sandbox.build_network_plan(cluster_name)
-            kubeconfig = agent_sandbox.build_agent_kubeconfig(plan, creds_dir)
+            plan = agent_sandbox.build_network_plan(provider, cluster_info)
+            kubeconfig = agent_credentials.provision_agent_credentials(
+                plan,
+                creds_dir,
+                token_ttl_sec=agent_credentials.token_ttl_for(self._agent_config.timeout_sec),
+                pod_security=pod_security,
+            )
         else:
             plan = agent_sandbox.NetworkPlan()
             kubeconfig = creds_dir / "kubeconfig"
@@ -1357,7 +1370,7 @@ class DefaultEvalHarness(Harness):
             network=plan,
             workspace=workspace_path,
             kubeconfig=kubeconfig,
-            fixture_mounts=agent_sandbox.discover_fixture_mounts(cluster_name),
+            fixture_mounts=agent_sandbox.discover_fixture_mounts(cluster_info.name),
         )
 
     def _inventory_sandbox_home(
