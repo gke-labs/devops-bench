@@ -1197,41 +1197,49 @@ def test_prepare_sandbox_spec_refuses_without_a_sandbox_opt_in(
 ) -> None:
     """The caller gates on config.sandbox; the precondition is explicit, not a
     bare TypeError out of dataclasses.replace(None, ...)."""
-    from devops_bench.core import SandboxError
+    from devops_bench.core import ClusterInfo, SandboxError
 
     monkeypatch.delenv("BENCH_AGENT_SANDBOX", raising=False)
     harness = DefaultEvalHarness(
         project_id="p", cluster_name="c", results_root=str(tmp_path / "results")
     )
     with pytest.raises(SandboxError, match="without a sandbox opt-in"):
-        harness._prepare_sandbox_spec(tmp_path / "ws", tmp_path / "creds", "c1")  # noqa: SLF001
+        harness._prepare_sandbox_spec(  # noqa: SLF001
+            tmp_path / "ws", tmp_path / "creds", ClusterInfo(name="c1"), None, "baseline"
+        )
 
 
 def test_prepare_sandbox_spec_completes_the_skeletal_spec(
     isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from devops_bench.agents.sandbox import NetworkPlan
+    from devops_bench.core import ClusterInfo, NetworkPlan
 
     harness = _sandboxed_harness(monkeypatch, tmp_path)
     plan = NetworkPlan(docker_network="kind", rewrite_server="https://c1-control-plane:6443")
     kubeconfig = tmp_path / "creds" / "kubeconfig"
+    provider = object()
 
-    def fake_build_kubeconfig(got_plan: Any, dest_dir: Path) -> Path:
+    def fake_provision(
+        got_plan: Any, dest_dir: Path, *, token_ttl_sec: int, pod_security: str
+    ) -> Path:
         assert got_plan is plan
         assert dest_dir == tmp_path / "creds"
+        # Default 600s agent timeout plus slack: the token must outlast the run.
+        assert token_ttl_sec == 1500
+        assert pod_security == "baseline"
         return kubeconfig
 
-    plan_requests: list[str] = []
+    plan_requests: list[tuple[Any, str]] = []
 
-    def fake_build_network_plan(cluster_name: str) -> Any:
-        plan_requests.append(cluster_name)
+    def fake_build_network_plan(got_provider: Any, cluster_info: ClusterInfo) -> Any:
+        plan_requests.append((got_provider, cluster_info.name))
         return plan
 
     monkeypatch.setattr(
         harness_default.agent_sandbox, "build_network_plan", fake_build_network_plan
     )
     monkeypatch.setattr(
-        harness_default.agent_sandbox, "build_agent_kubeconfig", fake_build_kubeconfig
+        harness_default.agent_credentials, "provision_agent_credentials", fake_provision
     )
     monkeypatch.setattr(
         harness_default.agent_sandbox,
@@ -1242,7 +1250,9 @@ def test_prepare_sandbox_spec_completes_the_skeletal_spec(
     workspace = tmp_path / "workspace-x"
     workspace.mkdir()
     (tmp_path / "creds").mkdir()
-    spec = harness._prepare_sandbox_spec(workspace, tmp_path / "creds", "c1")  # noqa: SLF001
+    spec = harness._prepare_sandbox_spec(  # noqa: SLF001
+        workspace, tmp_path / "creds", ClusterInfo(name="c1"), provider, "baseline"
+    )
 
     # The sandbox home exists on the host before the agent runs (it is both
     # the container HOME mountpoint and the detection inventory root).
@@ -1252,9 +1262,9 @@ def test_prepare_sandbox_spec_completes_the_skeletal_spec(
     assert spec.workspace == workspace
     assert spec.kubeconfig == kubeconfig
     assert spec.fixture_mounts == {"/home/op/repo-c1.git": "/workspace/home/repo-c1.git"}
-    # The run's own cluster name pins the plan (and through it the
+    # The run's own provider and cluster build the plan (and through it the
     # kubeconfig), never the ambient current-context.
-    assert plan_requests == ["c1"]
+    assert plan_requests == [(provider, "c1")]
 
 
 def test_prepare_sandbox_spec_without_a_cluster_skips_the_plan_and_credential(
@@ -1263,13 +1273,15 @@ def test_prepare_sandbox_spec_without_a_cluster_skips_the_plan_and_credential(
     """no_infra / noop deployer: no network plan is built (a stale kind
     context matching the configured name must not leak its admin cert) and
     the mounted kubeconfig is a credential-free stub."""
+    from devops_bench.core import ClusterInfo
+
     harness = _sandboxed_harness(monkeypatch, tmp_path)
 
     def boom(*args: Any, **kwargs: Any) -> Any:
         raise AssertionError("must not touch kubectl without a cluster")
 
     monkeypatch.setattr(harness_default.agent_sandbox, "build_network_plan", boom)
-    monkeypatch.setattr(harness_default.agent_sandbox, "build_agent_kubeconfig", boom)
+    monkeypatch.setattr(harness_default.agent_credentials, "provision_agent_credentials", boom)
     monkeypatch.setattr(
         harness_default.agent_sandbox, "discover_fixture_mounts", lambda cluster: {}
     )
@@ -1279,7 +1291,7 @@ def test_prepare_sandbox_spec_without_a_cluster_skips_the_plan_and_credential(
     creds = tmp_path / "creds-n"
     creds.mkdir()
     spec = harness._prepare_sandbox_spec(  # noqa: SLF001
-        workspace, creds, "c1", with_cluster=False
+        workspace, creds, ClusterInfo(name="c1"), None, "baseline", with_cluster=False
     )
 
     assert spec.network == harness_default.agent_sandbox.NetworkPlan()
