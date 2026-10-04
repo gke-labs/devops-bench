@@ -14,15 +14,24 @@
 
 """Curated public API for the core primitives."""
 
-from devops_bench.core.config import first_env, get_bool, get_env, get_int, require_env
-from devops_bench.core.context import ClusterInfo, RunContext
+from devops_bench.core.config import (
+    first_env,
+    get_bool,
+    get_env,
+    get_int,
+    require_env,
+    resolve_tf_root,
+)
+from devops_bench.core.context import ClusterInfo, NetworkPlan, RunContext
 from devops_bench.core.errors import (
     AlreadyRegisteredError,
     ConfigError,
     DevOpsBenchError,
+    InvalidKeyError,
     MissingDependencyError,
     NotRegisteredError,
     RegistryError,
+    SandboxError,
     SubprocessError,
 )
 from devops_bench.core.logging import configure_logging, get_logger
@@ -32,6 +41,7 @@ from devops_bench.core.run_env import RunEnv
 
 __all__ = [
     "ClusterInfo",
+    "NetworkPlan",
     "RunContext",
     "RunEnv",
     "Registry",
@@ -44,11 +54,14 @@ __all__ = [
     "first_env",
     "get_bool",
     "get_int",
+    "resolve_tf_root",
     "DevOpsBenchError",
     "ConfigError",
     "RegistryError",
     "AlreadyRegisteredError",
+    "InvalidKeyError",
     "NotRegisteredError",
     "MissingDependencyError",
+    "SandboxError",
     "SubprocessError",
 ]

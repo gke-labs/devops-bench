@@ -20,7 +20,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
-from devops_bench.core import ClusterInfo, Registry
+from devops_bench.core import ClusterInfo, NetworkPlan, Registry
 
 __all__ = ["PROVIDERS", "Provider", "ResolveContext"]
 
@@ -66,7 +66,11 @@ class Provider(ABC):
 
     @abstractmethod
     def ensure_cluster_credentials(
-        self, cluster_name: str, location: str, variables: dict[str, Any]
+        self,
+        cluster_name: str,
+        location: str,
+        variables: dict[str, Any],
+        outputs: dict[str, Any] | None = None,
     ) -> ClusterInfo:
         """Make a provisioned cluster reachable and describe it.
 
@@ -78,6 +82,7 @@ class Provider(ABC):
             cluster_name: Cluster name from the stack outputs.
             location: Cloud region/zone (or ``"local"``) from the stack outputs.
             variables: OpenTofu input variables the cluster was provisioned with.
+            outputs: Optional OpenTofu output values from provisioning.
 
         Returns:
             The cluster's :class:`~devops_bench.core.ClusterInfo`.
@@ -97,3 +102,30 @@ class Provider(ABC):
         Returns:
             A new mapping with provider defaults filled in where not already set.
         """
+
+    def sandbox_network_plan(self, cluster_info: ClusterInfo) -> NetworkPlan:
+        """Describe how a sandboxed agent container reaches this cluster.
+
+        The default suits any endpoint reachable from a bridge-networked
+        container; the sandbox also rewrites a loopback server to
+        ``host.docker.internal`` on top of whatever is returned. Override
+        only when that generic step cannot infer what is needed: a Docker
+        network to join, an in-network hostname, or a context pin.
+        """
+        del cluster_info
+        return NetworkPlan()
+
+    def cleanup(
+        self,
+        cluster_info: ClusterInfo,
+        variables: dict[str, Any] | None = None,
+        success: bool = True,
+    ) -> None:
+        """Perform provider-specific cleanup after cluster teardown.
+
+        Args:
+            cluster_info: The cluster info of the cluster that was destroyed.
+            variables: Optional OpenTofu input variables used during provisioning.
+            success: Whether the stack destroy completed successfully.
+        """
+        del cluster_info, variables, success

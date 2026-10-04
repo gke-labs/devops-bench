@@ -24,8 +24,10 @@ __all__ = [
     "ConfigError",
     "RegistryError",
     "AlreadyRegisteredError",
+    "InvalidKeyError",
     "NotRegisteredError",
     "MissingDependencyError",
+    "SandboxError",
     "SubprocessError",
 ]
 
@@ -51,6 +53,16 @@ class AlreadyRegisteredError(RegistryError):
         super().__init__(f"{key!r} is already registered in the {registry_name!r} registry")
 
 
+class InvalidKeyError(RegistryError):
+    """Raised when a key violates the key policy of a registry."""
+
+    def __init__(self, registry_name: str, key: str, reason: str) -> None:
+        self.registry_name = registry_name
+        self.key = key
+        self.reason = reason
+        super().__init__(f"{key!r} is not a valid key for the {registry_name!r} registry: {reason}")
+
+
 class NotRegisteredError(RegistryError):
     """Raised when looking up a name that is not present in a registry."""
 
@@ -74,6 +86,15 @@ class MissingDependencyError(DevOpsBenchError):
             f"{feature} requires the optional dependency group {extra!r}. "
             f"Install it with: pip install devops-bench[{extra}]"
         )
+
+
+class SandboxError(DevOpsBenchError):
+    """Raised when the agent sandbox cannot be built or would widen its boundary.
+
+    Deliberately fatal for the affected run: a containment control that
+    silently degrades to unsandboxed host execution is worse than none, so
+    every "cannot sandbox this" condition raises instead of falling back.
+    """
 
 
 class SubprocessError(DevOpsBenchError):

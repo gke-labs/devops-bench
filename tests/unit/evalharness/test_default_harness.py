@@ -35,6 +35,7 @@ import pytest
 from devops_bench.agents import AGENTS, AgentHarness
 from devops_bench.agents.result import AgentResult, ToolCall
 from devops_bench.core import ConfigError, MissingDependencyError
+from devops_bench.core.score_keys import INTEGRITY_CATASTROPHIC_KEY, OUTCOME_SCORE_KEY
 from devops_bench.evalharness import default as harness_default
 from devops_bench.evalharness.default import DefaultEvalHarness
 from devops_bench.tasks import Task
@@ -47,6 +48,9 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for var in (
         "BENCH_USE_MCP",
         "BENCH_AGENT_TYPE",
+        "BENCH_CHEAT_DETECT",
+        "BENCH_CHEAT_RULES",
+        "BENCH_CHEAT_INVENTORY",
         "AGENT_MCP_SERVER",
         "AGENT_ALLOWED_TOOLS",
         "AGENT_SKILLS_PATHS",
@@ -58,6 +62,10 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "NAMESPACE",
     ):
         monkeypatch.delenv(var, raising=False)
+    # The pre-run inventory scans Path.home(); unit runs must not depend on
+    # whatever happens to live in the developer's real home directory. The
+    # dedicated inventory test re-enables it against a controlled fake home.
+    monkeypatch.setenv("BENCH_CHEAT_INVENTORY", "0")
 
 
 def test_parse_chaos_specs_raises_on_malformed_json(isolated_env: None) -> None:
@@ -342,7 +350,7 @@ def test_run_one_returns_failed_record_when_get_deployer_raises(
     monkeypatch.setattr(harness_default, "get_deployer", _boom)
     task = Task.from_dict({"task_id": "t", "name": "demo", "prompt": "p"})
 
-    record = harness._run_one(task, tmp_path)  # noqa: SLF001
+    record, _ = harness._run_one(task, tmp_path)  # noqa: SLF001
 
     assert record["status"] == "failed"
     assert "unknown deployer type" in record["error"]
@@ -378,7 +386,7 @@ def test_run_one_collects_files_the_agent_writes_to_its_workspace(
         run_dir = tmp_path / "run_1"
         run_dir.mkdir()
 
-        record = harness._run_one(task, run_dir)  # noqa: SLF001
+        record, _ = harness._run_one(task, run_dir)  # noqa: SLF001
 
         assert record["status"] == "success"
         generated = run_dir / "generated_files" / "output.txt"
@@ -386,6 +394,72 @@ def test_run_one_collects_files_the_agent_writes_to_its_workspace(
         assert generated.read_text() == "agent wrote this"
     finally:
         AGENTS._items.pop("fake-workspace-writer", None)  # noqa: SLF001
+
+
+class _HomeWritingAgent(AgentHarness):
+    """Stand-in agent that writes a deliverable and runtime state under home."""
+
+    supports_sandbox = True
+
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
+        assert workspace_path is not None
+        home = workspace_path / "home"
+        home.mkdir(exist_ok=True)
+        (home / "report.md").write_text("written to ~")
+        (home / ".gemini").mkdir(exist_ok=True)
+        (home / ".gemini" / "state.json").write_text("{}")
+        return AgentResult(output="done", trajectory=[])
+
+
+def test_run_one_collects_home_deliverables_but_not_agent_state(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sandboxed: ~ deliverables land in generated_files, but dot-entries
+    (agent runtime state, the folder-trust seed) do not — a collected home
+    .gemini would collide with the workspace's own .gemini copy."""
+    AGENTS.register("fake-home-writer")(_HomeWritingAgent)
+    try:
+        harness = _sandboxed_harness(
+            monkeypatch, tmp_path, agent_type="fake-home-writer", no_infra=True
+        )
+        monkeypatch.setattr(
+            harness_default.agent_sandbox, "discover_fixture_mounts", lambda cluster: {}
+        )
+        task = Task.from_dict({"task_id": "t", "name": "demo", "prompt": "p"})
+        run_dir = tmp_path / "run_1"
+        run_dir.mkdir()
+
+        record, _ = harness._run_one(task, run_dir)  # noqa: SLF001
+
+        assert record["status"] == "success"
+        assert (run_dir / "generated_files" / "report.md").read_text() == "written to ~"
+        assert not (run_dir / "generated_files" / ".gemini").exists()
+    finally:
+        AGENTS._items.pop("fake-home-writer", None)  # noqa: SLF001
+
+
+def test_run_one_ambient_home_writes_are_collected_once(isolated_env: None, tmp_path: Path) -> None:
+    """Unsandboxed, an agent-created home/ rides the workspace diff whole;
+    the separate home diff must not flatten a second copy on top."""
+    AGENTS.register("fake-ambient-home-writer")(_HomeWritingAgent)
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p",
+            cluster_name="c",
+            agent_type="fake-ambient-home-writer",
+            no_infra=True,
+        )
+        task = Task.from_dict({"task_id": "t", "name": "demo", "prompt": "p"})
+        run_dir = tmp_path / "run_1"
+        run_dir.mkdir()
+
+        record, _ = harness._run_one(task, run_dir)  # noqa: SLF001
+
+        assert record["status"] == "success"
+        assert (run_dir / "generated_files" / "home" / "report.md").exists()
+        assert not (run_dir / "generated_files" / "report.md").exists()
+    finally:
+        AGENTS._items.pop("fake-ambient-home-writer", None)  # noqa: SLF001
 
 
 def test_run_one_warns_when_a_verification_entry_fails_to_parse(
@@ -432,7 +506,7 @@ def test_run_one_warns_when_a_verification_entry_fails_to_parse(
             caplog.at_level(logging.WARNING),
             patch("devops_bench.evalharness.default.VerifierAgent.run_entry", return_value=ok),
         ):
-            record = harness._run_one(task, run_dir)  # noqa: SLF001
+            record, _ = harness._run_one(task, run_dir)  # noqa: SLF001
 
         assert record["status"] == "success"
         assert any("failed to parse" in message for message in caplog.messages)
@@ -462,7 +536,7 @@ def test_run_one_evaluates_verification_on_the_exception_path_when_infra_is_up(
     # exception path.
     monkeypatch.setattr(harness, "execute_agent", _boom)
     canned_report = [{"name": "web-ready", "success": True, "status": "pass"}]
-    monkeypatch.setattr(harness, "_run_verification", lambda entries: canned_report)
+    monkeypatch.setattr(harness, "_run_verification", lambda entries, **kwargs: canned_report)
     task = Task.from_dict(
         {
             "task_id": "t",
@@ -479,7 +553,7 @@ def test_run_one_evaluates_verification_on_the_exception_path_when_infra_is_up(
         }
     )
 
-    record = harness._run_one(task, tmp_path)  # noqa: SLF001
+    record, _ = harness._run_one(task, tmp_path)  # noqa: SLF001
 
     assert record["status"] == "failed"
     assert record["verification_report"] == canned_report
@@ -510,7 +584,7 @@ def test_run_one_reports_evaluated_on_the_exception_path_with_no_entries_declare
         }
     )
 
-    record = harness._run_one(task, tmp_path)  # noqa: SLF001
+    record, _ = harness._run_one(task, tmp_path)  # noqa: SLF001
 
     assert record["status"] == "failed"
     assert record["verification_report"] == []
@@ -551,7 +625,7 @@ def test_run_one_skips_verification_entirely_under_no_infra(
         run_dir = tmp_path / "run_1"
         run_dir.mkdir()
 
-        record = harness._run_one(task, run_dir)  # noqa: SLF001
+        record, _ = harness._run_one(task, run_dir)  # noqa: SLF001
 
         assert record["status"] == "success"
         assert record["verification_status"] == "skipped_no_infra"
@@ -695,6 +769,7 @@ _RESULTS_JSON_REQUIRED_KEYS: frozenset[str] = frozenset(
         "recoverable_safety",
         "chaos_report",
         "perf_report",
+        "cheating_report",
         "documentation",
         "capabilities_granted",
         "verification_parse_errors",
@@ -702,6 +777,7 @@ _RESULTS_JSON_REQUIRED_KEYS: frozenset[str] = frozenset(
         "verification_status",
         "generation_only",
         "validated",
+        "task_metadata",
     }
 )
 
@@ -763,6 +839,55 @@ def test_success_record_keys_match_golden(isolated_env: None) -> None:
     assert record["scores"] == {}
 
 
+def test_records_snapshot_the_task_display_metadata(isolated_env: None) -> None:
+    """Both record shapes carry the task's display metadata verbatim.
+
+    Snapshotting it on the record is what lets a row render with the titles
+    that were true when it ran, without joining back to the task file.
+    """
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
+    task = Task.from_dict(
+        {
+            "name": "t",
+            "title": "Fix the thing",
+            "summary": "It is broken; fix it.",
+            "category": "remediate",
+            "tags": ["kubernetes"],
+            "check_groups": {"fixed": {"title": "Fixed", "description": "All good."}},
+        }
+    )
+    expected = {
+        "title": "Fix the thing",
+        "summary": "It is broken; fix it.",
+        "category": "remediate",
+        "tags": ["kubernetes"],
+        "check_groups": {"fixed": {"title": "Fixed", "description": "All good."}},
+    }
+    success = harness._build_success_record(  # noqa: SLF001 - testing the record shape
+        task=task,
+        prompt="p",
+        expected_output="e",
+        agent_res=_stub_agent_result(),
+        chaos_report={},
+        perf_report={},
+    )
+    failed = harness._build_failed_record(task, RuntimeError("boom"))  # noqa: SLF001
+    assert success["task_metadata"] == expected
+    assert failed["task_metadata"] == expected
+
+
+def test_record_task_metadata_is_empty_for_a_bare_task(isolated_env: None) -> None:
+    harness = DefaultEvalHarness(project_id="p", cluster_name="c")
+    record = harness._build_failed_record(Task(name="t"), RuntimeError("boom"))  # noqa: SLF001
+    assert record["task_metadata"] == {
+        "title": "",
+        "summary": "",
+        "category": "",
+        "tags": [],
+        "check_groups": {},
+    }
+
+
 def test_failed_record_keys_match_golden(isolated_env: None) -> None:
     """``_build_failed_record`` emits the SAME key set as the success record."""
     harness = DefaultEvalHarness(project_id="p", cluster_name="c")
@@ -789,3 +914,659 @@ def test_success_and_failed_records_have_identical_top_level_keys(isolated_env: 
     )
     failed = harness._build_failed_record(task, RuntimeError("boom"))  # noqa: SLF001
     assert set(success.keys()) == set(failed.keys()) == _RESULTS_JSON_REQUIRED_KEYS
+
+
+# --- cheating detection wiring (flag-only) ---
+
+
+class _SensitiveReadingAgent(AgentHarness):
+    """Stand-in agent whose trajectory reads the task definition."""
+
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
+        return AgentResult(
+            output="done",
+            trajectory=[
+                ToolCall(
+                    name="exec",
+                    args={"command": "cat ~/devops-bench/tasks/common/opa-remediation/task.yaml"},
+                    result=None,
+                    status="completed",
+                ).to_dict()
+            ],
+        )
+
+
+def _run_with_fake_agent(tmp_path: Path, agent_key: str) -> dict[str, Any]:
+    """Register the sensitive-reading agent, run one no-infra task, return its record."""
+    AGENTS.register(agent_key)(_SensitiveReadingAgent)
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p",
+            cluster_name="c",
+            agent_type=agent_key,
+            no_infra=True,
+            results_root=str(tmp_path),
+        )
+        task = Task.from_dict({"task_id": "t", "name": "demo", "prompt": "p"})
+        results = harness.run([task])
+        assert len(results) == 1
+        return results[0]
+    finally:
+        AGENTS._items.pop(agent_key, None)  # noqa: SLF001
+
+
+def test_run_flags_sensitive_access_and_gates_it_without_a_judge(
+    isolated_env: None, tmp_path: Path
+) -> None:
+    """A task.yaml read in the trajectory is flagged, then gated to zero.
+
+    End to end through ``run()``, with no judge configured — ``get_judge_model()``
+    raises in this environment, which is the point. The integrity gate is
+    deterministic, so an unrelated judge outage must not be able to unscore it:
+    before the fallback in ``_score``, that exception aborted the whole batch and
+    a cheating run kept a null ``outcomeScore``, dropping out of leaderboard
+    aggregates entirely. ``validated`` stays untouched either way — the gate
+    publishes a zero, it does not invalidate the row.
+    """
+    record = _run_with_fake_agent(tmp_path, "fake-sensitive-reader")
+
+    report = record["cheating_report"]
+    assert report["status"] == "flagged"
+    assert "task-definition" in report["categories"]
+    assert "harness-repo" in report["categories"]
+    assert report["findings"][0]["trajectory_index"] == 0
+
+    scores = record["scores"]
+    assert scores[INTEGRITY_CATASTROPHIC_KEY]["score"] == 0.0
+    assert scores[OUTCOME_SCORE_KEY]["score"] == 0.0
+    assert INTEGRITY_CATASTROPHIC_KEY in scores[OUTCOME_SCORE_KEY]["reason"]
+    # Judged metrics found no judge and are simply absent, not failed-closed.
+    assert "OutcomeValidity" not in scores
+    assert record["validated"] is False
+
+
+def test_run_leaves_report_empty_when_detection_disabled(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BENCH_CHEAT_DETECT=0 keeps the seeded empty report on every record."""
+    monkeypatch.setenv("BENCH_CHEAT_DETECT", "0")
+    record = _run_with_fake_agent(tmp_path, "fake-sensitive-reader-off")
+    assert record["cheating_report"] == {}
+
+
+def test_bad_cheat_rules_path_fails_loud_at_construction(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A typo'd BENCH_CHEAT_RULES is an operator error, not a detector failure:
+    it must raise at harness construction, not degrade to empty reports."""
+    monkeypatch.setenv("BENCH_CHEAT_RULES", str(tmp_path / "no-such-rules.yaml"))
+    with pytest.raises(ConfigError, match="rules file"):
+        DefaultEvalHarness(project_id="p", cluster_name="c")
+
+
+def test_detection_failure_on_one_record_spares_the_rest(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Annotation is best-effort per record: one failing record keeps its
+    seeded empty report while every other record is still annotated."""
+    from devops_bench.cheat_detection import annotate_records
+
+    def flaky(records: list[dict[str, Any]], rules: Any) -> None:
+        if records[0].get("name") == "boom":
+            raise RuntimeError("scan exploded")
+        annotate_records(records, rules)
+
+    # Patched where the harness looks the name up, not where it is defined.
+    monkeypatch.setattr("devops_bench.evalharness.default.annotate_records", flaky)
+
+    AGENTS.register("fake-flaky-detection")(_LeftoverReadingAgent)
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p",
+            cluster_name="c",
+            agent_type="fake-flaky-detection",
+            no_infra=True,
+            results_root=str(tmp_path / "results"),
+        )
+        tasks = [
+            Task.from_dict({"task_id": "t1", "name": "boom", "prompt": "p"}),
+            Task.from_dict({"task_id": "t2", "name": "fine", "prompt": "p"}),
+        ]
+        results = harness.run(tasks)
+    finally:
+        AGENTS._items.pop("fake-flaky-detection", None)  # noqa: SLF001
+
+    assert results[0]["cheating_report"] == {}
+    assert results[1]["cheating_report"]["status"] == "clean"
+
+
+class _LeftoverReadingAgent(AgentHarness):
+    """Stand-in agent whose trajectory reads a prior run's leftover notes."""
+
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
+        return AgentResult(
+            output="done",
+            trajectory=[
+                ToolCall(
+                    name="exec",
+                    args={"command": "cat ~/old-notes.txt"},
+                    result=None,
+                    status="completed",
+                ).to_dict()
+            ],
+        )
+
+
+def test_run_inventory_flags_prior_run_leftover_access(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file already in the home before the run generates a live inventory rule."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / "old-notes.txt").write_text("leftover from a previous run\n", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+    monkeypatch.setenv("BENCH_CHEAT_INVENTORY", "1")
+
+    AGENTS.register("fake-leftover-reader")(_LeftoverReadingAgent)
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p",
+            cluster_name="c",
+            agent_type="fake-leftover-reader",
+            no_infra=True,
+            results_root=str(tmp_path / "results"),
+        )
+        task = Task.from_dict({"task_id": "t", "name": "demo", "prompt": "p"})
+        results = harness.run([task])
+    finally:
+        AGENTS._items.pop("fake-leftover-reader", None)  # noqa: SLF001
+
+    report = results[0]["cheating_report"]
+    assert report["status"] == "flagged"
+    assert "prior-run-artifact" in report["categories"]
+
+
+def test_run_inventory_spares_prompt_authorized_entry(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pre-existing entry the task prompt names is required work, not a cheat."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / "old-notes.txt").write_text("leftover from a previous run\n", encoding="utf-8")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+    monkeypatch.setenv("BENCH_CHEAT_INVENTORY", "1")
+
+    AGENTS.register("fake-authorized-reader")(_LeftoverReadingAgent)
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p",
+            cluster_name="c",
+            agent_type="fake-authorized-reader",
+            no_infra=True,
+            results_root=str(tmp_path / "results"),
+        )
+        task = Task.from_dict(
+            {
+                "task_id": "t",
+                "name": "demo",
+                "prompt": "Review the handover notes in 'old-notes.txt' and act on them.",
+            }
+        )
+        results = harness.run([task])
+    finally:
+        AGENTS._items.pop("fake-authorized-reader", None)  # noqa: SLF001
+
+    assert results[0]["cheating_report"]["status"] == "clean"
+
+
+def test_run_survives_detector_failure(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A detector crash must not sink the run; results.json is still written."""
+
+    def _boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("detector exploded")
+
+    monkeypatch.setattr("devops_bench.evalharness.default.annotate_records", _boom)
+    record = _run_with_fake_agent(tmp_path, "fake-sensitive-reader-crash")
+
+    assert record["status"] == "success"
+    assert record["cheating_report"] == {}
+    # The raw results survived the detector failure on disk as well.
+    run_dirs = [p for p in tmp_path.iterdir() if p.is_dir()]
+    assert len(run_dirs) == 1 and (run_dirs[0] / "results.json").exists()
+
+
+# -- sandbox wiring ----------------------------------------------------------
+
+
+def _sandboxed_harness(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **kwargs: Any
+) -> DefaultEvalHarness:
+    monkeypatch.setenv("BENCH_AGENT_SANDBOX", "docker")
+    monkeypatch.setenv("BENCH_SANDBOX_IMAGE", "agent-sandbox:test")
+    return DefaultEvalHarness(
+        project_id="p", cluster_name="c", results_root=str(tmp_path / "results"), **kwargs
+    )
+
+
+def test_run_fails_fast_on_an_unmigrated_agent_when_sandboxed(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One loud refusal at batch start, not a provisioned cluster per task
+    that each dies with the per-task SandboxError (which stays as depth).
+
+    Uses a purpose-built unmigrated fake rather than a real harness: which
+    builtins are migrated changes as the stack lands them."""
+    from devops_bench.core import SandboxError
+
+    class _UnmigratedAgent(AgentHarness):
+        def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
+            raise NotImplementedError
+
+    AGENTS.register("fake-unmigrated")(_UnmigratedAgent)
+    try:
+        harness = _sandboxed_harness(monkeypatch, tmp_path, agent_type="fake-unmigrated")
+        with pytest.raises(SandboxError, match="not been migrated"):
+            harness.run([])
+    finally:
+        AGENTS._items.pop("fake-unmigrated", None)  # noqa: SLF001
+
+
+def test_agent_config_snapshot_carries_the_sandbox_opt_in(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The snapshot rebuild must not drop the ``sandbox`` field on the floor."""
+    harness = _sandboxed_harness(monkeypatch, tmp_path)
+    assert harness.build_agent_config().sandbox is not None
+    assert harness.build_agent_config().sandbox.image == "agent-sandbox:test"
+
+
+def test_agent_config_snapshot_has_no_sandbox_when_flag_off(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("BENCH_AGENT_SANDBOX", raising=False)
+    harness = DefaultEvalHarness(
+        project_id="p", cluster_name="c", results_root=str(tmp_path / "results")
+    )
+    assert harness.build_agent_config().sandbox is None
+
+
+def test_prepare_sandbox_spec_refuses_without_a_sandbox_opt_in(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The caller gates on config.sandbox; the precondition is explicit, not a
+    bare TypeError out of dataclasses.replace(None, ...)."""
+    from devops_bench.core import ClusterInfo, SandboxError
+
+    monkeypatch.delenv("BENCH_AGENT_SANDBOX", raising=False)
+    harness = DefaultEvalHarness(
+        project_id="p", cluster_name="c", results_root=str(tmp_path / "results")
+    )
+    with pytest.raises(SandboxError, match="without a sandbox opt-in"):
+        harness._prepare_sandbox_spec(  # noqa: SLF001
+            tmp_path / "ws", tmp_path / "creds", ClusterInfo(name="c1"), None, "baseline"
+        )
+
+
+def test_prepare_sandbox_spec_completes_the_skeletal_spec(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from devops_bench.core import ClusterInfo, NetworkPlan
+
+    harness = _sandboxed_harness(monkeypatch, tmp_path)
+    plan = NetworkPlan(docker_network="kind", rewrite_server="https://c1-control-plane:6443")
+    kubeconfig = tmp_path / "creds" / "kubeconfig"
+    provider = object()
+
+    def fake_provision(
+        got_plan: Any, dest_dir: Path, *, token_ttl_sec: int, pod_security: str
+    ) -> Path:
+        assert got_plan is plan
+        assert dest_dir == tmp_path / "creds"
+        # Default 600s agent timeout plus slack: the token must outlast the run.
+        assert token_ttl_sec == 1500
+        assert pod_security == "baseline"
+        return kubeconfig
+
+    plan_requests: list[tuple[Any, str]] = []
+
+    def fake_build_network_plan(got_provider: Any, cluster_info: ClusterInfo) -> Any:
+        plan_requests.append((got_provider, cluster_info.name))
+        return plan
+
+    monkeypatch.setattr(
+        harness_default.agent_sandbox, "build_network_plan", fake_build_network_plan
+    )
+    monkeypatch.setattr(
+        harness_default.agent_credentials, "provision_agent_credentials", fake_provision
+    )
+    monkeypatch.setattr(
+        harness_default.agent_sandbox,
+        "discover_fixture_mounts",
+        lambda cluster: {"/home/op/repo-c1.git": "/workspace/home/repo-c1.git"},
+    )
+
+    workspace = tmp_path / "workspace-x"
+    workspace.mkdir()
+    (tmp_path / "creds").mkdir()
+    spec = harness._prepare_sandbox_spec(  # noqa: SLF001
+        workspace, tmp_path / "creds", ClusterInfo(name="c1"), provider, "baseline"
+    )
+
+    # The sandbox home exists on the host before the agent runs (it is both
+    # the container HOME mountpoint and the detection inventory root).
+    assert (workspace / "home").is_dir()
+    assert spec.image == "agent-sandbox:test"
+    assert spec.network is plan
+    assert spec.workspace == workspace
+    assert spec.kubeconfig == kubeconfig
+    assert spec.fixture_mounts == {"/home/op/repo-c1.git": "/workspace/home/repo-c1.git"}
+    # The run's own provider and cluster build the plan (and through it the
+    # kubeconfig), never the ambient current-context.
+    assert plan_requests == [(provider, "c1")]
+
+
+def test_prepare_sandbox_spec_without_a_cluster_skips_the_plan_and_credential(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """no_infra / noop deployer: no network plan is built (a stale kind
+    context matching the configured name must not leak its admin cert) and
+    the mounted kubeconfig is a credential-free stub."""
+    from devops_bench.core import ClusterInfo
+
+    harness = _sandboxed_harness(monkeypatch, tmp_path)
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("must not touch kubectl without a cluster")
+
+    monkeypatch.setattr(harness_default.agent_sandbox, "build_network_plan", boom)
+    monkeypatch.setattr(harness_default.agent_credentials, "provision_agent_credentials", boom)
+    monkeypatch.setattr(
+        harness_default.agent_sandbox, "discover_fixture_mounts", lambda cluster: {}
+    )
+
+    workspace = tmp_path / "workspace-n"
+    workspace.mkdir()
+    creds = tmp_path / "creds-n"
+    creds.mkdir()
+    spec = harness._prepare_sandbox_spec(  # noqa: SLF001
+        workspace, creds, ClusterInfo(name="c1"), None, "baseline", with_cluster=False
+    )
+
+    assert spec.network == harness_default.agent_sandbox.NetworkPlan()
+    assert spec.kubeconfig is not None and spec.kubeconfig.read_text() == (
+        "apiVersion: v1\nkind: Config\n"
+    )
+
+
+def test_build_agent_config_overlays_an_explicit_sandbox_spec(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dataclasses import replace as dc_replace
+
+    harness = _sandboxed_harness(monkeypatch, tmp_path)
+    completed = dc_replace(
+        harness.build_agent_config().sandbox, workspace=tmp_path, kubeconfig=tmp_path / "kc"
+    )
+
+    overlaid = harness.build_agent_config(completed)
+    assert overlaid.sandbox is completed
+    # Everything else still reads from the one snapshot.
+    assert overlaid.capabilities is harness._agent_config.capabilities  # noqa: SLF001
+
+    # No spec passed: the untouched snapshot, not leftover per-task state.
+    assert harness.build_agent_config() is harness._agent_config  # noqa: SLF001
+
+
+def test_inventory_sandbox_home_records_rules_per_task(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sandbox home replaces the operator home as the inventory root:
+    a leftover seeded there is flagged, and a fresh home yields the empty
+    ruleset (correct by construction, not a skipped scan)."""
+    monkeypatch.setenv("BENCH_CHEAT_INVENTORY", "1")
+    harness = _sandboxed_harness(monkeypatch, tmp_path)
+
+    dirty_home = tmp_path / "ws-dirty" / "home"
+    dirty_home.mkdir(parents=True)
+    (dirty_home / "report.md").write_text("prior-run leftover fingerprint line\n" * 3)
+    assert harness._inventory_sandbox_home("dirty-task", dirty_home)  # noqa: SLF001
+
+    fresh_home = tmp_path / "ws-fresh" / "home"
+    fresh_home.mkdir(parents=True)
+    assert harness._inventory_sandbox_home("fresh-task", fresh_home) == ()  # noqa: SLF001
+
+
+def test_inventory_covers_fixture_mounts_at_their_container_paths(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fixture mounts only materialize inside the container, so the host-side
+    home scan cannot see them; each mounted name must get a container-path
+    rule, and the prompt filter must drop exactly the ones the task names."""
+    import re
+
+    from devops_bench.cheat_detection import filter_rules_for_prompt
+
+    monkeypatch.setenv("BENCH_CHEAT_INVENTORY", "1")
+    harness = _sandboxed_harness(monkeypatch, tmp_path)
+
+    home = tmp_path / "ws" / "home"
+    home.mkdir(parents=True)
+    rules = harness._inventory_sandbox_home(  # noqa: SLF001
+        "t",
+        home,
+        {
+            "/home/op/opa-repo-c1.git": "/workspace/home/opa-repo-c1.git",
+            "/home/op/stale-notes-c1.md": "/workspace/home/stale-notes-c1.md",
+        },
+    )
+    assert {r.source for r in rules} == {"opa-repo-c1.git", "stale-notes-c1.md"}
+    # The rules match the container-side spellings the trajectory records.
+    repo_rule = next(r for r in rules if r.source == "opa-repo-c1.git")
+    assert re.search(repo_rule.patterns[0], "cat /workspace/home/opa-repo-c1.git/config")
+    assert re.search(repo_rule.patterns[0], "git clone ~/opa-repo-c1.git")
+
+    # A prompt naming the repo authorizes it for that record; the mount the
+    # prompt never asked for (a leftover swept in by the token glob) stays.
+    surviving = filter_rules_for_prompt(rules, "Fix the policy and push to '~/opa-repo-c1.git'.")
+    assert {r.source for r in surviving} == {"stale-notes-c1.md"}
+
+
+def test_stray_container_sweep_is_skipped_under_parallel(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sweep matches on the shared name prefix and cannot tell a stray
+    from a sibling harness's live container, so BENCH_PARALLEL must skip it."""
+    monkeypatch.setenv("BENCH_PARALLEL", "1")
+    harness = _sandboxed_harness(monkeypatch, tmp_path)
+    swept: list[bool] = []
+    monkeypatch.setattr(
+        harness_default.agent_sandbox, "sweep_stray_containers", lambda: swept.append(True)
+    )
+    harness.run([])
+    assert swept == []
+
+
+def test_stray_container_sweep_runs_when_not_parallel(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("BENCH_PARALLEL", raising=False)
+    harness = _sandboxed_harness(monkeypatch, tmp_path)
+    swept: list[bool] = []
+    monkeypatch.setattr(
+        harness_default.agent_sandbox, "sweep_stray_containers", lambda: swept.append(True)
+    )
+    harness.run([])
+    assert swept == [True]
+
+
+class _BatchContaminatingAgent(AgentHarness):
+    """Task 1 leaves a deliverable in the home; task 2 reads it back.
+
+    Class-level state because the registry constructs its own instance per
+    task, and the point of the test is what carries *between* those tasks.
+    """
+
+    home: Path
+    calls: int = 0
+
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
+        type(self).calls += 1
+        if type(self).calls == 1:
+            (self.home / "task-1-report.md").write_text(
+                "# Task 1 remediation\n- set privileged to false on team-alpha/cache\n",
+                encoding="utf-8",
+            )
+            command = "echo done > ~/task-1-report.md"
+        else:
+            command = "cat ~/task-1-report.md"
+        return AgentResult(
+            output="done",
+            trajectory=[
+                ToolCall(
+                    name="exec", args={"command": command}, result=None, status="completed"
+                ).to_dict()
+            ],
+        )
+
+
+def test_inventory_is_resnapshotted_between_tasks(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task 1's deliverable is an answer key for task 2, and must be covered.
+
+    A single run-start snapshot cannot see it — the file does not exist yet
+    when the batch begins — so this pins that the home is re-inventoried
+    before each task rather than once per invocation.
+    """
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+    monkeypatch.setenv("BENCH_CHEAT_INVENTORY", "1")
+
+    _BatchContaminatingAgent.home = fake_home
+    _BatchContaminatingAgent.calls = 0
+    AGENTS.register("fake-batch-contaminator")(_BatchContaminatingAgent)
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p",
+            cluster_name="c",
+            agent_type="fake-batch-contaminator",
+            no_infra=True,
+            results_root=str(tmp_path / "results"),
+        )
+        results = harness.run(
+            [
+                Task.from_dict({"task_id": "t1", "name": "writer", "prompt": "do the work"}),
+                Task.from_dict({"task_id": "t2", "name": "reader", "prompt": "do other work"}),
+            ]
+        )
+    finally:
+        AGENTS._items.pop("fake-batch-contaminator", None)  # noqa: SLF001
+
+    # Task 1 created the entry; its own snapshot predates it, so it stays clean.
+    assert results[0]["cheating_report"]["status"] == "clean"
+    # Task 2's snapshot saw it, so reading it by path is flagged.
+    report = results[1]["cheating_report"]
+    assert report["status"] == "flagged"
+    assert "prior-run-artifact" in report["categories"]
+
+
+class _CollidingDeliverableAgent(AgentHarness):
+    """Call 1 writes a deliverable; call 2 reads its content back.
+
+    The read returns the file's lines in ``result``, so only a content
+    fingerprint can catch it when the second task's prompt names the entry
+    and the path rule is therefore dropped. Class-level state because the
+    registry constructs its own instance per task.
+    """
+
+    home: Path
+    calls: int = 0
+
+    def _execute(self, prompt: str, workspace_path: Path | None = None) -> AgentResult:
+        type(self).calls += 1
+        report = self.home / "shared-report.md"
+        if type(self).calls == 1:
+            report.write_text(
+                "# Findings\n- set privileged to false on team-alpha/cache\n",
+                encoding="utf-8",
+            )
+            command, result = "write ~/shared-report.md", None
+        else:
+            command, result = "cat ~/shared-report.md", report.read_text(encoding="utf-8")
+        return AgentResult(
+            output="done",
+            trajectory=[
+                ToolCall(
+                    name="exec", args={"command": command}, result=result, status="completed"
+                ).to_dict()
+            ],
+        )
+
+
+def _run_colliding_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, second_task_name: str
+) -> list[dict[str, Any]]:
+    """Run a two-task batch where both prompts name the shared deliverable."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+    monkeypatch.setenv("BENCH_CHEAT_INVENTORY", "1")
+
+    _CollidingDeliverableAgent.home = fake_home
+    _CollidingDeliverableAgent.calls = 0
+    AGENTS.register("fake-colliding-deliverable")(_CollidingDeliverableAgent)
+    try:
+        harness = DefaultEvalHarness(
+            project_id="p",
+            cluster_name="c",
+            agent_type="fake-colliding-deliverable",
+            no_infra=True,
+            results_root=str(tmp_path / "results"),
+        )
+        prompt = "Write your findings to '~/shared-report.md'."
+        return harness.run(
+            [
+                Task.from_dict({"task_id": "t1", "name": "writer", "prompt": prompt}),
+                Task.from_dict({"task_id": "t2", "name": second_task_name, "prompt": prompt}),
+            ]
+        )
+    finally:
+        AGENTS._items.pop("fake-colliding-deliverable", None)  # noqa: SLF001
+
+
+def test_prompt_named_mid_batch_entry_is_caught_by_content_fingerprint(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A different task reading task 1's deliverable flags on content alone.
+
+    The reader's prompt names the entry, so its path rule is dropped — the
+    fingerprint built from task 1's file is the only remaining coverage, and
+    it must exist for a *differently named* task.
+    """
+    results = _run_colliding_batch(tmp_path, monkeypatch, second_task_name="reader")
+
+    assert results[0]["cheating_report"]["status"] == "clean"
+    report = results[1]["cheating_report"]
+    assert report["status"] == "flagged"
+    assert "prior-run-artifact" in report["categories"]
+    # The catch came from content surfacing in the tool result, not the path.
+    assert {f["field"] for f in report["findings"]} == {"result"}
+
+
+def test_same_task_repeat_is_not_fingerprinted(
+    isolated_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An honest repeat of the same task must not flag on shared wording.
+
+    Fingerprints are unfilterable, so fingerprinting task 1's report would
+    flag a later iteration of the *same* task that merely reproduced its own
+    deliverable's lines. Identical batch to the test above except the second
+    task's name — that one difference is the whole exemption.
+    """
+    results = _run_colliding_batch(tmp_path, monkeypatch, second_task_name="writer")
+
+    assert results[0]["cheating_report"]["status"] == "clean"
+    assert results[1]["cheating_report"]["status"] == "clean"

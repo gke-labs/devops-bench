@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from devops_bench.core import ClusterInfo, get_env
+from devops_bench.core import ClusterInfo, NetworkPlan, get_env
 from devops_bench.providers.base import PROVIDERS, Provider, ResolveContext
 
 __all__ = ["KindProvider"]
@@ -36,7 +36,11 @@ class KindProvider(Provider):
         """No-op: local clusters require no cloud identity."""
 
     def ensure_cluster_credentials(
-        self, cluster_name: str, location: str, variables: dict[str, Any]
+        self,
+        cluster_name: str,
+        location: str,
+        variables: dict[str, Any],
+        outputs: dict[str, Any] | None = None,
     ) -> ClusterInfo:
         """Describe a local cluster; its kubeconfig is already on disk.
 
@@ -44,6 +48,7 @@ class KindProvider(Provider):
             cluster_name: Cluster name from the stack outputs.
             location: Location from the stack outputs (typically ``"local"``).
             variables: OpenTofu input variables the cluster was provisioned with.
+            outputs: Optional OpenTofu output values from provisioning.
 
         Returns:
             The cluster's :class:`~devops_bench.core.ClusterInfo`; ``project``
@@ -58,6 +63,28 @@ class KindProvider(Provider):
                 "kubeconfig_path": variables.get("kubeconfig_path"),
             }
         )
+
+    def sandbox_network_plan(self, cluster_info: ClusterInfo) -> NetworkPlan:
+        """Join KinD's ``kind`` Docker network and target the control-plane node.
+
+        KinD's kubeconfig server is loopback, meaningless inside a container.
+        The apiserver certificate already covers the control-plane node name,
+        so TLS verifies without a ``tls-server-name`` override.
+        """
+        return NetworkPlan(
+            docker_network="kind",
+            rewrite_server=f"https://{cluster_info.name}-control-plane:6443",
+            kubectl_context=f"kind-{cluster_info.name}",
+        )
+
+    def cleanup(
+        self,
+        cluster_info: ClusterInfo,
+        variables: dict[str, Any] | None = None,
+        success: bool = True,
+    ) -> None:
+        """No-op: local KinD cluster cleanup is handled by stack teardown."""
+        del success
 
     def resolve_variables(
         self, ctx: ResolveContext, custom_variables: dict[str, Any]
